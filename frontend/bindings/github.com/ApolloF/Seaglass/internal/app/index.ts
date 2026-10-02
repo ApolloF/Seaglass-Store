@@ -9,6 +9,7 @@ import * as PadService from "./padservice.js";
 import * as ProfileService from "./profileservice.js";
 import * as SavesService from "./savesservice.js";
 import * as SettingsService from "./settingsservice.js";
+import * as StoreService from "./storeservice.js";
 import * as UpdateService from "./updateservice.js";
 export {
     AccountsService,
@@ -19,12 +20,14 @@ export {
     ProfileService,
     SavesService,
     SettingsService,
+    StoreService,
     UpdateService
 };
 
 export type {
     Accounts,
     AppInfo,
+    EngineStatus,
     MetaState,
     PadAction,
     Profile,

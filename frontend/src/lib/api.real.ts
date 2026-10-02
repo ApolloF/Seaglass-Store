@@ -1,7 +1,7 @@
 import { Events, Window } from "@wailsio/runtime";
-import { AccountsService, AchievementsService, LaunchService, LibraryService, PadService, ProfileService, SavesService, SettingsService, UpdateService } from "../../bindings/github.com/ApolloF/Seaglass/internal/app";
+import { AccountsService, AchievementsService, LaunchService, LibraryService, PadService, ProfileService, SavesService, SettingsService, StoreService, UpdateService } from "../../bindings/github.com/ApolloF/Seaglass/internal/app";
 import type { Api } from "./api";
-import type { Accounts, Achievements, AppInfo, ArtChoice, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, UpdateState } from "./types";
+import type { Accounts, Achievements, AppInfo, ArtChoice, Download, EngineStatus, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
 
 // The generated bindings return the Go structs; their JSON matches ./types.
 const g = (p: Promise<unknown>) => p as Promise<Game>;
@@ -47,6 +47,25 @@ export const realApi: Api = {
   onGamesUpdated: (cb) => Events.On("games:updated", (e) => cb((e.data ?? []) as unknown as Game[])),
   onScanState: (cb) => Events.On("scan:state", (e) => cb(e.data as unknown as ScanState)),
   onMetaState: (cb) => Events.On("meta:state", (e) => cb(e.data as unknown as MetaState)),
+
+  store: {
+    engine: () => StoreService.Engine() as Promise<unknown> as Promise<EngineStatus>,
+    startEngine: () => StoreService.StartEngine() as Promise<unknown> as Promise<EngineStatus>,
+    interfaces: () => StoreService.Interfaces().then((i) => (i ?? []) as TorrentInterface[]),
+    addresses: (iface) => StoreService.Addresses(iface).then((a) => a ?? []),
+    hasProxyPassword: () => StoreService.HasProxyPassword(),
+    setProxyPassword: (p) => StoreService.SetProxyPassword(p),
+    chooseQBittorrent: () => StoreService.ChooseQBittorrent() as Promise<unknown> as Promise<Settings>,
+    getQBittorrent: () => StoreService.GetQBittorrent(),
+    downloadsFolder: () => StoreService.DownloadsFolder(),
+    chooseDownloadsFolder: () => StoreService.ChooseDownloadsFolder() as Promise<unknown> as Promise<Settings>,
+    downloads: () => StoreService.Downloads().then((d) => (d ?? []) as unknown as Download[]),
+    addDownload: (src, title) => StoreService.AddDownload(src, title) as Promise<unknown> as Promise<Download>,
+    action: (id, action, del) => StoreService.DownloadAction(id, action as never, del),
+    showDownload: (id) => StoreService.ShowDownload(id),
+    onDownloads: (cb) => Events.On("store:jobs", (e) => cb((e.data ?? []) as unknown as Download[])),
+    onEngine: (cb) => Events.On("store:engine", (e) => cb(e.data as unknown as EngineStatus)),
+  },
 
   updates: {
     state: () => UpdateService.State() as Promise<unknown> as Promise<UpdateState>,

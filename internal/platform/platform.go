@@ -18,6 +18,7 @@ var (
 	Public          = known(windows.FOLDERID_Public)
 	Profile         = known(windows.FOLDERID_Profile)
 	Documents       = known(windows.FOLDERID_Documents)
+	Downloads       = known(windows.FOLDERID_Downloads)
 	Desktop         = known(windows.FOLDERID_Desktop)
 	PublicDesktop   = known(windows.FOLDERID_PublicDesktop)
 	StartMenu       = known(windows.FOLDERID_StartMenu)
@@ -99,6 +100,20 @@ func IsDir(p string) bool {
 func IsFile(p string) bool {
 	fi, err := os.Stat(p)
 	return err == nil && fi.Mode().IsRegular()
+}
+
+// FreeSpace is how many bytes the current user can still write to the
+// drive that holds p (an existing folder).
+func FreeSpace(p string) (uint64, error) {
+	dir, err := windows.UTF16PtrFromString(p)
+	if err != nil {
+		return 0, err
+	}
+	var free uint64
+	if err := windows.GetDiskFreeSpaceEx(dir, &free, nil, nil); err != nil {
+		return 0, err
+	}
+	return free, nil
 }
 
 // FixedDrives returns the roots of local fixed drives ("C:\", "D:\", …).

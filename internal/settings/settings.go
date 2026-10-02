@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/ApolloF/Seaglass/internal/platform"
+	"github.com/ApolloF/Seaglass/internal/torrent"
 )
 
 // Settings are the user's preferences. New fields get their default when
@@ -60,10 +61,19 @@ type Settings struct {
 	AutoUpdate bool `json:"autoUpdate"` // check GitHub for new versions and install them on the next start or while idle in the tray
 
 	// Experimental. Not portable: what this PC downloads, and how, is its own.
-	ExperimentalStore bool `json:"experimentalStore"` // the store: catalogs from feeds the user adds, downloads and installs
+	ExperimentalStore bool          `json:"experimentalStore"` // the store: catalogs from feeds the user adds, downloads and installs
+	Store             StoreSettings `json:"store"`
 
 	// Welcomed: the first-start welcome was seen (or skipped).
 	Welcomed bool `json:"welcomed"`
+}
+
+// StoreSettings are the experimental store's.
+type StoreSettings struct {
+	QBittorrent       string          `json:"qbittorrent"`       // qbittorrent.exe; "" uses the installed one
+	Downloads         string          `json:"downloads"`         // where downloads go; "" is Downloads\Seaglass in the user's folder
+	PauseWhilePlaying bool            `json:"pauseWhilePlaying"` // downloads wait while a game runs
+	Network           torrent.Network `json:"network"`
 }
 
 // Sources are the libraries that can be hidden, as the interface groups
@@ -83,6 +93,7 @@ func Defaults() Settings {
 		SyncSavesBefore: true, BackupSavesAfter: true, SyncWait: 60, StartSyncer: true,
 		SyncProfile: true, SameSettings: true,
 		AutoUpdate: true, Achievements: true,
+		Store: StoreSettings{PauseWhilePlaying: true, Network: torrent.DefaultNetwork()},
 	}
 }
 
@@ -270,10 +281,22 @@ func normalize(v Settings) Settings {
 	default:
 		v.PadWhilePlaying = "listen"
 	}
+	v.Store = normalizeStore(v.Store)
 	switch v.Glyphs {
 	case "auto", "playstation", "xbox":
 	default:
 		v.Glyphs = "auto"
 	}
 	return v
+}
+
+func normalizeStore(s StoreSettings) StoreSettings {
+	if s.QBittorrent = filepath.Clean(strings.TrimSpace(s.QBittorrent)); !filepath.IsAbs(s.QBittorrent) || !strings.EqualFold(filepath.Ext(s.QBittorrent), ".exe") {
+		s.QBittorrent = ""
+	}
+	if s.Downloads = filepath.Clean(strings.TrimSpace(s.Downloads)); !filepath.IsAbs(s.Downloads) || filepath.Dir(s.Downloads) == s.Downloads {
+		s.Downloads = ""
+	}
+	s.Network = s.Network.Normalize()
+	return s
 }

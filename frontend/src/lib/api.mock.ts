@@ -3,6 +3,7 @@
 import type { Api } from "./api";
 import type { Accounts, Achievement, Achievements, AppInfo, Game, MetaState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, UpdateState } from "./types";
 import { sessionActive } from "./types";
+import { mockStore, mockStoreSettings } from "./api.mock.store";
 
 const now = Math.floor(Date.now() / 1000);
 const day = 86400;
@@ -101,6 +102,7 @@ let settings: Settings = {
   showHiddenAchievements: false,
   // ?store=1 turns the experimental store on.
   experimentalStore: mockParams.get("store") === "1",
+  store: mockStoreSettings,
   // ?welcome=1 shows the first-start welcome.
   welcomed: mockParams.get("welcome") !== "1",
 };
@@ -414,6 +416,10 @@ export const mockApi: Api = {
     startup = { ...startup, on };
     return clone(startup);
   },
+  store: mockStore(
+    () => settings,
+    (s) => (settings = s),
+  ),
   updates: {
     async state() {
       return clone(updateState);

@@ -340,6 +340,9 @@ func (c *Core) saveSettings(v settings.Settings) (settings.Settings, error) {
 	if saved.Achievements != old.Achievements || saved.ShowHiddenAchievements != old.ShowHiddenAchievements {
 		c.ach.clear()
 	}
+	if saved.ExperimentalStore != old.ExperimentalStore || saved.Store != old.Store {
+		c.store.settingsChanged(old, saved)
+	}
 	if saved.AutoUpdate && !old.AutoUpdate {
 		NewUpdateService(c).Check()
 	}

@@ -1,7 +1,7 @@
 // The frontend's one door to the Go side. In mock mode (`npm run dev:mock`)
 // the same interface is served by made-up data, so the interface can be
 // built and checked in a normal browser. Vite drops the unused one.
-import type { Accounts, Achievements, AppInfo, ArtChoice, ArtKind, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, UpdateState } from "./types";
+import type { Accounts, Achievements, AppInfo, ArtChoice, ArtKind, Download, DownloadAction, EngineStatus, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
 import { realApi } from "./api.real";
 import { mockApi } from "./api.mock";
 
@@ -128,6 +128,31 @@ export interface Api {
     onOverlayAction(cb: (action: string, repeat: boolean) => void): () => void;
     /** The tray asks for a mode. */
     onUIMode(cb: (mode: "desktop" | "bigpicture") => void): () => void;
+  };
+
+  /** The experimental store. Everything fails while it's turned off. */
+  store: {
+    engine(): Promise<EngineStatus>;
+    /** Starts the download engine now (it stops again when idle). */
+    startEngine(): Promise<EngineStatus>;
+    /** Network interfaces downloads can be bound to (starts the engine). */
+    interfaces(): Promise<TorrentInterface[]>;
+    addresses(iface: string): Promise<string[]>;
+    hasProxyPassword(): Promise<boolean>;
+    /** "" removes it. */
+    setProxyPassword(password: string): Promise<void>;
+    chooseQBittorrent(): Promise<Settings>;
+    /** Opens qBittorrent's download page. */
+    getQBittorrent(): Promise<void>;
+    downloadsFolder(): Promise<string>;
+    chooseDownloadsFolder(): Promise<Settings>;
+    downloads(): Promise<Download[]>;
+    /** Queues a magnet link or a link to a .torrent file; title "" uses the link's own name. */
+    addDownload(source: string, title: string): Promise<Download>;
+    action(id: string, action: DownloadAction, deleteFiles: boolean): Promise<void>;
+    showDownload(id: string): Promise<void>;
+    onDownloads(cb: (d: Download[]) => void): () => void;
+    onEngine(cb: (s: EngineStatus) => void): () => void;
   };
 
   window: {

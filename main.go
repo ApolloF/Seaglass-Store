@@ -108,6 +108,7 @@ func main() {
 			application.NewService(app.NewSettingsService(core)),
 			application.NewService(app.NewPadService(core)),
 			application.NewService(app.NewUpdateService(core)),
+			application.NewService(app.NewStoreService(core)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

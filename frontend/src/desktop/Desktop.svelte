@@ -8,6 +8,7 @@
   import LaunchPanel from "./LaunchPanel.svelte";
   import Settings from "./Settings.svelte";
   import Sidebar, { type Page } from "./Sidebar.svelte";
+  import Downloads from "./Downloads.svelte";
   import Store from "./Store.svelte";
 
   let { onbigpicture }: { onbigpicture?: () => void } = $props();
@@ -15,7 +16,7 @@
   let settingsOpen = $state(false);
   let page = $state<Page>("library");
   // Turning the store off in settings goes back to the library.
-  const inStore = $derived(page === "store" && !!lib.settings?.experimentalStore);
+  const shown = $derived<Page>(lib.settings?.experimentalStore ? page : "library");
   let search: HTMLInputElement | undefined = $state();
 
   const titles: Record<string, string> = {
@@ -88,10 +89,12 @@
 <div class="shell">
   <Titlebar />
   <div class="body">
-    <Sidebar page={inStore ? "store" : "library"} onpage={(p) => (page = p)} {onbigpicture} />
+    <Sidebar page={shown} onpage={(p) => (page = p)} {onbigpicture} />
 
-    {#if inStore}
+    {#if shown === "store"}
       <main><Store onsettings={() => (settingsOpen = true)} /></main>
+    {:else if shown === "downloads"}
+      <main><Downloads onsettings={() => (settingsOpen = true)} /></main>
     {:else}
       <main>
         <div class="toolbar">

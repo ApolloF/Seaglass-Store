@@ -20,6 +20,9 @@ import type * as pad$0 from "../../../../ApolloF/Seaglass/internal/pad/models.js
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import type * as settings$0 from "../../../../ApolloF/Seaglass/internal/settings/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import type * as jobs$0 from "../../../../ApolloF/Seaglass/internal/store/jobs/models.js";
 
 declare module "@wailsio/runtime" {
     namespace Events {
@@ -37,6 +40,8 @@ declare module "@wailsio/runtime" {
             "profile:changed": app$0.Profile;
             "scan:state": app$0.ScanState;
             "settings:changed": settings$0.Settings;
+            "store:engine": app$0.EngineStatus;
+            "store:jobs": jobs$0.Job[] | null;
             "ui:mode": string;
             "update:state": app$0.UpdateState;
         }

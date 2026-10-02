@@ -67,6 +67,33 @@ func TestExperimentalStore(t *testing.T) {
 	}
 }
 
+// Settings from before the store get its defaults; paths that aren't
+// absolute are dropped and network values kept in range.
+func TestStoreSettings(t *testing.T) {
+	dir := t.TempDir()
+	old := filepath.Join(dir, "old.json")
+	if err := os.WriteFile(old, []byte(`{"theme":"dark"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := Open(old)
+	if got := s.Get().Store; !got.PauseWhilePlaying || !got.Network.DHT || got.Network.MaxActive != 2 {
+		t.Errorf("store defaults missing: %+v", got)
+	}
+	v := s.Get()
+	v.Store.QBittorrent, v.Store.Downloads, v.Store.Network.Port = `qbittorrent.exe`, `D:\`, -4
+	got, err := s.Set(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Store.QBittorrent != "" || got.Store.Downloads != "" || got.Store.Network.Port != 0 {
+		t.Errorf("store settings kept bad values: %+v", got.Store)
+	}
+	v.Store.QBittorrent, v.Store.Downloads = `C:\Apps\qBittorrent\qbittorrent.exe`, `D:\Downloads\Games\`
+	if got, _ := s.Set(v); got.Store.QBittorrent != `C:\Apps\qBittorrent\qbittorrent.exe` || got.Store.Downloads != `D:\Downloads\Games` {
+		t.Errorf("good paths: %q, %q", got.Store.QBittorrent, got.Store.Downloads)
+	}
+}
+
 // Achievements are on for everyone, updaters included; hidden ones stay hidden.
 func TestAchievementDefaults(t *testing.T) {
 	old := filepath.Join(t.TempDir(), "old.json")

@@ -2,6 +2,7 @@
   import Icon from "../components/Icon.svelte";
   import Toggle from "../components/Toggle.svelte";
   import AccountsSettings from "./AccountsSettings.svelte";
+  import StoreSettings from "./StoreSettings.svelte";
   import SyncerSettings from "./SyncerSettings.svelte";
   import UpdateStatus from "./UpdateStatus.svelte";
   import { api } from "../lib/api";
@@ -237,6 +238,9 @@
               onchange={(v) => set({ experimentalStore: v })}
             />
           </div>
+          {#if s.experimentalStore}
+            <StoreSettings />
+          {/if}
         {:else}
           <dl class="kv">
             <dt>Version</dt>

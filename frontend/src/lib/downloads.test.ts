@@ -1,0 +1,45 @@
+import { describe, expect, it } from "vitest";
+import { activeCount, eta, progress, statusLine } from "./downloads";
+import type { Download, EngineStatus } from "./types";
+
+const d = (p: Partial<Download>): Download => ({
+  id: "sg-1", title: "T", source: "magnet:?", savePath: "C:\D", state: "downloading",
+  size: 2e9, done: 5e8, downSpeed: 0, upSpeed: 0, seeds: 0, peers: 0, eta: 0, seeding: false, created: 0, ...p,
+});
+const running: EngineStatus = { installed: true, exe: "q.exe", running: true, interfaceMissing: false, gameRunning: false };
+
+describe("downloads", () => {
+  it("counts what's still on its way", () => {
+    expect(activeCount([d({}), d({ state: "queued" }), d({ state: "paused" }), d({ state: "downloaded" })])).toBe(2);
+  });
+
+  it("shows progress, done or not", () => {
+    expect(progress(d({}))).toBe(0.25);
+    expect(progress(d({ size: 0, state: "downloaded" }))).toBe(1);
+    expect(progress(d({ size: 0 }))).toBe(0);
+  });
+
+  it("says how long is left", () => {
+    expect(eta(0)).toBe("");
+    expect(eta(30)).toBe("under a minute");
+    expect(eta(600)).toBe("10 min");
+    expect(eta(3900)).toBe("1 h 5 min");
+    expect(eta(7200)).toBe("2 h");
+  });
+
+  it("says why a download stands still", () => {
+    expect(statusLine(d({ downSpeed: 4e6, eta: 600 }), running)).toBe("500 MB of 2.0 GB · 4.0 MB/s · 10 min left");
+    expect(statusLine(d({}), { ...running, interfaceMissing: true })).toMatch(/interface/);
+    expect(statusLine(d({}), { ...running, gameRunning: true })).toBe("Waiting for your game to close");
+    expect(statusLine(d({}), { ...running, running: false, error: "qBittorrent isn't installed" })).toBe("Waiting: qBittorrent isn't installed");
+    expect(statusLine(d({ engine: "metadata", size: 0, done: 0 }), running)).toBe("Asking peers for the file list…");
+    expect(statusLine(d({ seeds: 2 }), running)).toBe("500 MB of 2.0 GB · 2 peers, no data yet");
+  });
+
+  it("describes finished, paused and failed downloads whatever the engine does", () => {
+    const off = { ...running, running: false };
+    expect(statusLine(d({ state: "paused" }), off)).toBe("Paused · 500 MB of 2.0 GB");
+    expect(statusLine(d({ state: "downloaded", done: 2e9, seeding: true, upSpeed: 2e5 }), running)).toBe("Done · 2.0 GB · sharing at 200 KB/s");
+    expect(statusLine(d({ state: "failed", error: "Disk full" }), off)).toBe("Disk full");
+  });
+});

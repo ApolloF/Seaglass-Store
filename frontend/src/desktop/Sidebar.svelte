@@ -1,6 +1,6 @@
 <script lang="ts" module>
   /** What desktop mode's main area shows. */
-  export type Page = "library" | "store";
+  export type Page = "library" | "store" | "downloads";
 </script>
 
 <script lang="ts">
@@ -8,9 +8,15 @@
   import WhoPlays from "../components/WhoPlays.svelte";
   import { api } from "../lib/api";
   import { scanned } from "../lib/format";
+  import { shop } from "../lib/shop.svelte";
   import { lib, type Filter, type FilterKind } from "../lib/store.svelte";
 
   let { page = "library", onpage, onbigpicture }: { page?: Page; onpage?: (p: Page) => void; onbigpicture?: () => void } = $props();
+
+  // Downloads go on in the background: the count shows from the start.
+  $effect(() => {
+    if (lib.settings?.experimentalStore) shop.start();
+  });
 
   // A library view also leaves the store.
   function show(f: Filter) {
@@ -99,6 +105,11 @@
       <button type="button" class="nav" class:active={page === "store"} aria-current={page === "store" ? "page" : undefined} onclick={() => onpage?.("store")}>
         <Icon name="cloudDown" size={18} stroke={2} />
         <span class="grow">Store</span>
+      </button>
+      <button type="button" class="nav" class:active={page === "downloads"} aria-current={page === "downloads" ? "page" : undefined} onclick={() => onpage?.("downloads")}>
+        <Icon name="download" size={18} stroke={2} />
+        <span class="grow">Downloads</span>
+        {#if shop.active}<span class="count accent">{shop.active}</span>{/if}
       </button>
     {/if}
   </nav>

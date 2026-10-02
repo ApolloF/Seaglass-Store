@@ -114,8 +114,92 @@ export interface Settings {
   showHiddenAchievements: boolean;
   /** Experimental: the store, with catalogs from feeds the user adds. This PC only. */
   experimentalStore: boolean;
+  store: StoreSettings;
   /** The first-start welcome was seen (or skipped). */
   welcomed: boolean;
+}
+
+/** The experimental store's settings. Mirrors internal/settings.StoreSettings. */
+export interface StoreSettings {
+  /** qbittorrent.exe; "" uses the installed one. */
+  qbittorrent: string;
+  /** Where downloads go; "" is Downloads\Seaglass. */
+  downloads: string;
+  pauseWhilePlaying: boolean;
+  network: TorrentNetwork;
+}
+
+/** How the download engine connects. Mirrors internal/torrent.Network. */
+export interface TorrentNetwork {
+  /** Binds all traffic to this interface (the engine's id for it); "" uses any. */
+  interface: string;
+  /** One address of the interface; "" uses all. */
+  address: string;
+  /** Incoming connections; 0 picks a random port at each start. */
+  port: number;
+  upnp: boolean;
+  proxy: "none" | "socks5" | "http";
+  proxyHost: string;
+  proxyPort: number;
+  proxyUser: string;
+  proxyPeers: boolean;
+  encryption: "prefer" | "require" | "off";
+  dht: boolean;
+  pex: boolean;
+  lsd: boolean;
+  anonymous: boolean;
+  /** KiB/s; 0 for no limit. */
+  downLimit: number;
+  upLimit: number;
+  maxActive: number;
+  /** Stop seeding at this ratio; 0 when complete, -1 never. */
+  seedRatio: number;
+}
+
+/** The download engine. Mirrors internal/app.EngineStatus. */
+export interface EngineStatus {
+  installed: boolean;
+  exe: string;
+  running: boolean;
+  version?: string;
+  error?: string;
+  /** Bound to an interface that's gone (a VPN that disconnected): nothing moves. */
+  interfaceMissing: boolean;
+  /** Downloads wait for the game to close. */
+  gameRunning: boolean;
+}
+
+export interface TorrentInterface {
+  id: string;
+  name: string;
+}
+
+export type DownloadState = "queued" | "downloading" | "paused" | "downloaded" | "failed";
+export type DownloadAction = "pause" | "resume" | "remove";
+
+/** One download. Mirrors internal/store/jobs.Job. */
+export interface Download {
+  id: string;
+  title: string;
+  source: string;
+  savePath: string;
+  hash?: string;
+  name?: string;
+  state: DownloadState;
+  error?: string;
+  /** The engine's own state: metadata, checking, queued, … */
+  engine?: string;
+  size: number;
+  done: number;
+  downSpeed: number;
+  upSpeed: number;
+  seeds: number;
+  peers: number;
+  /** Seconds; 0 when unknown. */
+  eta: number;
+  seeding: boolean;
+  created: number;
+  finished?: number;
 }
 
 /** One achievement. Mirrors internal/achievements.Achievement. */

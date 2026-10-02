@@ -38,6 +38,31 @@ export interface AppInfo {
 }
 
 /**
+ * EngineStatus is the download engine as the interface shows it.
+ */
+export interface EngineStatus {
+    /**
+     * qBittorrent was found
+     */
+    "installed": boolean;
+    "exe": string;
+    "running": boolean;
+    "version"?: string;
+    "error"?: string;
+
+    /**
+     * InterfaceMissing: downloads are bound to an interface that's gone
+     * (a VPN that disconnected), so nothing is sent or received.
+     */
+    "interfaceMissing": boolean;
+
+    /**
+     * downloads wait for the game to close
+     */
+    "gameRunning": boolean;
+}
+
+/**
  * MetaState is what the metadata worker is doing.
  */
 export interface MetaState {
