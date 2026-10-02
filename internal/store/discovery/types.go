@@ -336,6 +336,15 @@ type PreparedRelease struct {
 	State    string   `json:"state"`
 	Reason   string   `json:"reason,omitempty"`
 	Warnings []string `json:"warnings"`
+	// Installed is the copy the Store installed, which an update replaces
+	// in its folder; nil when there is none.
+	Installed *InstalledCopy `json:"installed,omitempty"`
+}
+
+// InstalledCopy is where the Store installed a game, and which version.
+type InstalledCopy struct {
+	Version string `json:"version"`
+	Dir     string `json:"dir"`
 }
 
 // PreparedOffer is one validated way to download a prepared release.

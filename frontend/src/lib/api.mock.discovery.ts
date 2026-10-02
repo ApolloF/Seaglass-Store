@@ -494,6 +494,7 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
       state: ready ? "ready" : r.availability === "update-only" ? "update-only" : r.availability === "unavailable" ? "unavailable" : "unresolved",
       reason: ready ? undefined : (reason ?? r.unresolved[0]),
       warnings: copy(r.warnings),
+      installed: installed[key] ? { version: installed[key].version, dir: `C:\\Users\\you\\Games\\${r.title}` } : undefined,
     };
   };
   let searchSeq = 0;
@@ -580,6 +581,10 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
       async game(key) {
         const settings = getSettings();
         await wait(120);
+        const lone = steamOnly.find((x) => `steam:${x.appId}` === key);
+        if (lone && !games.some((g) => g.key === key)) {
+          return { summary: steamOnlySummary(lone), releases: [], recommended: -1, why: [], identity: { steamAppId: lone.appId, name: lone.title, how: "", corrected: false }, loading: false };
+        }
         const game = findGame(key);
         const releases = game.recs.filter((r) => r.release.origin === "feed" || settings.store.sources.includes(r.release.source)).map((r) => copy(r.release)).sort((a, b) => b.publishedAt - a.publishedAt);
         const inst = installed[key];

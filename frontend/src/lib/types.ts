@@ -856,6 +856,8 @@ export interface PreparedRelease {
   state: "ready" | "unresolved" | "update-only" | "unavailable";
   reason?: string;
   warnings: string[];
+  /** The copy the Store installed, which an update replaces in its folder. */
+  installed?: { version: string; dir: string };
 }
 
 /** Which games changed. Mirrors discovery.Change (the store:games event). */

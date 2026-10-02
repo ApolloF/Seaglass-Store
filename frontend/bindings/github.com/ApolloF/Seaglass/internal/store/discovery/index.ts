@@ -10,6 +10,7 @@ export type {
     Home,
     Identity,
     Installed,
+    InstalledCopy,
     PreparedOffer,
     PreparedRelease,
     ProviderProgress,

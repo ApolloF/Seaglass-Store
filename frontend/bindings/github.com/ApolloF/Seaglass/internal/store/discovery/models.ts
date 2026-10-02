@@ -251,6 +251,14 @@ export interface Installed {
 }
 
 /**
+ * InstalledCopy is where the Store installed a game, and which version.
+ */
+export interface InstalledCopy {
+    "version": string;
+    "dir": string;
+}
+
+/**
  * PreparedOffer is one validated way to download a prepared release.
  */
 export interface PreparedOffer {
@@ -294,6 +302,12 @@ export interface PreparedRelease {
     "state": string;
     "reason"?: string;
     "warnings": string[] | null;
+
+    /**
+     * Installed is the copy the Store installed, which an update replaces
+     * in its folder; nil when there is none.
+     */
+    "installed"?: InstalledCopy | null;
 }
 
 /**

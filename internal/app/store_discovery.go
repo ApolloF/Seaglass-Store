@@ -490,6 +490,12 @@ func (d *discoveryState) annotator() discovery.Annotate {
 func (d *discoveryState) details(key string) (discovery.GameDetails, error) {
 	g, ok := d.currentView().Game(key)
 	if !ok {
+		// A Steam game without a source release still has a page: its
+		// reviews, times and the wishlist, but nothing to install.
+		if title, appID, found := d.gameRef(key); found && appID > 0 {
+			return discovery.GameDetails{Summary: d.steamOnly(appID, title), Releases: []discovery.Release{}, Recommended: -1, Why: []string{},
+				Identity: discovery.Identity{SteamAppID: appID, Name: title}}, nil
+		}
 		return discovery.GameDetails{}, errNotIndexed
 	}
 	s := g.Summary()
@@ -679,6 +685,11 @@ func (d *discoveryState) prepared(key, id string) (discovery.PreparedRelease, er
 		if len(rel.Unresolved) > 0 {
 			p.Reason = rel.Unresolved[0] + ". Open the release page in your browser, get the .torrent file there, then attach it."
 		}
+	}
+	e := catalog.Entry{Key: key}
+	d.c.catalog.annotator()(&e)
+	if e.Installed != nil {
+		p.Installed = &discovery.InstalledCopy{Version: e.Installed.Version, Dir: e.Installed.Dir}
 	}
 	langs, complete := discovery.ParseLanguages(r.Entry.LanguageClaim)
 	if !complete {

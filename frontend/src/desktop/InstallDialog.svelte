@@ -56,30 +56,22 @@
   let dir = $state("");
   let install = $state(true);
   let busy = $state(false);
-  // A prepared release doesn't say where an installed copy is: the catalog does.
-  let installedDir = $state("");
-  let looked = $state(false);
+  // A prepared release says where the Store installed the game, if it did.
+  const installedDir = $derived(prepared?.installed?.dir ?? "");
 
   $effect(() => {
     if (entry) {
       if (update && entry.installed) dir = entry.installed.dir;
       else api.store.installFolder(entry.title).then((d) => (dir = d));
-    } else if (update) {
-      api.store
-        .catalogEntry(untrack(() => prepared!.gameKey))
-        .then((e) => (installedDir = e.installed?.dir ?? ""))
-        .catch(() => (installedDir = ""))
-        .finally(async () => {
-          looked = true;
-          dir = installedDir || (await api.store.installFolder(untrack(() => gameTitle)));
-        });
+    } else if (update && untrack(() => installedDir)) {
+      dir = untrack(() => installedDir);
     } else {
       api.store.installFolder(gameTitle).then((d) => (dir = d));
     }
   });
   // Without a known folder an update can only be a new install.
   const updating = $derived(update && (entry ? !!entry.installed : !!installedDir));
-  const installedVersion = $derived(entry?.installed?.version ?? "the installed version");
+  const installedVersion = $derived(entry?.installed?.version ?? prepared?.installed?.version ?? "the installed version");
   // A language the newly picked version doesn't have goes back to the default.
   $effect(() => {
     if (o?.languages?.length && !o.languages.some((l) => l.toLowerCase() === language.toLowerCase())) language = o.languages.find((l) => l.toLowerCase() === "english") ?? o.languages[0];
@@ -159,7 +151,7 @@
     {#if updating}
       <p class="sub">Installs over {installedVersion} once downloaded and checked. Your saves usually stay; back them up first if the game keeps them in its folder.</p>
     {:else}
-    {#if update && prepared && looked}
+    {#if update && prepared}
       <p class="sub">Seaglass can't tell where the installed copy is, so this is installed as a separate copy.</p>
     {/if}
     <Toggle
