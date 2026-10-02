@@ -30,6 +30,7 @@ func Recommend(e Entry, p Prefs) Recommendation {
 	if len(e.Offers) == 0 {
 		return Recommendation{Offer: -1}
 	}
+	newest := NewestOffer(e.Offers)
 	type scored struct {
 		i     int
 		score int
@@ -38,7 +39,7 @@ func Recommend(e Entry, p Prefs) Recommendation {
 	var all []scored
 	for i, o := range e.Offers {
 		s := scored{i: i}
-		if CompareVersions(o.Version, e.Offers[0].Version) == 0 {
+		if newest >= 0 && sameRelease(o.Version, e.Offers[newest].Version) {
 			s.score += 4
 			if len(e.Offers) > 1 {
 				s.why = append(s.why, "The newest version")
@@ -74,13 +75,13 @@ func Recommend(e Entry, p Prefs) Recommendation {
 	}
 	best := all[0]
 	for _, s := range all[1:] {
-		if s.score > best.score || (s.score == best.score && e.Offers[s.i].SizeBytes > 0 && e.Offers[s.i].SizeBytes < e.Offers[best.i].SizeBytes && CompareVersions(e.Offers[s.i].Version, e.Offers[best.i].Version) == 0) {
+		if s.score > best.score || (s.score == best.score && e.Offers[s.i].SizeBytes > 0 && e.Offers[s.i].SizeBytes < e.Offers[best.i].SizeBytes && sameRelease(e.Offers[s.i].Version, e.Offers[best.i].Version)) {
 			best = s
 		}
 	}
 	why := best.why
-	if best.i != 0 {
-		newest := e.Offers[0]
+	if newest >= 0 && best.i != newest {
+		newest := e.Offers[newest]
 		var reasons []string
 		if p.Language != "" && len(newest.Languages) > 0 && !slices.ContainsFunc(newest.Languages, func(l string) bool { return strings.EqualFold(l, p.Language) }) {
 			reasons = append(reasons, "it doesn't have "+p.Language)
@@ -97,6 +98,9 @@ func Recommend(e Entry, p Prefs) Recommendation {
 	}
 	if len(why) == 0 {
 		why = []string{"The only version offered"}
+		if len(e.Offers) > 1 {
+			why = []string{"Release versions cannot all be compared; choose an offer to review"}
+		}
 	}
 	return Recommendation{Offer: best.i, Why: why}
 }
@@ -106,4 +110,24 @@ func orDash(s string) string {
 		return "no version given"
 	}
 	return s
+}
+
+func sameRelease(a, b string) bool { d, known := CompareReleases(a, b); return known && d == 0 }
+
+// NewestOffer requires comparable evidence across all offered versions.
+func NewestOffer(offers []Offer) int {
+	if len(offers) == 0 {
+		return -1
+	}
+	best := 0
+	for i := 1; i < len(offers); i++ {
+		order, known := CompareReleases(offers[i].Version, offers[best].Version)
+		if !known {
+			return -1
+		}
+		if order > 0 {
+			best = i
+		}
+	}
+	return best
 }

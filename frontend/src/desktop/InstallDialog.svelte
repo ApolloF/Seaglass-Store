@@ -21,7 +21,7 @@
   // Starts on the version picked on the page; changed here after that.
   let pick = $state(untrack(() => offer));
   const o = $derived(entry.offers[pick] ?? entry.offers[0]);
-  let language = $state("");
+  let language = $state("English");
   let dir = $state("");
   let install = $state(true);
   let busy = $state(false);
@@ -32,7 +32,7 @@
   });
   // A language the newly picked version doesn't have goes back to the default.
   $effect(() => {
-    if (language && !(o.languages ?? []).includes(language)) language = "";
+    if (o.languages?.length && !o.languages.some((l) => l.toLowerCase() === language.toLowerCase())) language = o.languages.find((l) => l.toLowerCase() === "english") ?? o.languages[0];
   });
 
   async function choose() {
@@ -68,7 +68,7 @@
         <span class="label">Version</span>
         <select bind:value={pick}>
           {#each entry.offers as x, i (i)}<option value={i}
-              >{x.version || "Version not given"} · {x.feedName}{i === (entry.recommended?.offer ?? 0) ? " (recommended)" : i === 0 ? " (newest)" : ""}</option
+              >{x.version || "Version not given"} · {x.feedName}{i === (entry.recommended?.offer ?? 0) ? " (recommended)" : ""}</option
             >{/each}
         </select>
       </label>
@@ -78,7 +78,7 @@
     <label class="field">
       <span class="label">Language</span>
       <select bind:value={language} disabled={!o.languages?.length}>
-        <option value="">{o.languages?.length ? "The installer's default" : "Not listed by the feed"}</option>
+        {#if !o.languages?.length}<option value="English">English (availability checked after metadata arrives)</option>{/if}
         {#each o.languages ?? [] as l (l)}<option value={l}>{l}</option>{/each}
       </select>
     </label>
@@ -94,7 +94,7 @@
     <Toggle
       checked={install}
       title="Install when it's downloaded"
-      detail="After the safety check, without the installer's questions, and the game is added to your library. Off: it only downloads; install it from Downloads."
+      detail="Installs after checks pass. Off: choose torrent or installer languages in Downloads before installing."
       onchange={(v) => (install = v)}
     />
     {/if}

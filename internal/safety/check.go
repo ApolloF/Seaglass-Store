@@ -17,8 +17,9 @@ type Options struct {
 	SHA256 string // the main file's, as the feed gives it; "" when it doesn't
 	// BlockDetections blocks a download Defender or several VirusTotal
 	// engines flag; off, they're warnings.
-	BlockDetections bool
-	VirusTotal      *VirusTotal // nil when the person gave no key
+	DisablePayloadScanning bool
+	BlockDetections        bool
+	VirusTotal             *VirusTotal // nil when the person gave no key
 
 	// For tests.
 	defender func(context.Context, string) ([]string, error)
@@ -71,29 +72,40 @@ func Check(ctx context.Context, o Options) Report {
 
 	r.Findings = append(r.Findings, checkFiles(o.Root, main)...)
 
-	switch threats, err := o.defender(ctx, o.Root); {
-	case errors.Is(err, ErrNoDefender):
-		add("defender", Warn, "Microsoft Defender isn't available here (another antivirus may have replaced it), so it didn't scan the files.")
-	case err != nil:
-		add("defender", Warn, "Microsoft Defender's scan didn't finish: %v", err)
-	case len(threats) > 0:
-		add("defender", detect, "Microsoft Defender found: %s.", strings.Join(threats, ", "))
-	default:
-		add("defender", OK, "Microsoft Defender found nothing.")
-	}
-
-	if o.VirusTotal != nil && r.SHA256 != "" {
-		switch v, err := o.VirusTotal.lookup(ctx, r.SHA256); {
+	if o.DisablePayloadScanning {
+		r.PayloadSkipped = true
+		add("defender", Info, "Payload scanning is disabled. Defender and VirusTotal were skipped; integrity and file checks still ran.")
+	} else {
+		switch threats, err := o.defender(ctx, o.Root); {
+		case errors.Is(err, ErrNoDefender):
+			add("defender", Warn, "Microsoft Defender isn't available here (another antivirus may have replaced it), so it didn't scan the files.")
 		case err != nil:
-			add("virustotal", Warn, "VirusTotal couldn't be asked: %v", err)
-		case !v.Known:
-			add("virustotal", Info, "VirusTotal hasn't seen %s before.", r.Main)
-		case v.Malicious >= 3:
-			add("virustotal", detect, "%d of %d VirusTotal engines call %s malicious.", v.Malicious, v.Engines, r.Main)
-		case v.Malicious > 0 || v.Suspicious > 0:
-			add("virustotal", Warn, "%d of %d VirusTotal engines flag %s (often a false alarm with few engines).", v.Malicious+v.Suspicious, v.Engines, r.Main)
+			add("defender", Warn, "Microsoft Defender's scan didn't finish: %v", err)
+		case len(threats) > 0:
+			level := detect
+			if repackOnly(threats) {
+				level = Warn
+			}
+			add("defender", level, "Microsoft Defender found: %s. HackTool and PUA labels can occur in repacks; review them before installing.", strings.Join(threats, ", "))
 		default:
-			add("virustotal", OK, "None of %d VirusTotal engines flag %s.", v.Engines, r.Main)
+			add("defender", OK, "Microsoft Defender found nothing.")
+		}
+
+		if o.VirusTotal != nil && r.SHA256 != "" {
+			switch v, err := o.VirusTotal.lookup(ctx, r.SHA256); {
+			case err != nil:
+				add("virustotal", Warn, "VirusTotal couldn't be asked: %v", err)
+			case !v.Known:
+				add("virustotal", Info, "VirusTotal hasn't seen %s before.", r.Main)
+			case v.Malicious >= 3 && v.RepackOnly:
+				add("virustotal", Warn, "%d of %d engines flag repack-related tools. This does not establish a false positive; review the report.", v.Malicious, v.Engines)
+			case v.Malicious >= 3:
+				add("virustotal", detect, "%d of %d VirusTotal engines call %s malicious.", v.Malicious, v.Engines, r.Main)
+			case v.Malicious > 0 || v.Suspicious > 0:
+				add("virustotal", Warn, "%d of %d VirusTotal engines flag %s (often a false alarm with few engines).", v.Malicious+v.Suspicious, v.Engines, r.Main)
+			default:
+				add("virustotal", OK, "None of %d VirusTotal engines flag %s.", v.Engines, r.Main)
+			}
 		}
 	}
 	r.Verdict = verdict(r.Findings)

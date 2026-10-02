@@ -19,6 +19,7 @@ import (
 
 // Request is one install.
 type Request struct {
+	Ask      bool // show the installer for language/component selection
 	Kind     Kind
 	File     string // the installer or archive
 	Root     string // the download (copied as it is for Portable)
@@ -37,8 +38,11 @@ type Command struct {
 func command(r Request) (Command, error) {
 	switch r.Kind {
 	case Inno:
-		args := []string{"/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/DIR=" + quote(r.Dir)}
-		if r.Language != "" {
+		args := []string{"/NORESTART", "/SP-", "/DIR=" + quote(r.Dir)}
+		if !r.Ask {
+			args = append([]string{"/VERYSILENT", "/SUPPRESSMSGBOXES"}, args...)
+		}
+		if r.Language != "" && !r.Ask {
 			args = append(args, "/LANG="+r.Language)
 		}
 		if r.Log != "" {
@@ -47,9 +51,17 @@ func command(r Request) (Command, error) {
 		return Command{r.File, strings.Join(args, " ")}, nil
 	case NSIS:
 		// /D= must come last and unquoted, spaces and all: NSIS reads the rest of the line.
-		return Command{r.File, "/S /D=" + r.Dir}, nil
+		args := "/D=" + r.Dir
+		if !r.Ask {
+			args = "/S " + args
+		}
+		return Command{r.File, args}, nil
 	case MSI:
-		args := []string{"/i", quote(r.File), "/qn", "/norestart", "INSTALLDIR=" + quote(r.Dir), "TARGETDIR=" + quote(r.Dir), "INSTALLLOCATION=" + quote(r.Dir)}
+		mode := "/qn"
+		if r.Ask {
+			mode = "/qf"
+		}
+		args := []string{"/i", quote(r.File), mode, "/norestart", "INSTALLDIR=" + quote(r.Dir), "TARGETDIR=" + quote(r.Dir), "INSTALLLOCATION=" + quote(r.Dir)}
 		if r.Log != "" {
 			args = append(args, "/l*v", quote(r.Log))
 		}

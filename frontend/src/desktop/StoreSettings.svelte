@@ -1,6 +1,7 @@
 <script lang="ts">
   // Settings → Experimental, with the store on: where downloads go, the
   // download engine and how it connects.
+  import SourceBrowser from "./SourceBrowser.svelte";
   import Icon from "../components/Icon.svelte";
   import Toggle from "../components/Toggle.svelte";
   import { api } from "../lib/api";
@@ -185,8 +186,15 @@
   </div>
 
   <div class="group">
+    <span class="glabel">Source discovery</span>
+    <Toggle checked={st.privateSources} title="Browse repack sources" detail="Search FitGirl and DODI metadata on demand. Review a resolved torrent before adding it to the catalog. No payload is downloaded by searching." onchange={(v) => setStore({ privateSources: v })} />
+    {#if st.privateSources}<SourceBrowser />{/if}
+  </div>
+
+  <div class="group">
     <span class="glabel">Safety checks</span>
     <p class="hint">Before anything in a download runs, Seaglass compares the installer with the feed's checksum, looks at what's inside, and has Microsoft Defender scan it. These checks catch known problems; they can't prove a download is safe.</p>
+    <Toggle checked={!st.disablePayloadScanning} title="Scan downloaded payloads" detail="Runs Defender and optional VirusTotal checks. Off: only integrity and file checks run. Windows antivirus settings stay as configured." onchange={(v) => setStore({ disablePayloadScanning: !v })} />
     <Toggle checked={st.blockDetections} title="Block what Defender or VirusTotal flags" detail="Blocked downloads aren't installed unless you type their name to insist. Off: detections are warnings you decide on." onchange={(v) => setStore({ blockDetections: v })} />
     {#if hasVT}
       <div class="pathrow">

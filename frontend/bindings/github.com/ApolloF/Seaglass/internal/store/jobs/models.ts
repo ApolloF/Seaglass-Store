@@ -78,6 +78,11 @@ export interface Job {
      * the game's own folder
      */
     "installDir"?: string;
+    "languages"?: string[] | null;
+    "pendingLanguages"?: boolean;
+    "languageApplied"?: boolean;
+    "setupLanguage"?: string;
+    "askInstaller"?: boolean;
 
     /**
      * as the feed names it; "" for the installer's default

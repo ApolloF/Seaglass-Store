@@ -120,7 +120,7 @@ func TestCheckFiles(t *testing.T) {
 	}
 }
 
-func TestZipBomb(t *testing.T) {
+func TestHighlyCompressedArchiveNeedsReview(t *testing.T) {
 	dir := t.TempDir()
 	f, err := os.Create(filepath.Join(dir, "data.zip"))
 	if err != nil {
@@ -134,8 +134,8 @@ func TestZipBomb(t *testing.T) {
 	}
 	zw.Close()
 	f.Close()
-	if r := check(t, dir, Options{}); r.Verdict != Blocked {
-		t.Errorf("zip bomb: %+v", r.Findings)
+	if r := check(t, dir, Options{}); r.Verdict != Caution {
+        t.Errorf("high compression should warn without asserting malware: %+v", r.Findings)
 	}
 }
 

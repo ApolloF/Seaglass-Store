@@ -13,7 +13,7 @@ import (
 // Limits for what a download may hold before it's called out.
 const (
 	maxFiles = 200_000
-	maxRatio = 200      // uncompressed to compressed, inside a zip
+	maxRatio = 200     // uncompressed to compressed, inside a zip
 	maxUnzip = 1 << 41 // 2 TB unpacked: no game is that large
 )
 
@@ -85,8 +85,11 @@ func checkZip(p, rel string) []Finding {
 		packed += f.CompressedSize64
 		unpacked += f.UncompressedSize64
 	}
-	if unpacked > maxUnzip || (packed > 0 && unpacked/packed > maxRatio && unpacked > 1<<30) {
-		return []Finding{{"files", Block, fmt.Sprintf("%s unpacks to %d GB from %d MB: built to fill the disk.", rel, unpacked>>30, packed>>20)}}
+	if unpacked > maxUnzip {
+		return []Finding{{"files", Block, fmt.Sprintf("%s exceeds the 2 TB unpacking limit.", rel)}}
+	}
+	if packed > 0 && unpacked/packed > maxRatio && unpacked > 1<<30 {
+		return []Finding{{"files", Warn, fmt.Sprintf("%s expands to %d GB from %d MB. High compression can occur in repacks; check free disk space before installing.", rel, unpacked>>30, packed>>20)}}
 	}
 	return nil
 }

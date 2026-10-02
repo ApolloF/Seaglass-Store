@@ -93,11 +93,16 @@ type Job struct {
 	Version  string `json:"version,omitempty"`
 	FeedName string `json:"feedName,omitempty"`
 	// How to install it, chosen before downloading.
-	InstallDir  string `json:"installDir,omitempty"`  // the game's own folder
-	Language    string `json:"language,omitempty"`    // as the feed names it; "" for the installer's default
-	AutoInstall bool   `json:"autoInstall,omitempty"` // install as soon as it's downloaded and checked
-	SHA256      string `json:"sha256,omitempty"`      // the installer's, from the feed
-	Replaces    string `json:"replaces,omitempty"`    // the installed download this one updates, in its folder
+	InstallDir       string   `json:"installDir,omitempty"` // the game's own folder
+	Languages        []string `json:"languages,omitempty"`
+	PendingLanguages bool     `json:"pendingLanguages,omitempty"`
+	LanguageApplied  bool     `json:"languageApplied,omitempty"`
+	SetupLanguage    string   `json:"setupLanguage,omitempty"`
+	AskInstaller     bool     `json:"askInstaller,omitempty"`
+	Language         string   `json:"language,omitempty"`    // as the feed names it; "" for the installer's default
+	AutoInstall      bool     `json:"autoInstall,omitempty"` // install as soon as it's downloaded and checked
+	SHA256           string   `json:"sha256,omitempty"`      // the installer's, from the feed
+	Replaces         string   `json:"replaces,omitempty"`    // the installed download this one updates, in its folder
 	// After downloading.
 	Safety      *safety.Report `json:"safety,omitempty"`
 	Installer   string         `json:"installer,omitempty"`   // the kind of installer found: inno, nsis, msi, archive, portable
@@ -133,11 +138,12 @@ func (j Job) Active() bool {
 func (j *Job) Sync(t *torrent.Torrent, now time.Time) bool {
 	before := *j
 	if t == nil {
+		j.LanguageApplied = false
 		j.Engine, j.DownSpeed, j.UpSpeed, j.Seeds, j.Peers, j.ETA, j.Seeding = "", 0, 0, 0, 0, 0, false
 		if j.State == Downloading {
 			j.State = Queued // lost from the engine (its profile was reset): add it again
 		}
-		return j.State != before.State
+		return j.State != before.State || j.LanguageApplied != before.LanguageApplied
 	}
 	if j.pastDownload() {
 		j.Hash, j.Name, j.Engine = t.Hash, t.Name, t.State
@@ -150,7 +156,7 @@ func (j *Job) Sync(t *torrent.Torrent, now time.Time) bool {
 	j.Seeding = t.State == torrent.Seeding
 	switch t.State {
 	case torrent.Seeding, torrent.Complete:
-		if j.State != Downloaded {
+		if j.State != Downloaded && !j.PendingLanguages {
 			j.State, j.Error, j.Finished = Downloaded, "", now.Unix()
 		}
 	case torrent.Failed:
@@ -224,7 +230,7 @@ func (s *Store) Add(j Job, now time.Time) (Job, error) {
 	}
 	j = Job{ID: "sg-" + hex.EncodeToString(b), Title: j.Title, Source: j.Source, SavePath: j.SavePath,
 		GameKey: j.GameKey, Version: j.Version, FeedName: j.FeedName, Installer: j.Installer, Replaces: j.Replaces,
-		InstallDir: j.InstallDir, Language: j.Language, AutoInstall: j.AutoInstall, SHA256: j.SHA256, State: Queued, Created: now.Unix()}
+		InstallDir: j.InstallDir, Language: j.Language, Languages: slices.Clone(j.Languages), SetupLanguage: j.SetupLanguage, AskInstaller: j.AskInstaller, AutoInstall: j.AutoInstall, SHA256: j.SHA256, State: Queued, Created: now.Unix()}
 	s.mu.Lock()
 	s.jobs = append(s.jobs, j)
 	s.mu.Unlock()

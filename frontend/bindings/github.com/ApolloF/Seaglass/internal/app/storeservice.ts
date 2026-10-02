@@ -22,6 +22,9 @@ import * as catalog$0 from "../store/catalog/models.js";
 import * as jobs$0 from "../store/jobs/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as sources$0 from "../store/sources/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as torrent$0 from "../torrent/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -64,6 +67,13 @@ export function AllowDownload(id: string, confirm: string): $CancellablePromise<
  */
 export function Art(keys: string[] | null): $CancellablePromise<$models.StoreArt[] | null> {
     return $Call.ByID(1109411426, keys);
+}
+
+/**
+ * AttachReleaseTorrent validates user-selected metadata for an unresolved release.
+ */
+export function AttachReleaseTorrent(source: string, id: string): $CancellablePromise<sources$0.Entry> {
+    return $Call.ByID(2977056769, source, id);
 }
 
 /**
@@ -116,11 +126,22 @@ export function ChooseQBittorrent(): $CancellablePromise<settings$0.Settings> {
 }
 
 /**
+ * DiscoverReleases fetches metadata on demand; it never queues payload downloads.
+ */
+export function DiscoverReleases(source: string, query: string, resolve: boolean): $CancellablePromise<sources$0.Snapshot> {
+    return $Call.ByID(2634802980, source, query, resolve);
+}
+
+/**
  * DownloadAction pauses, resumes (or retries) or removes a download.
  * Removing deletes its downloaded files too when deleteFiles is set.
  */
 export function DownloadAction(id: string, action: jobs$0.Action, deleteFiles: boolean): $CancellablePromise<void> {
     return $Call.ByID(2906851187, id, action, deleteFiles);
+}
+
+export function DownloadLanguages(id: string): $CancellablePromise<$models.DownloadLanguageOptions> {
+    return $Call.ByID(1080277804, id);
 }
 
 /**
@@ -217,6 +238,13 @@ export function OpenInSandbox(id: string): $CancellablePromise<void> {
 }
 
 /**
+ * OpenReleasePage hands an unresolved release to the person's browser.
+ */
+export function OpenReleasePage(source: string, id: string): $CancellablePromise<void> {
+    return $Call.ByID(1444859129, source, id);
+}
+
+/**
  * RefreshFeeds fetches every enabled feed now.
  */
 export function RefreshFeeds(): $CancellablePromise<$models.FeedInfo[] | null> {
@@ -231,10 +259,25 @@ export function RemoveFeed(url: string): $CancellablePromise<settings$0.Settings
 }
 
 /**
+ * ReviewRelease adds only a resolved, explicitly reviewed offer to the catalog.
+ */
+export function ReviewRelease(source: string, id: string, transport: number): $CancellablePromise<string> {
+    return $Call.ByID(2612472346, source, id, transport);
+}
+
+/**
  * SandboxAvailable reports whether Windows Sandbox is turned on.
  */
 export function SandboxAvailable(): $CancellablePromise<boolean> {
     return $Call.ByID(3185661807);
+}
+
+/**
+ * SetDownloadLanguages changes known optional packs and keeps manual installation
+ * selected, so newly requested files can finish and be checked first.
+ */
+export function SetDownloadLanguages(id: string, language: string, setupLanguage: string, ask: boolean): $CancellablePromise<jobs$0.Job> {
+    return $Call.ByID(3284740262, id, language, setupLanguage, ask);
 }
 
 /**

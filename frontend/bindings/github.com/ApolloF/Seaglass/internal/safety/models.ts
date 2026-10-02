@@ -47,6 +47,7 @@ export enum Level {
  * Report is everything the checks found.
  */
 export interface Report {
+    "payloadSkipped"?: boolean;
     "verdict": Verdict;
     "findings": Finding[] | null;
 

@@ -202,6 +202,16 @@ export interface StoreSettings {
     "pauseWhilePlaying": boolean;
 
     /**
+     * per PC; integrity checks still run
+     */
+    "disablePayloadScanning": boolean;
+
+    /**
+     * opt-in source discovery
+     */
+    "privateSources": boolean;
+
+    /**
      * a download Defender or VirusTotal flags isn't installed unless the person insists
      */
     "blockDetections": boolean;

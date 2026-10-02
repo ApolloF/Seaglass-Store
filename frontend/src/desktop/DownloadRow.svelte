@@ -1,6 +1,7 @@
 <script lang="ts">
   // One download: progress, what the safety checks found, and what can be
   // done with it now.
+  import DownloadLanguages from "./DownloadLanguages.svelte";
   import Icon, { type IconName } from "../components/Icon.svelte";
   import { api } from "../lib/api";
   import { progress, statusLine } from "../lib/downloads";
@@ -14,6 +15,7 @@
   let confirm = $state<"remove" | "uninstall" | "allow" | null>(null);
   let typed = $state("");
   let details = $state(false);
+  let languagesOpen = $state(false);
 
   async function act(action: DownloadAction, deleteFiles = false) {
     confirm = null;
@@ -56,7 +58,7 @@
 
     {#if verdict}
       <button type="button" class="verdict {verdict}" aria-expanded={details} onclick={() => (details = !details)}>
-        <Icon name={badge[verdict][1]} size={14} stroke={2.4} />{badge[verdict][0]}
+        <Icon name={badge[verdict][1]} size={14} stroke={2.4} />{d.safety?.payloadSkipped ? "Scan skipped" : badge[verdict][0]}
       </button>
     {/if}
 
@@ -75,6 +77,9 @@
       </div>
     {:else}
       <div class="actions">
+        {#if !working && d.state !== "installed"}
+          <button type="button" class="btn" onclick={() => languagesOpen = true}>Languages</button>
+        {/if}
         {#if d.state === "downloaded" && d.safety}
           <button type="button" class="btn primary" onclick={() => act("install")}><Icon name="download" size={16} />Install</button>
         {:else if d.state === "blocked"}
@@ -126,6 +131,7 @@
     {/if}
   {/if}
 </li>
+{#if languagesOpen}<DownloadLanguages download={d} onclose={() => languagesOpen = false} />{/if}
 
 <style>
   .item {

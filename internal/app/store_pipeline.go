@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -104,7 +105,7 @@ func (p *pipeline) scan(id string) {
 	}
 	p.update(id, func(j *jobs.Job) { j.State, j.Error = jobs.Scanning, "" })
 	cfg := p.st.c.Settings.Get().Store
-	o := safety.Options{Root: root(j), SHA256: j.SHA256, BlockDetections: cfg.BlockDetections}
+	o := safety.Options{Root: root(j), SHA256: j.SHA256, BlockDetections: cfg.BlockDetections, DisablePayloadScanning: cfg.DisablePayloadScanning}
 	if key := platform.LoadSecret(virusTotalSecret); key != "" {
 		o.VirusTotal = &safety.VirusTotal{Key: key}
 	}
@@ -166,9 +167,19 @@ func (p *pipeline) install(id string) {
 	}
 	kind, file := installer.Detect(rt, main, j.Installer)
 	req := installer.Request{Kind: kind, File: file, Root: rt, Dir: j.InstallDir,
-		Log: filepath.Join(platform.CacheDir("store", "logs"), j.ID+".log")}
-	if kind == installer.Inno && j.Language != "" {
-		req.Language = installer.InnoLanguage(j.Language)
+		Log: filepath.Join(platform.CacheDir("store", "logs"), j.ID+".log"), Ask: j.AskInstaller}
+	if kind == installer.Inno && !j.AskInstaller {
+		req.Language = j.SetupLanguage
+		if req.Language == "" {
+			if tool, err := exec.LookPath("innoextract.exe"); err == nil {
+				languages, err := installer.InnoLanguages(p.st.c.ctx, tool, file)
+				if err != nil {
+					logx.Printf("store: installer language inspection: %v", err)
+				} else if _, ok := languages["english"]; ok {
+					req.Language = "english"
+				}
+			}
+		}
 	}
 	p.update(id, func(j *jobs.Job) {
 		j.State, j.Error, j.Installer, j.InstallDone, j.Stalled = jobs.Installing, "", string(kind), 0, false

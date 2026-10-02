@@ -49,6 +49,7 @@ export function statusLine(d: Download, engine: EngineStatus | null): string {
     case "downloaded":
       if (!d.safety) return `Downloaded · ${bytes(d.size)}${sharing}`;
       if (d.safety.verdict === "warn" && !d.safety.overridden) return `Downloaded · the safety checks have warnings${sharing}`;
+      if (d.safety.payloadSkipped) return `Downloaded · payload scan skipped · ready to install${sharing}`;
       return `Downloaded and checked · ready to install${sharing}`;
   }
   if (engine?.held) return ["Paused until you resume all downloads", size].filter(Boolean).join(" · ");

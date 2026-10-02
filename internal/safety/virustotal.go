@@ -20,6 +20,7 @@ type VirusTotal struct {
 
 // vtResult is what VirusTotal's engines said about one file.
 type vtResult struct {
+	RepackOnly bool
 	Known      bool
 	Malicious  int
 	Suspicious int
@@ -61,7 +62,11 @@ func (v VirusTotal) lookup(ctx context.Context, sha string) (vtResult, error) {
 	var body struct {
 		Data struct {
 			Attributes struct {
-				Stats map[string]int `json:"last_analysis_stats"`
+				Stats   map[string]int `json:"last_analysis_stats"`
+				Results map[string]struct {
+					Category string `json:"category"`
+					Result   string `json:"result"`
+				} `json:"last_analysis_results"`
 			} `json:"attributes"`
 		} `json:"data"`
 	}
@@ -73,5 +78,12 @@ func (v VirusTotal) lookup(ctx context.Context, sha string) (vtResult, error) {
 	for _, n := range s {
 		r.Engines += n
 	}
+	var labels []string
+	for _, result := range body.Data.Attributes.Results {
+		if result.Category == "malicious" || result.Category == "suspicious" {
+			labels = append(labels, result.Result)
+		}
+	}
+	r.RepackOnly = len(labels) >= r.Malicious+r.Suspicious && repackOnly(labels)
 	return r, nil
 }

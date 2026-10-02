@@ -9,9 +9,9 @@ An opt-in store, turned on per PC under *Settings → Experimental → Store*. W
    - Items are grouped into games, matched to the game database when the match is sure (`internal/store/catalog`).
    - Art and descriptions come from the library's own sources, for the games on screen first (`internal/app/store_art.go`).
 2. **Choice.**
-   - The game page lists every version, with one recommended (`catalog.Recommend`). The recommended one is the newest, unless another has the person's language, comes from a feed they trust more, or the newest one's feed had downloads blocked.
+   - The game page lists every version, with one recommended (`catalog.Recommend`). A newest-version claim requires comparable game-version evidence. Recommendations also consider language, feed trust and prior blocks. Mixed/unknown version systems need review and cannot trigger automatic update replacement.
    - Versions with a checksum, or an installer that runs without questions, get a small bonus.
-   - The install dialog asks for the version, the installer language, the game's folder (new or empty) and whether to install straight away.
+   - The install dialog asks for the version, the requested game language (English by default), the game's folder (new or empty) and whether to install straight away.
 3. **Download** (`internal/torrent`, `internal/store/jobs`).
    - Seaglass runs the installed qBittorrent 5 hidden, as a sidecar with a profile of its own (`%LOCALAPPDATA%\Seaglass\store\qbittorrent`).
    - Its Web UI listens on a random localhost port, with a password made up at every start. It only starts while something needs it and stops after two idle minutes.
@@ -68,3 +68,5 @@ They catch what they know: a file that isn't what the feed listed, and what Defe
   - `WL_REAL_DEFENDER=1 go test -run RealDefender -v ./internal/safety`
 - `tools/harness/store.mjs` runs the whole path in the real app against a feed and web seed served by the script itself.
 - Not yet covered by an automated run on a real installer: Inno Setup and NSIS silent installs (their command lines are unit-tested).
+
+Release comparison, repack findings, payload scan settings and torrent/installer languages are documented in [store-release-selection.md](store-release-selection.md). Source discovery is documented in [private-catalog.md](private-catalog.md).

@@ -1,7 +1,7 @@
 import { Events, Window } from "@wailsio/runtime";
 import { AccountsService, AchievementsService, LaunchService, LibraryService, PadService, ProfileService, SavesService, SettingsService, StoreService, UpdateService } from "../../bindings/github.com/ApolloF/Seaglass/internal/app";
 import type { Api } from "./api";
-import type { Accounts, Achievements, AppInfo, ArtChoice, CatalogEntry, CatalogPage, Download, StoreArt, EngineStatus, FeedInfo, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
+import type { SourceSnapshot, SourceRelease, DownloadLanguageOptions, Accounts, Achievements, AppInfo, ArtChoice, CatalogEntry, CatalogPage, Download, StoreArt, EngineStatus, FeedInfo, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
 
 // The generated bindings return the Go structs; their JSON matches ./types.
 const g = (p: Promise<unknown>) => p as Promise<Game>;
@@ -59,6 +59,12 @@ export const realApi: Api = {
     getQBittorrent: () => StoreService.GetQBittorrent(),
     downloadsFolder: () => StoreService.DownloadsFolder(),
     chooseDownloadsFolder: () => StoreService.ChooseDownloadsFolder() as Promise<unknown> as Promise<Settings>,
+    downloadLanguages: (id) => StoreService.DownloadLanguages(id) as Promise<unknown> as Promise<DownloadLanguageOptions>,
+    setDownloadLanguages: (id, language, setupLanguage, ask) => StoreService.SetDownloadLanguages(id, language, setupLanguage, ask) as Promise<unknown> as Promise<Download>,
+    discoverReleases: (source, query, resolve) => StoreService.DiscoverReleases(source, query, resolve) as Promise<unknown> as Promise<SourceSnapshot>,
+    attachReleaseTorrent: (source, id) => StoreService.AttachReleaseTorrent(source, id) as Promise<unknown> as Promise<SourceRelease>,
+    openReleasePage: (source, id) => StoreService.OpenReleasePage(source, id),
+    reviewRelease: (source, id, transport) => StoreService.ReviewRelease(source, id, transport),
     downloads: () => StoreService.Downloads().then((d) => (d ?? []) as unknown as Download[]),
     addDownload: (src, title) => StoreService.AddDownload(src, title) as Promise<unknown> as Promise<Download>,
     action: (id, action, del) => StoreService.DownloadAction(id, action as never, del),
