@@ -45,6 +45,13 @@ export interface AppInfo {
     "crashedLastTime": boolean;
 }
 
+export interface DownloadLanguageOptions {
+    "game": string[] | null;
+    "installer": InstallerLanguage[] | null;
+    "torrent": boolean;
+    "note": string;
+}
+
 /**
  * EngineStatus is the download engine as the interface shows it.
  */
@@ -125,6 +132,11 @@ export interface InstallOptions {
      * folder (Dir is ignored).
      */
     "update": boolean;
+}
+
+export interface InstallerLanguage {
+    "id": string;
+    "name": string;
 }
 
 /**

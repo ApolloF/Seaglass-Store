@@ -1,7 +1,7 @@
 // The frontend's one door to the Go side. In mock mode (`npm run dev:mock`)
 // the same interface is served by made-up data, so the interface can be
 // built and checked in a normal browser. Vite drops the unused one.
-import type { Accounts, Achievements, AppInfo, ArtChoice, ArtKind, CatalogEntry, CatalogPage, CatalogQuery, Download, InstallOptions, StoreArt, DownloadAction, EngineStatus, FeedInfo, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
+import type { SourceSnapshot, SourceRelease, DownloadLanguageOptions, Accounts, Achievements, AppInfo, ArtChoice, ArtKind, CatalogEntry, CatalogPage, CatalogQuery, Download, InstallOptions, StoreArt, DownloadAction, EngineStatus, FeedInfo, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
 import { realApi } from "./api.real";
 import { mockApi } from "./api.mock";
 
@@ -147,6 +147,12 @@ export interface Api {
     downloadsFolder(): Promise<string>;
     chooseDownloadsFolder(): Promise<Settings>;
     downloads(): Promise<Download[]>;
+    downloadLanguages(id: string): Promise<DownloadLanguageOptions>;
+    setDownloadLanguages(id: string, language: string, setupLanguage: string, ask: boolean): Promise<Download>;
+    discoverReleases(source: string, query: string, resolve: boolean): Promise<SourceSnapshot>;
+    attachReleaseTorrent(source: string, id: string): Promise<SourceRelease>;
+    openReleasePage(source: string, id: string): Promise<void>;
+    reviewRelease(source: string, id: string, transport: number): Promise<string>;
     /** Queues a magnet link or a link to a .torrent file; title "" uses the link's own name. */
     addDownload(source: string, title: string): Promise<Download>;
     action(id: string, action: DownloadAction, deleteFiles: boolean): Promise<void>;

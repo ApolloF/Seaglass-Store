@@ -27,9 +27,11 @@ export {
 export type {
     Accounts,
     AppInfo,
+    DownloadLanguageOptions,
     EngineStatus,
     FeedInfo,
     InstallOptions,
+    InstallerLanguage,
     MetaState,
     PadAction,
     Profile,

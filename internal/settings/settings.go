@@ -71,15 +71,17 @@ type Settings struct {
 
 // StoreSettings are the experimental store's.
 type StoreSettings struct {
-	QBittorrent       string          `json:"qbittorrent"`       // qbittorrent.exe; "" uses the installed one
-	Downloads         string          `json:"downloads"`         // where downloads go; "" is Downloads\Seaglass in the user's folder
-	Games             string          `json:"games"`             // where games are installed; "" is Games in the user's folder
-	KeepDownloads     bool            `json:"keepDownloads"`     // keep a download (and seed it) after its game is installed
-	PauseWhilePlaying bool            `json:"pauseWhilePlaying"` // downloads wait while a game runs
-	BlockDetections   bool            `json:"blockDetections"`   // a download Defender or VirusTotal flags isn't installed unless the person insists
-	Language          string          `json:"language"`          // the language games are recommended in; "" for any
-	Network           torrent.Network `json:"network"`
-	Feeds             []FeedSource    `json:"feeds"` // catalogs, in the order they were added
+	QBittorrent            string          `json:"qbittorrent"`            // qbittorrent.exe; "" uses the installed one
+	Downloads              string          `json:"downloads"`              // where downloads go; "" is Downloads\Seaglass in the user's folder
+	Games                  string          `json:"games"`                  // where games are installed; "" is Games in the user's folder
+	KeepDownloads          bool            `json:"keepDownloads"`          // keep a download (and seed it) after its game is installed
+	PauseWhilePlaying      bool            `json:"pauseWhilePlaying"`      // downloads wait while a game runs
+	DisablePayloadScanning bool            `json:"disablePayloadScanning"` // per PC; integrity checks still run
+	PrivateSources         bool            `json:"privateSources"`         // opt-in source discovery
+	BlockDetections        bool            `json:"blockDetections"`        // a download Defender or VirusTotal flags isn't installed unless the person insists
+	Language               string          `json:"language"`               // the language games are recommended in; "" for any
+	Network                torrent.Network `json:"network"`
+	Feeds                  []FeedSource    `json:"feeds"` // catalogs, in the order they were added
 }
 
 // FeedSource is a catalog feed the person added.
@@ -106,7 +108,7 @@ func Defaults() Settings {
 		SyncSavesBefore: true, BackupSavesAfter: true, SyncWait: 60, StartSyncer: true,
 		SyncProfile: true, SameSettings: true,
 		AutoUpdate: true, Achievements: true,
-		Store: StoreSettings{PauseWhilePlaying: true, BlockDetections: true, Network: torrent.DefaultNetwork(), Feeds: []FeedSource{}},
+		Store: StoreSettings{PauseWhilePlaying: true, BlockDetections: true, Language: "English", Network: torrent.DefaultNetwork(), Feeds: []FeedSource{}},
 	}
 }
 

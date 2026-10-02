@@ -131,6 +131,8 @@ export interface StoreSettings {
   keepDownloads: boolean;
   pauseWhilePlaying: boolean;
   /** Defender or VirusTotal detections block an install (else they warn). */
+  disablePayloadScanning: boolean;
+  privateSources: boolean;
   blockDetections: boolean;
   /** The language versions are recommended in; "" for any. */
   language: string;
@@ -264,6 +266,7 @@ export type SafetyLevel = "ok" | "info" | "warn" | "block";
 
 /** What the safety checks found. Mirrors internal/safety.Report. */
 export interface SafetyReport {
+  payloadSkipped?: boolean;
   verdict: "clean" | "warn" | "block";
   findings: { check: string; level: SafetyLevel; text: string }[];
   /** The installer, relative to the download. */
@@ -275,6 +278,17 @@ export interface SafetyReport {
 }
 
 /** One download. Mirrors internal/store/jobs.Job. */
+export interface SourceRelease {
+  id: string; sourceId: string; title: string; rawTitle: string; version?: string; pageUrl: string;
+  releaseKind: string; summaryOnly?: boolean; languageClaim?: string; warnings: string[];
+  transports: { infoHash?: string; torrentName?: string; uri: string }[];
+  references: { url: string; state?: string; reason?: string }[];
+}
+export interface SourceSnapshot { entries: SourceRelease[]; warnings?: string[]; }
+export interface DownloadLanguageOptions {
+  game: string[]; installer: { id: string; name: string }[]; torrent: boolean; note: string;
+}
+
 export interface Download {
   id: string;
   title: string;
@@ -304,6 +318,11 @@ export interface Download {
   installDir?: string;
   language?: string;
   autoInstall?: boolean;
+  languages?: string[];
+  setupLanguage?: string;
+  askInstaller?: boolean;
+  languageApplied?: boolean;
+  pendingLanguages?: boolean;
   sha256?: string;
   safety?: SafetyReport;
   /** inno, nsis, msi, archive, portable or other. */

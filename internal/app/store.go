@@ -174,6 +174,22 @@ func (st *storeState) tick(ctx context.Context) {
 	now := time.Now()
 	for _, j := range all {
 		t := byTag[j.ID]
+		if t != nil {
+			if err := st.verifyPendingLanguages(ctx, eng, j, t); err != nil {
+				_ = eng.Pause(ctx, t.Hash)
+				st.fail(j.ID, err.Error())
+				continue
+			}
+			prepared, err := st.prepareDefaultLanguage(ctx, eng, j, t)
+			if err != nil {
+				_ = eng.Pause(ctx, t.Hash)
+				st.fail(j.ID, err.Error())
+				continue
+			}
+			if prepared {
+				continue
+			} // completion/size snapshot predates new priorities
+		}
 		st.steer(ctx, eng, j, t, playing || held, checkSpace)
 		_, _ = st.jobs.Update(j.ID, func(j *jobs.Job) bool { return j.Sync(t, now) })
 	}
@@ -354,7 +370,7 @@ func (st *storeState) settingsChanged(old, saved settings.Settings) {
 	switch {
 	case !old.ExperimentalStore:
 		go st.c.catalog.refresh(st.c.ctx, false)
-	case !reflect.DeepEqual(old.Store.Feeds, saved.Store.Feeds):
+	case !reflect.DeepEqual(old.Store.Feeds, saved.Store.Feeds) || old.Store.PrivateSources != saved.Store.PrivateSources:
 		go st.c.catalog.rebuild()
 	}
 	if saved.Store.Network != old.Store.Network && st.engineRunning() {

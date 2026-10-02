@@ -1,7 +1,7 @@
 // The experimental store for `npm run dev:mock`: a pretend engine whose
 // downloads move along on their own.
 import type { Api } from "./api";
-import type { CatalogEntry, CatalogOffer, Download, EngineStatus, FeedInfo, Settings, StoreArt, StoreSettings } from "./types";
+import type { CatalogEntry, CatalogOffer, Download, EngineStatus, FeedInfo, Settings, SourceRelease, StoreArt, StoreSettings } from "./types";
 
 export const mockStoreSettings: StoreSettings = {
   qbittorrent: "",
@@ -9,8 +9,10 @@ export const mockStoreSettings: StoreSettings = {
   games: "",
   keepDownloads: false,
   pauseWhilePlaying: true,
+  disablePayloadScanning: false,
+  privateSources: false,
   blockDetections: true,
-  language: "",
+  language: "English",
   network: {
     interface: "",
     address: "",
@@ -88,6 +90,7 @@ const listeners = new Set<(d: Download[]) => void>();
 const engineListeners = new Set<(s: EngineStatus) => void>();
 const copy = <T>(v: T): T => structuredClone(v);
 const changed = () => listeners.forEach((cb) => cb(copy(downloads)));
+const sourcePreviews = new Map<string, SourceRelease>();
 
 if (typeof window !== "undefined") {
   setInterval(() => {
@@ -163,7 +166,7 @@ function annotate(e: CatalogEntry): CatalogEntry {
   let pick = 0;
   if (lang) {
     const i = e.offers.findIndex((o) => o.languages?.some((l) => l.toLowerCase() === lang.toLowerCase()));
-    if (i > 0 && !e.offers[0].languages?.some((l) => l.toLowerCase() === lang.toLowerCase())) pick = i;
+    if (i > 0 && e.offers[0].languages?.length && !e.offers[0].languages?.some((l) => l.toLowerCase() === lang.toLowerCase())) pick = i;
   }
   const why = pick === 0 ? (e.offers.length > 1 ? ["The newest version", "Installs without the installer's questions"] : ["The only version offered"]) : [`Has ${lang}`, `Not the newest (${e.offers[0].version}): it doesn't have ${lang}`];
   const inst = downloads.find((d) => d.gameKey === e.key && d.state === "installed");
@@ -218,6 +221,32 @@ export function mockStore(getSettings: () => Settings, setSettings: (s: Settings
       const s = getSettings();
       setSettings({ ...s, store: { ...s.store, downloads: "D:\\Downloads\\Games" } });
       return copy(getSettings());
+    },
+    async downloadLanguages() { return { game: ["English", "German", "French"], installer: [{ id: "english", name: "English" }, { id: "german", name: "German" }], torrent: true, note: "" }; },
+    async setDownloadLanguages(id, language, setupLanguage, ask) {
+      const index = downloads.findIndex((d) => d.id === id);
+      if (index < 0) throw new Error("download not found");
+      downloads[index] = { ...downloads[index], language, setupLanguage, askInstaller: ask, autoInstall: false };
+      changed(); return copy(downloads[index]);
+    },
+    async discoverReleases(source, query) {
+      if (!getSettings().store.privateSources) throw new Error("private catalog sources are disabled");
+      const release: SourceRelease = { id: "mock-release", sourceId: source, title: query || "Ember Crown", rawTitle: `${query || "Ember Crown"} v1.2`, version: "v1.2", pageUrl: "https://example.com/release", releaseKind: "release", warnings: ["Confirm game identity before adding."], transports: [{ infoHash: "a".repeat(40), uri: "magnet:?xt=urn:btih:" + "a".repeat(40) }], references: [] };
+      sourcePreviews.set(source,release);
+      return { entries: [copy(release)] };
+    },
+    async attachReleaseTorrent() { throw new Error("Manual torrent selection is available in the desktop app."); },
+    async openReleasePage() {},
+    async reviewRelease(source, id, transport) {
+      if (!getSettings().store.privateSources) throw new Error("private catalog sources are disabled");
+      const release = sourcePreviews.get(source);
+      if (!release || release.id !== id || !release.transports[transport]) throw new Error("preview no longer available");
+      const url = source === "fitgirl" ? "https://fitgirl-repacks.site/feed/" : "https://dodi-repacks.site/";
+      feedNames[url] = source === "fitgirl" ? "FitGirl" : "DODI";
+      const added = offer(url, {title: release.title, version:release.version, magnet:release.transports[transport].uri});
+      const existing = catalogEntries.find((e) => e.title === release.title);
+      if (existing) { if (!existing.offers.some((o) => o.magnet === added.magnet)) existing.offers.unshift(added); return existing.key; }
+      const game = entry(release.title,[added]); catalogEntries.push(game); return game.key;
     },
     async downloads() {
       return copy(downloads);
@@ -288,6 +317,7 @@ export function mockStore(getSettings: () => Settings, setSettings: (s: Settings
     },
     async catalog(q) {
       const on = new Set(getSettings().store.feeds.filter((f) => f.enabled).map((f) => f.url));
+      if (getSettings().store.privateSources) { on.add("https://fitgirl-repacks.site/feed/"); on.add("https://dodi-repacks.site/"); }
       let hits = catalogEntries
         .map((e) => ({ ...e, offers: e.offers.filter((o) => on.has(o.feedUrl)) }))
         .filter((e) => e.offers.length && squash(e.title).includes(squash(q.text)))

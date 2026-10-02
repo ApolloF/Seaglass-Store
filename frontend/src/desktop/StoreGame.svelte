@@ -67,7 +67,7 @@
           <li>
             <div class="text">
               <span class="v"
-                >{o.version || "Version not given"}{#if i === rec && entry.offers.length > 1}<span class="newest" title={entry.recommended?.why.join("\n")}>Recommended</span>{:else if i === 0 && entry.offers.length > 1}<span class="newest plain">Newest</span>{/if}</span
+                >{o.version || "Version not given"}{#if i === rec && entry.offers.length > 1}<span class="newest" title={entry.recommended?.why.join("\n")}>Recommended</span>{/if}</span
               >
               <span class="line">{offerLine(o)}</span>
               {#if o.languages?.length}<span class="line">{o.languages.join(", ")}</span>{/if}
@@ -252,10 +252,6 @@
     align-items: center;
     gap: 8px;
     font-weight: 700;
-  }
-  .newest.plain {
-    background: var(--surface-3);
-    color: var(--text-2);
   }
   .why {
     margin: -4px 0 0;

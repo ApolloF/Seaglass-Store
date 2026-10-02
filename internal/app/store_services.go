@@ -162,7 +162,7 @@ func (s *StoreService) AddDownload(source, title string) (jobs.Job, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return jobs.Job{}, err
 	}
-	j, err := s.c.store.jobs.Add(jobs.Job{Title: title, Source: src, SavePath: dir}, time.Now())
+	j, err := s.c.store.jobs.Add(jobs.Job{Title: title, Source: src, SavePath: dir, Language: "English"}, time.Now())
 	if err == nil {
 		s.c.store.wake()
 	}
@@ -464,7 +464,10 @@ func (s *StoreService) DownloadOffer(key string, offer int, opts InstallOptions)
 		return jobs.Job{}, errors.New("that version isn't offered anymore")
 	}
 	o := e.Offers[offer]
-	if opts.Language != "" && !slices.Contains(o.Languages, opts.Language) {
+	if opts.Language == "" {
+		opts.Language = "English"
+	}
+	if len(o.Languages) > 0 && !slices.ContainsFunc(o.Languages, func(l string) bool { return strings.EqualFold(l, opts.Language) }) {
 		return jobs.Job{}, fmt.Errorf("this version doesn't offer %s", opts.Language)
 	}
 	replaces := ""
@@ -472,6 +475,9 @@ func (s *StoreService) DownloadOffer(key string, offer int, opts InstallOptions)
 	case opts.Update:
 		if e.Installed == nil || e.Installed.Dir == "" {
 			return jobs.Job{}, errors.New("the store didn't install this game, so there's nothing to update")
+		}
+		if order, comparable := catalog.CompareReleases(o.Version, e.Installed.Version); !comparable || order <= 0 {
+			return jobs.Job{}, errors.New("this release is not a confirmed newer game version; choose a separate installation")
 		}
 		opts.Dir, opts.Install, replaces = e.Installed.Dir, true, e.Installed.Download
 	case opts.Dir == "":
@@ -499,7 +505,7 @@ func (s *StoreService) DownloadOffer(key string, offer int, opts InstallOptions)
 		title += " " + o.Version
 	}
 	j, err := s.c.store.jobs.Add(jobs.Job{Title: title, Source: o.Source(), SavePath: dir, GameKey: e.Key, Version: o.Version, FeedName: o.FeedName,
-		InstallDir: filepath.Clean(opts.Dir), Language: opts.Language, AutoInstall: opts.Install, SHA256: o.SHA256, Installer: o.InstallerType, Replaces: replaces}, time.Now())
+		InstallDir: filepath.Clean(opts.Dir), Language: opts.Language, Languages: slices.Clone(o.Languages), AutoInstall: opts.Install, SHA256: o.SHA256, Installer: o.InstallerType, Replaces: replaces}, time.Now())
 	if err == nil {
 		s.c.store.wake()
 	}

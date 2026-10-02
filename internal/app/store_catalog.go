@@ -17,6 +17,7 @@ import (
 	"github.com/ApolloF/Seaglass/internal/store/catalog"
 	"github.com/ApolloF/Seaglass/internal/store/feed"
 	"github.com/ApolloF/Seaglass/internal/store/jobs"
+	"github.com/ApolloF/Seaglass/internal/store/sources"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -38,11 +39,12 @@ type FeedInfo struct {
 
 // catalogState holds the catalog built from the feeds the person added.
 type catalogState struct {
-	c       *Core
-	cache   feed.Cache
-	fetchMu sync.Mutex // one round of fetching at a time
-	mu      sync.RWMutex
-	entries []catalog.Entry
+	c        *Core
+	cache    feed.Cache
+	fetchMu  sync.Mutex // one round of fetching at a time
+	mu       sync.RWMutex
+	entries  []catalog.Entry
+	previews map[string]sources.Snapshot
 }
 
 func newCatalogState(c *Core) *catalogState {
@@ -92,7 +94,7 @@ func (cs *catalogState) refresh(ctx context.Context, all bool) {
 
 // rebuild makes the catalog from the enabled feeds' cached copies.
 func (cs *catalogState) rebuild() {
-	var sources []catalog.Source
+	sources := cs.reviewedSources()
 	for _, f := range cs.c.Settings.Get().Store.Feeds {
 		if !f.Enabled {
 			continue
@@ -154,7 +156,7 @@ func (cs *catalogState) annotator() func(*catalog.Entry) {
 			p.Blocked[j.FeedName]++
 		}
 		if j.State == jobs.Installed && j.GameKey != "" {
-			if old, ok := installed[j.GameKey]; !ok || catalog.CompareVersions(j.Version, old.Version) > 0 {
+			if old, ok := installed[j.GameKey]; !ok || newerInstalled(j.Version, old.Version) {
 				installed[j.GameKey] = catalog.Installed{Download: j.ID, Version: j.Version, Dir: j.InstallDir}
 			}
 		}
@@ -163,7 +165,20 @@ func (cs *catalogState) annotator() func(*catalog.Entry) {
 		r := catalog.Recommend(*e, p)
 		e.Recommended = &r
 		if in, ok := installed[e.Key]; ok {
-			in.Update = catalog.CompareVersions(e.Version, in.Version) > 0
+			var eligible []catalog.Offer
+			var indexes []int
+			for i, offer := range e.Offers {
+				if order, comparable := catalog.CompareReleases(offer.Version, in.Version); comparable && order > 0 {
+					eligible = append(eligible, offer)
+					indexes = append(indexes, i)
+				}
+			}
+			in.Update = len(eligible) > 0
+			if in.Update {
+				newer := catalog.Recommend(catalog.Entry{Offers: eligible}, p)
+				newer.Offer = indexes[newer.Offer]
+				e.Recommended = &newer
+			}
 			e.Installed = &in
 		}
 	}
@@ -270,4 +285,9 @@ func (c *Core) updateSettings(fn func(*settings.Settings)) (settings.Settings, e
 		c.profile.settingsSaved(old, saved)
 	}
 	return saved, err
+}
+
+func newerInstalled(a, b string) bool {
+	order, known := catalog.CompareReleases(a, b)
+	return known && order > 0
 }

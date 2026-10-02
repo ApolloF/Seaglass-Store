@@ -46,12 +46,13 @@ type Finding struct {
 
 // Report is everything the checks found.
 type Report struct {
-	Verdict    Verdict   `json:"verdict"`
-	Findings   []Finding `json:"findings"`
-	Main       string    `json:"main,omitempty"` // the installer (or game exe), relative to the download
-	SHA256     string    `json:"sha256,omitempty"`
-	Checked    int64     `json:"checked"`              // unix seconds
-	Overridden bool      `json:"overridden,omitempty"` // the person chose to install it anyway
+	PayloadSkipped bool      `json:"payloadSkipped,omitempty"`
+	Verdict        Verdict   `json:"verdict"`
+	Findings       []Finding `json:"findings"`
+	Main           string    `json:"main,omitempty"` // the installer (or game exe), relative to the download
+	SHA256         string    `json:"sha256,omitempty"`
+	Checked        int64     `json:"checked"`              // unix seconds
+	Overridden     bool      `json:"overridden,omitempty"` // the person chose to install it anyway
 }
 
 // verdict is the worst finding's level.

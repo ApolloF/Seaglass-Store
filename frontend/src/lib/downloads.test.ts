@@ -50,6 +50,11 @@ describe("downloads", () => {
     expect(statusLine(d({ seeds: 2 }), running)).toBe("500 MB of 2.0 GB · 2 peers, no data yet");
   });
 
+  it("does not describe a skipped payload scan as checked", () => {
+    expect(statusLine(d({ state: "downloaded", safety: { verdict: "clean", checked: 1, findings: [], payloadSkipped: true } }), running)).toBe("Downloaded · payload scan skipped · ready to install");
+    expect(statusLine(d({ state: "downloaded", safety: { verdict: "warn", checked: 1, findings: [], payloadSkipped: true } }), running)).toContain("warnings");
+  });
+
   it("describes finished, paused and failed downloads whatever the engine does", () => {
     const off = { ...running, running: false };
     expect(statusLine(d({ state: "paused" }), off)).toBe("Paused · 500 MB of 2.0 GB");
