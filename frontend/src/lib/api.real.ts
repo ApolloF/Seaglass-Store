@@ -117,6 +117,7 @@ export const realApi: Api = {
       reviews: (q) => StoreService.GameReviews(q as never) as Promise<unknown> as Promise<ReviewPage>,
       completionCandidates: (key, title) => StoreService.CompletionCandidates(key, title).then((l) => (l ?? []) as unknown as CompletionCandidate[]),
       setCompletionMatch: (key, id) => StoreService.SetCompletionMatch(key, id) as Promise<unknown> as Promise<Enrichment>,
+      openLink: (url) => StoreService.OpenStoreLink(url),
       onEnrichment: (cb) => Events.On("store:enrichment", (e) => cb(e.data as unknown as Enrichment)),
     },
     wishlist: {

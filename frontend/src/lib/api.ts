@@ -235,6 +235,8 @@ export interface Api {
       completionCandidates(key: string, title: string): Promise<CompletionCandidate[]>;
       /** 0 goes back to the automatic match. */
       setCompletionMatch(key: string, hltbId: number): Promise<Enrichment>;
+      /** Opens an attribution link (Steam, Metacritic, HowLongToBeat) in the browser. */
+      openLink(url: string): Promise<void>;
       onEnrichment(cb: (e: Enrichment) => void): () => void;
     };
 

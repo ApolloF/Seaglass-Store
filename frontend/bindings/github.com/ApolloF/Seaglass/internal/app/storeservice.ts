@@ -345,6 +345,14 @@ export function OpenSourceRelease(key: string, releaseID: string): $CancellableP
 }
 
 /**
+ * OpenStoreLink opens a review, score or completion-time link in the
+ * browser: HTTPS on the attributed sites only.
+ */
+export function OpenStoreLink(raw: string): $CancellablePromise<void> {
+    return $Call.ByID(4055145474, raw);
+}
+
+/**
  * PrepareRelease makes a release ready for the install confirmation: it
  * fetches the article when only its summary is known and tries the
  * supported torrent-metadata resolver once. Nothing is downloaded but

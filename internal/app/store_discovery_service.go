@@ -2,8 +2,11 @@ package app
 
 import (
 	"errors"
+	"net/url"
 	"slices"
+	"strings"
 
+	"github.com/ApolloF/Seaglass/internal/platform"
 	"github.com/ApolloF/Seaglass/internal/settings"
 	"github.com/ApolloF/Seaglass/internal/store/discovery"
 	"github.com/ApolloF/Seaglass/internal/store/enrich"
@@ -250,4 +253,17 @@ func (s *StoreService) AcknowledgeWishlist(key string) ([]WishlistItem, error) {
 		return []WishlistItem{}, err
 	}
 	return []WishlistItem{}, nil
+}
+
+// storeLinkHosts are the sites the Store's attribution links may open.
+var storeLinkHosts = []string{"store.steampowered.com", "steamcommunity.com", "www.metacritic.com", "metacritic.com", "howlongtobeat.com", "www.howlongtobeat.com"}
+
+// OpenStoreLink opens a review, score or completion-time link in the
+// browser: HTTPS on the attributed sites only.
+func (s *StoreService) OpenStoreLink(raw string) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme != "https" || u.User != nil || (u.Port() != "" && u.Port() != "443") || !slices.Contains(storeLinkHosts, strings.ToLower(u.Hostname())) {
+		return errors.New("that link doesn't go to Steam, Metacritic or HowLongToBeat")
+	}
+	return platform.OpenWebPage(u.String())
 }

@@ -686,6 +686,10 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
         enrichListeners.forEach((cb) => cb(e));
         return e;
       },
+      async openLink(url) {
+        if (!/^https:\/\/(store\.steampowered\.com|steamcommunity\.com|(www\.)?metacritic\.com|(www\.)?howlongtobeat\.com)\//.test(url)) throw new Error("that link doesn't go to Steam, Metacritic or HowLongToBeat");
+        window.open(url, "_blank", "noopener");
+      },
       onEnrichment: (cb) => on(enrichListeners, cb),
     },
 
