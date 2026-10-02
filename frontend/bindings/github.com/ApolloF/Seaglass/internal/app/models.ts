@@ -63,6 +63,32 @@ export interface EngineStatus {
 }
 
 /**
+ * FeedInfo is a feed as Settings shows it.
+ */
+export interface FeedInfo {
+    "url": string;
+
+    /**
+     * from the feed; "" before its first good fetch
+     */
+    "name": string;
+    "items": number;
+
+    /**
+     * items left out because they didn't pass the checks
+     */
+    "skipped": number;
+
+    /**
+     * unix seconds of the last good fetch
+     */
+    "fetched": number;
+    "error"?: string;
+    "etag"?: string;
+    "enabled": boolean;
+}
+
+/**
  * MetaState is what the metadata worker is doing.
  */
 export interface MetaState {

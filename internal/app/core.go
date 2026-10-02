@@ -64,6 +64,7 @@ type Core struct {
 	ach      *achState
 	profile  *profileState
 	store    *storeState
+	catalog  *catalogState
 	// setMu makes settings changes one at a time (read, change, save), so
 	// settings taken from another PC don't undo one made here.
 	setMu sync.Mutex
@@ -107,6 +108,7 @@ func NewCore(version string) (*Core, error) {
 	c.ach = newAchState(c, c.owned.client, c.meta.client)
 	c.profile = newProfileState(c)
 	c.store = newStoreState(c)
+	c.catalog = newCatalogState(c)
 	return c, nil
 }
 
@@ -127,6 +129,7 @@ func (c *Core) Start() {
 	go c.owned.loop(c.ctx)
 	go c.updates.loop(c.ctx)
 	go c.store.loop(c.ctx)
+	go c.catalog.loop(c.ctx)
 	c.external = newExternalWatch(c)
 	c.external.set(c.Settings.Get().NoticeExternal)
 	if exe, err := os.Executable(); err == nil && platform.MoveOldStartup(exe) {

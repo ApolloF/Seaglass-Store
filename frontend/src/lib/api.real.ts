@@ -1,7 +1,7 @@
 import { Events, Window } from "@wailsio/runtime";
 import { AccountsService, AchievementsService, LaunchService, LibraryService, PadService, ProfileService, SavesService, SettingsService, StoreService, UpdateService } from "../../bindings/github.com/ApolloF/Seaglass/internal/app";
 import type { Api } from "./api";
-import type { Accounts, Achievements, AppInfo, ArtChoice, Download, EngineStatus, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
+import type { Accounts, Achievements, AppInfo, ArtChoice, CatalogEntry, CatalogPage, Download, EngineStatus, FeedInfo, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
 
 // The generated bindings return the Go structs; their JSON matches ./types.
 const g = (p: Promise<unknown>) => p as Promise<Game>;
@@ -65,6 +65,16 @@ export const realApi: Api = {
     showDownload: (id) => StoreService.ShowDownload(id),
     onDownloads: (cb) => Events.On("store:jobs", (e) => cb((e.data ?? []) as unknown as Download[])),
     onEngine: (cb) => Events.On("store:engine", (e) => cb(e.data as unknown as EngineStatus)),
+    feeds: () => StoreService.Feeds().then((f) => (f ?? []) as unknown as FeedInfo[]),
+    addFeed: (url) => StoreService.AddFeed(url) as Promise<unknown> as Promise<Settings>,
+    removeFeed: (url) => StoreService.RemoveFeed(url) as Promise<unknown> as Promise<Settings>,
+    setFeedEnabled: (url, on) => StoreService.SetFeedEnabled(url, on) as Promise<unknown> as Promise<Settings>,
+    refreshFeeds: () => StoreService.RefreshFeeds().then((f) => (f ?? []) as unknown as FeedInfo[]),
+    catalog: (q) => StoreService.Catalog(q as never).then((p) => ({ entries: (p.entries ?? []) as unknown as CatalogEntry[], total: p.total })) as Promise<CatalogPage>,
+    catalogLanguages: () => StoreService.CatalogLanguages().then((l) => l ?? []),
+    catalogEntry: (key) => StoreService.CatalogEntry(key) as Promise<unknown> as Promise<CatalogEntry>,
+    downloadOffer: (key, offer) => StoreService.DownloadOffer(key, offer) as Promise<unknown> as Promise<Download>,
+    onCatalog: (cb) => Events.On("store:catalog", (e) => cb(e.data as unknown as number)),
   },
 
   updates: {

@@ -59,6 +59,10 @@ type Job struct {
 	Title    string `json:"title"`
 	Source   string `json:"source"` // magnet link or .torrent URL
 	SavePath string `json:"savePath"`
+	// From the catalog (empty for a link the person pasted).
+	GameKey  string `json:"gameKey,omitempty"`
+	Version  string `json:"version,omitempty"`
+	FeedName string `json:"feedName,omitempty"`
 	Hash     string `json:"hash,omitempty"` // once the engine has it
 	Name     string `json:"name,omitempty"` // the torrent's own name: its folder (or file) in SavePath
 	State    State  `json:"state"`
@@ -163,13 +167,15 @@ func (s *Store) Get(id string) (Job, bool) {
 	return Job{}, false
 }
 
-// Add queues a new download and returns it.
-func (s *Store) Add(title, source, savePath string, now time.Time) (Job, error) {
+// Add queues a new download (its title, source, save path and catalog
+// fields; the rest is filled in) and returns it.
+func (s *Store) Add(j Job, now time.Time) (Job, error) {
 	b := make([]byte, 6)
 	if _, err := rand.Read(b); err != nil {
 		return Job{}, err
 	}
-	j := Job{ID: "sg-" + hex.EncodeToString(b), Title: title, Source: source, SavePath: savePath, State: Queued, Created: now.Unix()}
+	j = Job{ID: "sg-" + hex.EncodeToString(b), Title: j.Title, Source: j.Source, SavePath: j.SavePath,
+		GameKey: j.GameKey, Version: j.Version, FeedName: j.FeedName, State: Queued, Created: now.Unix()}
 	s.mu.Lock()
 	s.jobs = append(s.jobs, j)
 	s.mu.Unlock()

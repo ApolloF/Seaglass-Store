@@ -2,12 +2,15 @@ package app
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/ApolloF/Seaglass/internal/platform"
 	"github.com/ApolloF/Seaglass/internal/settings"
+	"github.com/ApolloF/Seaglass/internal/store/catalog"
 	"github.com/ApolloF/Seaglass/internal/store/jobs"
 	"github.com/ApolloF/Seaglass/internal/torrent"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -152,7 +155,7 @@ func (s *StoreService) AddDownload(source, title string) (jobs.Job, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return jobs.Job{}, err
 	}
-	j, err := s.c.store.jobs.Add(title, src, dir, time.Now())
+	j, err := s.c.store.jobs.Add(jobs.Job{Title: title, Source: src, SavePath: dir}, time.Now())
 	if err == nil {
 		s.c.store.wake()
 	}
@@ -209,4 +212,96 @@ func (s *StoreService) ShowDownload(id string) error {
 		dir = d
 	}
 	return platform.ShowInExplorer(dir)
+}
+
+// Feeds lists the catalog feeds and how their last fetch went.
+func (s *StoreService) Feeds() []FeedInfo { return s.c.catalog.feeds() }
+
+// AddFeed fetches a feed and adds it when Seaglass can read it.
+func (s *StoreService) AddFeed(url string) (settings.Settings, error) {
+	if err := s.on(); err != nil {
+		return s.c.Settings.Get(), err
+	}
+	ctx, cancel := context.WithTimeout(s.c.ctx, time.Minute)
+	defer cancel()
+	return s.c.catalog.addFeed(ctx, url)
+}
+
+// RemoveFeed removes a feed; its games leave the catalog.
+func (s *StoreService) RemoveFeed(url string) (settings.Settings, error) {
+	if err := s.on(); err != nil {
+		return s.c.Settings.Get(), err
+	}
+	return s.c.catalog.removeFeed(url)
+}
+
+// SetFeedEnabled shows a feed's games in the catalog, or not.
+func (s *StoreService) SetFeedEnabled(url string, on bool) (settings.Settings, error) {
+	if err := s.on(); err != nil {
+		return s.c.Settings.Get(), err
+	}
+	return s.c.catalog.setFeedEnabled(url, on)
+}
+
+// RefreshFeeds fetches every enabled feed now.
+func (s *StoreService) RefreshFeeds() ([]FeedInfo, error) {
+	if err := s.on(); err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(s.c.ctx, 2*time.Minute)
+	defer cancel()
+	s.c.catalog.refresh(ctx, true)
+	return s.c.catalog.feeds(), nil
+}
+
+// Catalog returns a page of the catalog.
+func (s *StoreService) Catalog(q catalog.Query) (catalog.Page, error) {
+	if err := s.on(); err != nil {
+		return catalog.Page{Entries: []catalog.Entry{}}, err
+	}
+	return s.c.catalog.search(q), nil
+}
+
+// CatalogLanguages lists the catalog's languages, most offered first.
+func (s *StoreService) CatalogLanguages() []string { return s.c.catalog.languages() }
+
+// CatalogEntry returns one game in the catalog.
+func (s *StoreService) CatalogEntry(key string) (catalog.Entry, error) {
+	if err := s.on(); err != nil {
+		return catalog.Entry{}, err
+	}
+	e, ok := s.c.catalog.entry(key)
+	if !ok {
+		return e, errors.New("that game isn't in the catalog anymore")
+	}
+	return e, nil
+}
+
+// DownloadOffer queues one of a game's offers (by its place in the
+// entry's offers).
+func (s *StoreService) DownloadOffer(key string, offer int) (jobs.Job, error) {
+	e, err := s.CatalogEntry(key)
+	if err != nil {
+		return jobs.Job{}, err
+	}
+	if offer < 0 || offer >= len(e.Offers) {
+		return jobs.Job{}, errors.New("that version isn't offered anymore")
+	}
+	o := e.Offers[offer]
+	dir := downloadsDir(s.c.Settings.Get().Store)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return jobs.Job{}, err
+	}
+	if free, err := platform.FreeSpace(dir); err == nil && o.SizeBytes > 0 && free < uint64(o.SizeBytes)+256<<20 {
+		return jobs.Job{}, fmt.Errorf("not enough free space: %s is needed, %s is free", bytesText(o.SizeBytes), bytesText(int64(free)))
+	}
+	title := e.Title
+	if o.Version != "" {
+		title += " " + o.Version
+	}
+	j, err := s.c.store.jobs.Add(jobs.Job{Title: title, Source: o.Source(), SavePath: dir, GameKey: e.Key, Version: o.Version, FeedName: o.FeedName}, time.Now())
+	if err == nil {
+		s.c.store.wake()
+	}
+	return j, err
 }

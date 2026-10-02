@@ -6,6 +6,14 @@
 import * as torrent$0 from "../torrent/models.js";
 
 /**
+ * FeedSource is a catalog feed the person added.
+ */
+export interface FeedSource {
+    "url": string;
+    "enabled": boolean;
+}
+
+/**
  * Settings are the user's preferences. New fields get their default when
  * an older settings file doesn't have them.
  */
@@ -178,4 +186,9 @@ export interface StoreSettings {
      */
     "pauseWhilePlaying": boolean;
     "network": torrent$0.Network;
+
+    /**
+     * catalogs, in the order they were added
+     */
+    "feeds": FeedSource[] | null;
 }

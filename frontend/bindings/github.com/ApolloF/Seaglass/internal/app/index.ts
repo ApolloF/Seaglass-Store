@@ -28,6 +28,7 @@ export type {
     Accounts,
     AppInfo,
     EngineStatus,
+    FeedInfo,
     MetaState,
     PadAction,
     Profile,

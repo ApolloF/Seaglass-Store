@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -324,6 +325,12 @@ func (st *storeState) settingsChanged(old, saved settings.Settings) {
 	if !saved.ExperimentalStore {
 		go st.stopEngine()
 		return
+	}
+	switch {
+	case !old.ExperimentalStore:
+		go st.c.catalog.refresh(st.c.ctx, false)
+	case !reflect.DeepEqual(old.Store.Feeds, saved.Store.Feeds):
+		go st.c.catalog.rebuild()
 	}
 	if saved.Store.Network != old.Store.Network && st.engineRunning() {
 		go st.applyNetwork()

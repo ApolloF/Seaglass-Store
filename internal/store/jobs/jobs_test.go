@@ -70,12 +70,12 @@ func TestStore(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "downloads.json")
 	s := Open(path)
 	now := time.Unix(1000, 0)
-	a, err := s.Add("Game A", "magnet:?xt=urn:btih:aa", `D:\Games`, now)
+	a, err := s.Add(Job{Title: "Game A", Source: "magnet:?xt=urn:btih:aa", SavePath: `D:\Games`, State: Downloaded, Hash: "x"}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _ := s.Add("Game B", "magnet:?xt=urn:btih:bb", `D:\Games`, now)
-	if a.ID == b.ID || len(a.ID) != 15 {
+	b, _ := s.Add(Job{Title: "Game B", Source: "magnet:?xt=urn:btih:bb", SavePath: `D:\Games`}, now)
+	if a.ID == b.ID || len(a.ID) != 15 || a.State != Queued || a.Hash != "" {
 		t.Errorf("ids %q and %q", a.ID, b.ID)
 	}
 	if _, err := s.Update(a.ID, func(j *Job) bool { j.State = Paused; return true }); err != nil {

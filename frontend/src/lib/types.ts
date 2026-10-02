@@ -127,6 +127,73 @@ export interface StoreSettings {
   downloads: string;
   pauseWhilePlaying: boolean;
   network: TorrentNetwork;
+  /** Catalog feeds, in the order they were added. */
+  feeds: FeedSource[];
+}
+
+export interface FeedSource {
+  url: string;
+  enabled: boolean;
+}
+
+/** A feed and its last fetch. Mirrors internal/app.FeedInfo. */
+export interface FeedInfo {
+  url: string;
+  /** From the feed; "" before its first good fetch. */
+  name: string;
+  items: number;
+  /** Items left out because they didn't pass the checks. */
+  skipped: number;
+  /** Unix seconds of the last good fetch. */
+  fetched: number;
+  error?: string;
+  enabled: boolean;
+}
+
+/** One downloadable version of a game, from one feed. Mirrors internal/store/catalog.Offer. */
+export interface CatalogOffer {
+  title: string;
+  version?: string;
+  buildDate?: string;
+  sizeBytes?: number;
+  installedSizeBytes?: number;
+  magnet?: string;
+  torrentUrl?: string;
+  languages?: string[];
+  platform?: string;
+  installerType?: string;
+  sha256?: string;
+  steamAppId?: number;
+  notes?: string;
+  feedUrl: string;
+  feedName: string;
+}
+
+/** One game in the catalog. Mirrors internal/store/catalog.Entry. */
+export interface CatalogEntry {
+  key: string;
+  title: string;
+  steamAppId?: number;
+  /** Newest version first. */
+  offers: CatalogOffer[];
+  version: string;
+  /** Newest build date, YYYY-MM-DD. */
+  updated: string;
+  size: number;
+  languages: string[];
+}
+
+export interface CatalogQuery {
+  text: string;
+  language: string;
+  sort: "title" | "updated" | "size";
+  offset: number;
+  limit: number;
+}
+
+export interface CatalogPage {
+  entries: CatalogEntry[];
+  total: number;
 }
 
 /** How the download engine connects. Mirrors internal/torrent.Network. */
@@ -200,6 +267,10 @@ export interface Download {
   seeding: boolean;
   created: number;
   finished?: number;
+  /** From the catalog; empty for a pasted link. */
+  gameKey?: string;
+  version?: string;
+  feedName?: string;
 }
 
 /** One achievement. Mirrors internal/achievements.Achievement. */

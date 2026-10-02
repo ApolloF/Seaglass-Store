@@ -67,7 +67,7 @@ func TestSteer(t *testing.T) {
 
 func TestSteerStopsWhenTheDiskIsFull(t *testing.T) {
 	st := &storeState{jobs: jobs.Open(filepath.Join(t.TempDir(), "downloads.json"))}
-	j, err := st.jobs.Add("Huge", "magnet:?xt=urn:btih:aa", t.TempDir(), time.Now())
+	j, err := st.jobs.Add(jobs.Job{Title: "Huge", Source: "magnet:?xt=urn:btih:aa", SavePath: t.TempDir()}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -40,6 +40,13 @@ export interface Job {
     "savePath": string;
 
     /**
+     * From the catalog (empty for a link the person pasted).
+     */
+    "gameKey"?: string;
+    "version"?: string;
+    "feedName"?: string;
+
+    /**
      * once the engine has it
      */
     "hash"?: string;

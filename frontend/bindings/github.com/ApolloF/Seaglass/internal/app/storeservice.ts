@@ -16,6 +16,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as settings$0 from "../settings/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as catalog$0 from "../store/catalog/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as jobs$0 from "../store/jobs/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -34,10 +37,38 @@ export function AddDownload(source: string, title: string): $CancellablePromise<
 }
 
 /**
+ * AddFeed fetches a feed and adds it when Seaglass can read it.
+ */
+export function AddFeed(url: string): $CancellablePromise<settings$0.Settings> {
+    return $Call.ByID(1527192760, url);
+}
+
+/**
  * Addresses lists an interface's addresses.
  */
 export function Addresses(iface: string): $CancellablePromise<string[] | null> {
     return $Call.ByID(2764782747, iface);
+}
+
+/**
+ * Catalog returns a page of the catalog.
+ */
+export function Catalog(q: catalog$0.Query): $CancellablePromise<catalog$0.Page> {
+    return $Call.ByID(3442553744, q);
+}
+
+/**
+ * CatalogEntry returns one game in the catalog.
+ */
+export function CatalogEntry(key: string): $CancellablePromise<catalog$0.Entry> {
+    return $Call.ByID(3533756356, key);
+}
+
+/**
+ * CatalogLanguages lists the catalog's languages, most offered first.
+ */
+export function CatalogLanguages(): $CancellablePromise<string[] | null> {
+    return $Call.ByID(4132144619);
 }
 
 /**
@@ -63,6 +94,14 @@ export function DownloadAction(id: string, action: jobs$0.Action, deleteFiles: b
 }
 
 /**
+ * DownloadOffer queues one of a game's offers (by its place in the
+ * entry's offers).
+ */
+export function DownloadOffer(key: string, offer: number): $CancellablePromise<jobs$0.Job> {
+    return $Call.ByID(4276194449, key, offer);
+}
+
+/**
  * Downloads returns the downloads, oldest first.
  */
 export function Downloads(): $CancellablePromise<jobs$0.Job[] | null> {
@@ -84,6 +123,13 @@ export function Engine(): $CancellablePromise<$models.EngineStatus> {
 }
 
 /**
+ * Feeds lists the catalog feeds and how their last fetch went.
+ */
+export function Feeds(): $CancellablePromise<$models.FeedInfo[] | null> {
+    return $Call.ByID(340743898);
+}
+
+/**
  * GetQBittorrent opens qBittorrent's download page.
  */
 export function GetQBittorrent(): $CancellablePromise<void> {
@@ -102,6 +148,27 @@ export function HasProxyPassword(): $CancellablePromise<boolean> {
  */
 export function Interfaces(): $CancellablePromise<torrent$0.Interface[] | null> {
     return $Call.ByID(2450318113);
+}
+
+/**
+ * RefreshFeeds fetches every enabled feed now.
+ */
+export function RefreshFeeds(): $CancellablePromise<$models.FeedInfo[] | null> {
+    return $Call.ByID(3501220097);
+}
+
+/**
+ * RemoveFeed removes a feed; its games leave the catalog.
+ */
+export function RemoveFeed(url: string): $CancellablePromise<settings$0.Settings> {
+    return $Call.ByID(927034245, url);
+}
+
+/**
+ * SetFeedEnabled shows a feed's games in the catalog, or not.
+ */
+export function SetFeedEnabled(url: string, on: boolean): $CancellablePromise<settings$0.Settings> {
+    return $Call.ByID(2158620060, url, on);
 }
 
 /**

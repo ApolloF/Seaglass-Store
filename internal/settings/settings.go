@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/ApolloF/Seaglass/internal/platform"
+	"github.com/ApolloF/Seaglass/internal/store/feed"
 	"github.com/ApolloF/Seaglass/internal/torrent"
 )
 
@@ -74,6 +75,13 @@ type StoreSettings struct {
 	Downloads         string          `json:"downloads"`         // where downloads go; "" is Downloads\Seaglass in the user's folder
 	PauseWhilePlaying bool            `json:"pauseWhilePlaying"` // downloads wait while a game runs
 	Network           torrent.Network `json:"network"`
+	Feeds             []FeedSource    `json:"feeds"` // catalogs, in the order they were added
+}
+
+// FeedSource is a catalog feed the person added.
+type FeedSource struct {
+	URL     string `json:"url"`
+	Enabled bool   `json:"enabled"`
 }
 
 // Sources are the libraries that can be hidden, as the interface groups
@@ -93,7 +101,7 @@ func Defaults() Settings {
 		SyncSavesBefore: true, BackupSavesAfter: true, SyncWait: 60, StartSyncer: true,
 		SyncProfile: true, SameSettings: true,
 		AutoUpdate: true, Achievements: true,
-		Store: StoreSettings{PauseWhilePlaying: true, Network: torrent.DefaultNetwork()},
+		Store: StoreSettings{PauseWhilePlaying: true, Network: torrent.DefaultNetwork(), Feeds: []FeedSource{}},
 	}
 }
 
@@ -198,6 +206,7 @@ func (s *Store) Get() Settings {
 	c := s.cur
 	c.Folders = append([]string{}, s.cur.Folders...)
 	c.HiddenSources = append([]string{}, s.cur.HiddenSources...)
+	c.Store.Feeds = append([]FeedSource{}, s.cur.Store.Feeds...)
 	return c
 }
 
@@ -298,5 +307,16 @@ func normalizeStore(s StoreSettings) StoreSettings {
 		s.Downloads = ""
 	}
 	s.Network = s.Network.Normalize()
+	feeds := []FeedSource{}
+	seen := map[string]bool{}
+	for _, f := range s.Feeds {
+		f.URL = strings.TrimSpace(f.URL)
+		if feed.CheckURL(f.URL) != nil || seen[f.URL] {
+			continue
+		}
+		seen[f.URL] = true
+		feeds = append(feeds, f)
+	}
+	s.Feeds = feeds
 	return s
 }

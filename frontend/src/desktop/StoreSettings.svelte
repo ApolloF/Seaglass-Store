@@ -4,9 +4,10 @@
   import Icon from "../components/Icon.svelte";
   import Toggle from "../components/Toggle.svelte";
   import { api } from "../lib/api";
+  import { feedLine } from "../lib/catalog";
   import { shop } from "../lib/shop.svelte";
   import { lib } from "../lib/store.svelte";
-  import type { Settings, StoreSettings, TorrentInterface, TorrentNetwork } from "../lib/types";
+  import type { FeedInfo, Settings, StoreSettings, TorrentInterface, TorrentNetwork } from "../lib/types";
 
   const s = $derived(lib.settings);
   const st = $derived(s?.store);
@@ -28,6 +29,34 @@
   async function apply(fn: () => Promise<Settings>) {
     const next = await lib.run(fn);
     if (next) lib.settings = next;
+    return !!next;
+  }
+
+  let feeds = $state<FeedInfo[]>([]);
+  const loadFeeds = () => api.store.feeds().then((f) => (feeds = f));
+  $effect(() => {
+    void loadFeeds();
+  });
+  let feedURL = $state("");
+  let feedBusy = $state(false);
+  async function addFeed(e: SubmitEvent) {
+    e.preventDefault();
+    if (!feedURL.trim() || feedBusy) return;
+    feedBusy = true;
+    if (await apply(() => api.store.addFeed(feedURL.trim()))) feedURL = "";
+    feedBusy = false;
+    await loadFeeds();
+  }
+  async function feedChange(fn: () => Promise<Settings>) {
+    await apply(fn);
+    await loadFeeds();
+  }
+  let refreshing = $state(false);
+  async function refreshFeeds() {
+    refreshing = true;
+    const f = await lib.run(() => api.store.refreshFeeds());
+    if (f) feeds = f;
+    refreshing = false;
   }
 
   // Interfaces come from qBittorrent, so listing them starts it.
@@ -74,6 +103,34 @@
 </script>
 
 {#if s && st && net}
+  <div class="group">
+    <span class="glabel">Catalog feeds</span>
+    <p class="hint">The store shows the games in feeds you add: web addresses of catalogs in Seaglass's feed format. Seaglass comes with none. Only add feeds you trust, for games you're allowed to download.</p>
+    {#if feeds.length}
+      <ul class="feeds">
+        {#each feeds as f (f.url)}
+          <li class:off={!f.enabled}>
+            <div class="text">
+              <span class="t">{f.name || f.url}</span>
+              {#if f.name}<span class="url">{f.url}</span>{/if}
+              <span class="d" class:err={!!f.error}>{feedLine(f)}</span>
+            </div>
+            <button type="button" class="btn" aria-pressed={f.enabled} onclick={() => feedChange(() => api.store.setFeedEnabled(f.url, !f.enabled))}>{f.enabled ? "Turn off" : "Turn on"}</button>
+            <button type="button" class="icon" aria-label={`Remove ${f.name || f.url}`} title="Remove" onclick={() => feedChange(() => api.store.removeFeed(f.url))}><Icon name="trash" size={16} /></button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    <form class="row" onsubmit={addFeed}>
+      <label class="sr-only" for="st-feed">Feed address</label>
+      <input id="st-feed" class="text-in" type="url" autocomplete="off" spellcheck="false" placeholder="https://…/feed.json" bind:value={feedURL} />
+      <button type="submit" class="btn" disabled={!feedURL.trim() || feedBusy}><Icon name="plus" size={16} />{feedBusy ? "Checking the feed…" : "Add feed"}</button>
+      {#if feeds.length}
+        <button type="button" class="btn" disabled={refreshing} onclick={refreshFeeds}><Icon name="refresh" size={16} />{refreshing ? "Fetching…" : "Fetch now"}</button>
+      {/if}
+    </form>
+  </div>
+
   <div class="group">
     <span class="glabel">Downloads</span>
     <div class="pathrow">
@@ -300,6 +357,54 @@
   .num:focus,
   .text-in:focus {
     border-color: var(--accent);
+  }
+  .feeds {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .feeds li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 8px 10px 14px;
+    border-radius: var(--radius);
+    background: var(--surface-2);
+  }
+  .feeds li.off .text {
+    opacity: 0.55;
+  }
+  .feeds .text {
+    flex: 1;
+  }
+  .url {
+    font-size: 12.5px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .d.err {
+    color: var(--warn);
+  }
+  .icon {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .icon:hover {
+    background: var(--surface-3);
+    color: var(--text);
   }
   .card {
     display: flex;

@@ -85,6 +85,14 @@ func TestStoreSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	v.Store.Feeds = []FeedSource{{URL: "https://a.example/feed.json", Enabled: true}, {URL: "http://b.example/feed.json"}, {URL: " https://a.example/feed.json "}}
+	got, err = s.Set(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Store.Feeds) != 1 || got.Store.Feeds[0].URL != "https://a.example/feed.json" {
+		t.Errorf("feeds: plain HTTP and duplicates should go: %+v", got.Store.Feeds)
+	}
 	if got.Store.QBittorrent != "" || got.Store.Downloads != "" || got.Store.Network.Port != 0 {
 		t.Errorf("store settings kept bad values: %+v", got.Store)
 	}
