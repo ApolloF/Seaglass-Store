@@ -10,6 +10,7 @@ import (
 	"github.com/ApolloF/Seaglass/internal/identify"
 	"github.com/ApolloF/Seaglass/internal/settings"
 	"github.com/ApolloF/Seaglass/internal/store/catalog"
+	"github.com/ApolloF/Seaglass/internal/store/discovery"
 	"github.com/ApolloF/Seaglass/internal/store/feed"
 	"github.com/ApolloF/Seaglass/internal/store/jobs"
 )
@@ -23,6 +24,9 @@ func testStoreCore(t *testing.T) *Core {
 	c.store = &storeState{c: c, jobs: jobs.Open(filepath.Join(dir, "downloads.json")), kick: make(chan struct{}, 1)}
 	c.store.pipe = newPipeline(c.store)
 	c.catalog = &catalogState{c: c, cache: feed.Cache{Dir: filepath.Join(dir, "feeds")}}
+	c.discovery = newDiscoveryState(c)
+	c.discovery.ix = discovery.OpenIndex(filepath.Join(dir, "discovery"), filepath.Join(dir, "store-identity.json"))
+	c.wishlist = newWishlistState(c)
 	v := c.Settings.Get()
 	v.ExperimentalStore = true
 	if _, err := c.Settings.Set(v); err != nil {

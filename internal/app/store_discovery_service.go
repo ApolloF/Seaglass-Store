@@ -2,12 +2,17 @@ package app
 
 import (
 	"errors"
+	"io"
 	"net/url"
+	"os"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ApolloF/Seaglass/internal/platform"
 	"github.com/ApolloF/Seaglass/internal/settings"
+	"github.com/ApolloF/Seaglass/internal/store/catalog"
 	"github.com/ApolloF/Seaglass/internal/store/discovery"
 	"github.com/ApolloF/Seaglass/internal/store/enrich"
 	"github.com/ApolloF/Seaglass/internal/store/jobs"
@@ -60,7 +65,7 @@ func (s *StoreService) discoveryOn() error {
 
 // DiscoveryStatus says what discovery is doing.
 func (s *StoreService) DiscoveryStatus() discovery.Status {
-	return baseDiscoveryStatus(s.c.Settings.Get())
+	return s.c.discovery.status()
 }
 
 // baseDiscoveryStatus is the status the settings alone decide.
@@ -90,11 +95,15 @@ func (s *StoreService) SetupSources(chosen []string) (settings.Settings, error) 
 			return s.c.Settings.Get(), errors.New("choose FitGirl or DODI")
 		}
 	}
-	return s.c.updateSettings(func(v *settings.Settings) {
+	saved, err := s.c.updateSettings(func(v *settings.Settings) {
 		v.Store.Sources = slices.Clone(chosen)
 		v.Store.SourceSetup = settings.SetupDone
 		v.Store.PrivateSources = len(chosen) > 0
 	})
+	if err == nil {
+		s.c.discovery.start()
+	}
+	return saved, err
 }
 
 // RefreshDiscovery fetches the newest listings of every chosen source now.
@@ -102,27 +111,50 @@ func (s *StoreService) RefreshDiscovery() (discovery.Status, error) {
 	if err := s.discoveryOn(); err != nil {
 		return s.DiscoveryStatus(), err
 	}
-	return s.DiscoveryStatus(), nil
+	err := s.c.discovery.refresh()
+	return s.DiscoveryStatus(), err
 }
 
 // StoreHome returns the Store's front page from the index.
 func (s *StoreService) StoreHome() (discovery.Home, error) {
-	h := discovery.Home{New: []discovery.GameSummary{}, Popular: []discovery.GameSummary{}, PopularState: discovery.StateUnavailable,
-		Updated: []discovery.GameSummary{}, Wishlist: []discovery.GameSummary{}, Status: s.DiscoveryStatus()}
-	return h, s.on()
+	if err := s.on(); err != nil {
+		return discovery.Home{New: []discovery.GameSummary{}, Popular: []discovery.GameSummary{}, PopularState: discovery.StateUnavailable,
+			Updated: []discovery.GameSummary{}, Wishlist: []discovery.GameSummary{}, Status: s.DiscoveryStatus()}, err
+	}
+	d := s.c.discovery
+	return d.currentView().Home(d.annotator(), s.c.popularState(), d.status()), nil
 }
 
 // BrowseGames answers a browse or search query from the index alone, at
 // once.
 func (s *StoreService) BrowseGames(q discovery.BrowseQuery) (discovery.SearchResult, error) {
-	return emptySearch(q), s.on()
+	if err := s.on(); err != nil {
+		return emptySearch(q), err
+	}
+	d := s.c.discovery
+	res := emptySearch(q)
+	res.Page = d.currentView().Browse(q, d.annotator())
+	// Answers from the last hour are shown at once, the rest after SearchGames.
+	if hits, ok := d.search.Steam(q.Text, time.Now()); ok {
+		res.Other = d.others(hits, q.Text)
+	}
+	return res, nil
 }
 
 // SearchGames searches the chosen source sites and Steam for q.Text to
 // fill gaps in the index, then answers like BrowseGames. A newer call
 // cancels an older one, which then returns its partial result.
 func (s *StoreService) SearchGames(q discovery.BrowseQuery) (discovery.SearchResult, error) {
-	return emptySearch(q), s.on()
+	if err := s.on(); err != nil {
+		return emptySearch(q), err
+	}
+	d := s.c.discovery
+	res := emptySearch(q)
+	remote, hits, complete := d.searchRemote(q.Text)
+	res.Remote, res.Complete = remote, complete
+	res.Page = d.currentView().Browse(q, d.annotator())
+	res.Other = d.others(hits, q.Text)
+	return res, nil
 }
 
 func emptySearch(q discovery.BrowseQuery) discovery.SearchResult {
@@ -136,7 +168,7 @@ func (s *StoreService) GameDetails(key string) (discovery.GameDetails, error) {
 	if err := s.on(); err != nil {
 		return discovery.GameDetails{}, err
 	}
-	return discovery.GameDetails{}, errNotIndexed
+	return s.c.discovery.details(key)
 }
 
 // SetSteamMatch corrects which Steam game a game's releases are (appID 0:
@@ -146,7 +178,34 @@ func (s *StoreService) SetSteamMatch(key string, appID int, name string) (discov
 	if err := s.discoveryOn(); err != nil {
 		return discovery.GameDetails{}, err
 	}
-	return discovery.GameDetails{}, errNotIndexed
+	if appID < 0 {
+		return discovery.GameDetails{}, errors.New("that isn't a Steam game")
+	}
+	d := s.c.discovery
+	g, ok := d.currentView().Game(key)
+	if !ok || len(g.TitleKeys) == 0 {
+		return discovery.GameDetails{}, errNotIndexed
+	}
+	name = strings.TrimSpace(name)
+	if appID > 0 && name == "" {
+		return discovery.GameDetails{}, errors.New("choose the Steam game by name")
+	}
+	var cs []discovery.IdentityCorrection
+	for _, tk := range g.TitleKeys {
+		cs = append(cs, discovery.IdentityCorrection{TitleKey: tk, SteamAppID: appID, Name: name, At: time.Now()})
+	}
+	if err := d.index().SetSteamCorrections(cs); err != nil {
+		return discovery.GameDetails{}, err
+	}
+	newKey := "title:" + g.TitleKeys[0]
+	if appID > 0 {
+		newKey = "steam:" + strconv.Itoa(appID)
+	}
+	if s.c.wishlist != nil && newKey != key {
+		s.c.wishlist.rekey(key, newKey, name, appID)
+	}
+	s.c.emit(EventStoreGames, discovery.Change{Keys: []string{key, newKey}})
+	return d.details(newKey)
 }
 
 // PrepareRelease makes a release ready for the install confirmation: it
@@ -157,7 +216,7 @@ func (s *StoreService) PrepareRelease(key, releaseID string) (discovery.Prepared
 	if err := s.discoveryOn(); err != nil {
 		return discovery.PreparedRelease{}, err
 	}
-	return discovery.PreparedRelease{}, errNotIndexed
+	return s.c.discovery.prepare(key, releaseID)
 }
 
 // AttachSourceTorrent asks for a .torrent file the person got in their
@@ -166,7 +225,44 @@ func (s *StoreService) AttachSourceTorrent(key, releaseID string) (discovery.Pre
 	if err := s.discoveryOn(); err != nil {
 		return discovery.PreparedRelease{}, err
 	}
-	return discovery.PreparedRelease{}, errNotIndexed
+	d := s.c.discovery
+	g, r, err := d.release(key, releaseID)
+	if err != nil {
+		return discovery.PreparedRelease{}, err
+	}
+	path, err := application.Get().Dialog.OpenFile().SetTitle("Choose the .torrent file for "+g.Title).
+		CanChooseFiles(true).CanChooseDirectories(false).AddFilter("Torrent metadata", "*.torrent").PromptForSingleSelection()
+	if err != nil {
+		return discovery.PreparedRelease{}, err
+	}
+	if path == "" {
+		return d.prepared(key, releaseID)
+	}
+	data, err := readLimited(path, (2<<20)+1)
+	if err != nil {
+		return discovery.PreparedRelease{}, err
+	}
+	t, err := sources.TorrentMetadata(data)
+	if err != nil {
+		return discovery.PreparedRelease{}, err
+	}
+	if err := s.discoveryOn(); err != nil {
+		return discovery.PreparedRelease{}, err
+	}
+	discovery.Attach(d.index(), r.Entry.SourceID, releaseID, t)
+	d.save()
+	s.c.emit(EventStoreGames, discovery.Change{Keys: []string{key}})
+	return d.prepared(key, releaseID)
+}
+
+// readLimited reads at most limit bytes of a file the person chose.
+func readLimited(path string, limit int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return io.ReadAll(io.LimitReader(f, limit))
 }
 
 // OpenSourceRelease opens a release's article in the browser.
@@ -174,7 +270,18 @@ func (s *StoreService) OpenSourceRelease(key, releaseID string) error {
 	if err := s.discoveryOn(); err != nil {
 		return err
 	}
-	return errNotIndexed
+	_, r, err := s.c.discovery.release(key, releaseID)
+	if err != nil {
+		return err
+	}
+	src, err := sources.PrivateSource(r.Entry.SourceID, true)
+	if err != nil {
+		return err
+	}
+	if _, err := src.ValidateURL(r.Entry.PageURL); err != nil {
+		return err
+	}
+	return platform.OpenWebPage(r.Entry.PageURL)
 }
 
 // DownloadRelease queues a prepared release's validated transport, after
@@ -183,7 +290,31 @@ func (s *StoreService) DownloadRelease(key, releaseID string, transport int, opt
 	if err := s.discoveryOn(); err != nil {
 		return jobs.Job{}, err
 	}
-	return jobs.Job{}, errNotIndexed
+	d := s.c.discovery
+	g, r, err := d.release(key, releaseID)
+	if err != nil {
+		return jobs.Job{}, err
+	}
+	if r.Gone {
+		return jobs.Job{}, errors.New("the source no longer lists this release")
+	}
+	if !slices.Contains(validTransports(r.Entry), transport) {
+		return jobs.Job{}, errors.New("this release has no validated torrent: prepare it again")
+	}
+	it, err := sourceOffer(r.Entry, transport)
+	if err != nil {
+		return jobs.Job{}, err
+	}
+	if langs, complete := discovery.ParseLanguages(r.Entry.LanguageClaim); complete {
+		it.Languages = langs
+	}
+	src, err := sources.PrivateSource(r.Entry.SourceID, true)
+	if err != nil {
+		return jobs.Job{}, err
+	}
+	e := catalog.Entry{Key: key, Title: g.Title, SteamAppID: g.AppID, Offers: []catalog.Offer{{Item: it, FeedURL: src.StartURL, FeedName: src.Name}}}
+	s.c.catalog.annotator()(&e)
+	return s.queueOffer(e, 0, opts)
 }
 
 // EnrichGames returns the cached enrichment for these games (cards on

@@ -66,6 +66,9 @@ type Core struct {
 	store    *storeState
 	catalog  *catalogState
 	art      *artState
+	// discovery indexes the repack sources; wishlist keeps saved Store games.
+	discovery *discoveryState
+	wishlist  *wishlistState
 	// setMu makes settings changes one at a time (read, change, save), so
 	// settings taken from another PC don't undo one made here.
 	setMu sync.Mutex
@@ -111,6 +114,8 @@ func NewCore(version string) (*Core, error) {
 	c.store = newStoreState(c)
 	c.catalog = newCatalogState(c)
 	c.art = newArtState(c)
+	c.discovery = newDiscoveryState(c)
+	c.wishlist = newWishlistState(c)
 	return c, nil
 }
 
@@ -122,9 +127,12 @@ func (c *Core) Start() {
 		c.external = newExternalWatch(c)
 		c.external.set(c.Settings.Get().NoticeExternal)
 		c.setState(func(s *ScanState) { s.LastScan, s.Games = time.Now().Unix(), len(c.Lib.Games()) })
-		// The store only does what the person (or a test) asks: it runs.
+		// The store only does what the person (or a test) asks: it runs,
+		// and discovery indexes only when asked (setup or Refresh).
 		go c.store.loop(c.ctx)
 		go c.catalog.loop(c.ctx)
+		c.discovery.auto = false
+		go c.discovery.loop(c.ctx)
 		return
 	}
 	go c.scanLoop()
@@ -135,6 +143,7 @@ func (c *Core) Start() {
 	go c.updates.loop(c.ctx)
 	go c.store.loop(c.ctx)
 	go c.catalog.loop(c.ctx)
+	go c.discovery.loop(c.ctx)
 	go c.art.loop(c.ctx)
 	c.external = newExternalWatch(c)
 	c.external.set(c.Settings.Get().NoticeExternal)

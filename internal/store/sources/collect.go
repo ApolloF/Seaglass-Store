@@ -170,3 +170,10 @@ func documentEvidence(doc Document, count int) Evidence {
 	hash := sha256.Sum256(doc.Body)
 	return Evidence{URL: doc.URL, SHA256: hex.EncodeToString(hash[:]), Bytes: len(doc.Body), Entries: count}
 }
+
+// ResolveEntries tries at most budget torrent-metadata resolutions for
+// entries without a validated transport, preferring File-Me mirrors, and
+// records each reference's outcome. It stops at a host's rate limit.
+func ResolveEntries(ctx context.Context, resolver *Resolver, entries []Entry, budget int) {
+	resolveEntries(ctx, resolver, entries, budget)
+}

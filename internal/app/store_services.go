@@ -460,6 +460,13 @@ func (s *StoreService) DownloadOffer(key string, offer int, opts InstallOptions)
 	if err != nil {
 		return jobs.Job{}, err
 	}
+	return s.queueOffer(e, offer, opts)
+}
+
+// queueOffer checks an offer of an entry (from the catalog, or a prepared
+// source release) and queues it: languages, the update guard, the folder
+// and free space.
+func (s *StoreService) queueOffer(e catalog.Entry, offer int, opts InstallOptions) (jobs.Job, error) {
 	if offer < 0 || offer >= len(e.Offers) {
 		return jobs.Job{}, errors.New("that version isn't offered anymore")
 	}
