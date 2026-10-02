@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/ed25519"
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,5 +70,29 @@ func TestTrusted(t *testing.T) {
 	}
 	if err := trusted(k, []ed25519.PublicKey{other}); err == nil {
 		t.Error("a key missing from keys.go was trusted")
+	}
+}
+
+func TestStable(t *testing.T) {
+	for tag, want := range map[string]bool{
+		"v1.9.0": true, "v1.9.0-store.1": true, "v1.10.0-store.12": true,
+		"v1.9.0-beta.1": false, "v1.9.0-store.x": false, "v0.9.0-store.1": false, "v1.9.0-beta-store.1": false,
+	} {
+		if got := stable(tag); got != want {
+			t.Errorf("stable(%q) = %v, want %v", tag, got, want)
+		}
+	}
+}
+
+func TestKeyFromEnv(t *testing.T) {
+	_, k, _ := ed25519.GenerateKey(nil)
+	t.Setenv(keyEnv, base64.StdEncoding.EncodeToString(k.Seed()))
+	got, err := load()
+	if err != nil || !got.Equal(k) {
+		t.Fatalf("key from %s: %v", keyEnv, err)
+	}
+	t.Setenv(keyEnv, "not a key")
+	if _, err := load(); err == nil {
+		t.Error("a bad key was taken")
 	}
 }

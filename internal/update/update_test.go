@@ -34,6 +34,12 @@ func TestNewer(t *testing.T) {
 		{"dev", "v0.1.0", false},
 		{"v1.2.3.4", "v1.0.0", false},
 		{"", "v1.0.0", false},
+		// The Store Edition's own releases count after the version.
+		{"v1.9.0-store.2", "v1.9.0-store.1", true},
+		{"v1.9.0-store.1", "v1.9.0", true},
+		{"v1.10.0-store.1", "v1.9.0-store.7", true},
+		{"v1.9.0-store.1", "v1.9.0-store.1", false},
+		{"v1.9.0-store.x", "v1.9.0", false},
 	} {
 		if got := Newer(tt.a, tt.b); got != tt.want {
 			t.Errorf("Newer(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)

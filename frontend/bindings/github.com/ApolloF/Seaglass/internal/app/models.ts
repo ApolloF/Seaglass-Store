@@ -31,6 +31,11 @@ export interface Accounts {
  */
 export interface AppInfo {
     "version": string;
+
+    /**
+     * shown next to "Seaglass" ("Store Edition")
+     */
+    "edition": string;
     "dataDir": string;
     "logFile": string;
 

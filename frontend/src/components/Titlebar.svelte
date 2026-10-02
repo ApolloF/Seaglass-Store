@@ -2,6 +2,7 @@
   // The frameless window's title bar: drag anywhere, double-click to
   // maximise, and the three caption buttons.
   import { api } from "../lib/api";
+  import { lib } from "../lib/store.svelte";
   import Logo from "./Logo.svelte";
 </script>
 
@@ -11,6 +12,7 @@
   <div class="brand">
     <Logo size={20} />
     <span>Seaglass</span>
+    {#if lib.info?.edition}<span class="edition">{lib.info.edition}</span>{/if}
   </div>
   <div class="caption">
     <button type="button" aria-label="Minimize" onclick={() => api.window.minimise()}>
@@ -26,6 +28,11 @@
 </header>
 
 <style>
+  .edition {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+  }
   .bar {
     --wails-draggable: drag;
     height: 40px;

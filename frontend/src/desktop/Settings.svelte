@@ -244,7 +244,7 @@
         {:else}
           <dl class="kv">
             <dt>Version</dt>
-            <dd>{lib.info?.version ?? ""}</dd>
+            <dd>{lib.info?.version ?? ""}{lib.info?.edition ? ` · ${lib.info.edition}` : ""}</dd>
             <dt>Updates</dt>
             <dd><UpdateStatus /></dd>
             <dt>Game database</dt>

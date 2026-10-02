@@ -19,6 +19,9 @@ jobs:
       SIGN_PFX_BASE64: ${{ secrets.SIGN_PFX_BASE64 }}
       SIGN_PFX_PASSWORD: ${{ secrets.SIGN_PFX_PASSWORD }}
       SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' && startsWith(github.ref, 'refs/tags/v') }}
+      # The Store Edition's release key (tools/release ci-secret): with it,
+      # CI signs and publishes tagged releases itself.
+      HAS_RELEASE_KEY: ${{ secrets.SEAGLASS_RELEASE_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -52,13 +55,14 @@ jobs:
         # Release builds carry their tag (shown in the app and in the exe's
         # file properties); everything else is "dev". Tags below v1 or with a
         # suffix (v1.1.0-beta.1) are published as previews, which the
-        # updater skips.
+        # updater skips. The Store Edition's own numbers (v1.9.0-store.2)
+        # are full releases.
         run: |
           $v = 'dev'; $num = '0.0.0'; $pre = 'false'
           if ($env:GITHUB_REF -like 'refs/tags/v*') {
             $v = $env:GITHUB_REF_NAME
             $num = ($v.TrimStart('v') -split '[-+]')[0]
-            if ($v -match '-' -or $v -like 'v0.*') { $pre = 'true' }
+            if (($v -match '-' -and $v -notmatch '^v[\d.]+-store\.\d+$') -or $v -like 'v0.*') { $pre = 'true' }
             $j = Get-Content build/windows/info.json -Raw | ConvertFrom-Json
             $j.fixed.file_version = $num
             $j.info.'0409'.ProductVersion = $num
@@ -254,11 +258,10 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          name: Seaglass ${{ github.ref_name }}
+          name: Seaglass Store Edition ${{ github.ref_name }}
           prerelease: ${{ env.WL_PRERELEASE == 'true' }}
-          # A draft: the maintainer signs it with the offline release key and
-          # publishes it (go run ./tools/release publish <tag>, RELEASING.md).
-          # Drafts are invisible to the updater.
+          # A draft until signed (next step, or go run ./tools/release
+          # publish <tag>). Drafts are invisible to the updater.
           draft: true
           body_path: ${{ env.WL_NOTES }}
           generate_release_notes: true
@@ -267,3 +270,10 @@ jobs:
             bin/Seaglass-setup.exe.sha256
             bin/Seaglass.exe
             bin/Seaglass.exe.sha256
+
+      - name: Sign and publish
+        if: startsWith(github.ref, 'refs/tags/v') && env.HAS_RELEASE_KEY == 'true'
+        env:
+          SEAGLASS_RELEASE_KEY: ${{ secrets.SEAGLASS_RELEASE_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: go run ./tools/release publish $env:GITHUB_REF_NAME

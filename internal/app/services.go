@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ApolloF/Seaglass/internal/edition"
 	"github.com/ApolloF/Seaglass/internal/library"
 	"github.com/ApolloF/Seaglass/internal/logx"
 	"github.com/ApolloF/Seaglass/internal/meta"
@@ -295,6 +296,7 @@ func NewSettingsService(c *Core) *SettingsService { return &SettingsService{c} }
 // AppInfo describes this build.
 type AppInfo struct {
 	Version string `json:"version"`
+	Edition string `json:"edition"` // shown next to "Seaglass" ("Store Edition")
 	DataDir string `json:"dataDir"`
 	LogFile string `json:"logFile"`
 	// The previous run crashed (its output is in crash-previous.log).
@@ -303,7 +305,7 @@ type AppInfo struct {
 
 // Info returns the version and where data is kept.
 func (s *SettingsService) Info() AppInfo {
-	return AppInfo{Version: s.c.Version, DataDir: platform.AppDir(), LogFile: logx.Path(), CrashedLastTime: crashedLastTime}
+	return AppInfo{Version: s.c.Version, Edition: edition.Short, DataDir: platform.AppDir(), LogFile: logx.Path(), CrashedLastTime: crashedLastTime}
 }
 
 // Get returns the settings.

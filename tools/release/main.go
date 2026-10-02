@@ -5,15 +5,19 @@
 //	go run ./tools/release backup <file>     write a password-protected copy for offline keeping
 //	go run ./tools/release restore <file>    put a backup on this PC
 //	go run ./tools/release pubkey            print the public key
+//	go run ./tools/release ci-secret         put this PC's key into the repository's Actions secrets
 //	go run ./tools/release publish <tag>     sign the draft release <tag> and publish it
 //	go run ./tools/release verify <tag>      check a published release's signature
 //	go run ./tools/release cut <tag> [--pr N] [--dry-run]
 //	                                         the whole release from main, checked step by step (cut.go)
 //
-// The private key is stored encrypted with Windows DPAPI (this Windows
-// account only) in %APPDATA%\Seaglass-release, outside the app's data
-// folder so uninstalling Seaglass can't delete it. It never goes to
-// GitHub. publish uses the GitHub CLI (gh), signed in as a maintainer.
+// The Store Edition has its own release key, apart from Seaglass's. It's
+// stored encrypted with Windows DPAPI (this Windows account only) in
+// %APPDATA%\Seaglass-Store-release, outside the app's data folder so
+// uninstalling can't delete it, and, as the maintainer chose, in the
+// repository's Actions secrets (SEAGLASS_RELEASE_KEY, the base64 seed), so
+// CI signs and publishes tagged releases itself. publish uses the GitHub
+// CLI (gh), signed in as a maintainer or with CI's token.
 package main
 
 import (
@@ -33,8 +37,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
+	"github.com/ApolloF/Seaglass/internal/edition"
 	"github.com/ApolloF/Seaglass/internal/platform"
 	"github.com/ApolloF/Seaglass/internal/update"
 	"golang.org/x/sys/windows"
@@ -55,7 +61,7 @@ func originRepo() string {
 			return r
 		}
 	}
-	return "ApolloF/Seaglass"
+	return edition.Repo
 }
 
 // The files a release signs, besides the signature files themselves.
@@ -83,6 +89,8 @@ func main() {
 		err = backup(arg(2))
 	case "restore":
 		err = restore(arg(2))
+	case "ci-secret":
+		err = ciSecret()
 	case "publish":
 		err = publish(arg(2))
 	case "verify":
@@ -111,15 +119,25 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: release keygen | pubkey | backup <file> | restore <file> | publish <tag> | verify <tag> | cut <tag> [--pr N] [--dry-run]")
+	fmt.Fprintln(os.Stderr, "usage: release keygen | pubkey | backup <file> | restore <file> | ci-secret | publish <tag> | verify <tag> | cut <tag> [--pr N] [--dry-run]")
 	os.Exit(2)
 }
 
 func keyPath() string {
-	return filepath.Join(platform.Roaming, "Seaglass-release", "release-key.dpapi")
+	return filepath.Join(platform.Roaming, "Seaglass-Store-release", "release-key.dpapi")
 }
 
+// keyEnv holds the release key's seed (base64) where CI signs.
+const keyEnv = "SEAGLASS_RELEASE_KEY"
+
 func load() (ed25519.PrivateKey, error) {
+	if s := os.Getenv(keyEnv); s != "" {
+		seed, err := base64.StdEncoding.DecodeString(strings.TrimSpace(s))
+		if err != nil || len(seed) != ed25519.SeedSize {
+			return nil, errors.New(keyEnv + " isn't a base64 ed25519 seed")
+		}
+		return ed25519.NewKeyFromSeed(seed), nil
+	}
 	enc, err := os.ReadFile(keyPath())
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, errors.New("no release key on this PC (keygen, or restore a backup)")
@@ -383,14 +401,50 @@ func publish(tag string) error {
 		return err
 	}
 	edit := []string{"release", "edit", tag, "--repo", repo, "--draft=false"}
-	if !strings.Contains(tag, "-") && !strings.HasPrefix(tag, "v0.") {
-		edit = append(edit, "--latest")
+	if stable(tag) {
+		edit = append(edit, "--latest", "--prerelease=false")
 	}
 	if err := gh(edit...); err != nil {
 		return err
 	}
 	fmt.Println("Signed and published", tag)
 	return verify(tag)
+}
+
+// ciSecret stores this PC's release key as the repository's Actions
+// secret, handing it to gh on stdin so it's never shown or written down.
+func ciSecret() error {
+	k, err := load()
+	if err != nil {
+		return err
+	}
+	if err := trusted(k, update.ReleaseKeys); err != nil {
+		return err
+	}
+	cmd := exec.Command("gh", "secret", "set", keyEnv, "--repo", repo, "--app", "actions")
+	cmd.Stdin = strings.NewReader(base64.StdEncoding.EncodeToString(k.Seed()))
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	fmt.Println("CI can now sign releases of", repo, "with key", base64.StdEncoding.EncodeToString(k.Public().(ed25519.PublicKey)))
+	return nil
+}
+
+// stable reports whether a tag is a full release (the updater's "latest"):
+// v1.9.0, or the edition's v1.9.0-store.2; not v0.x or other suffixes.
+func stable(tag string) bool {
+	if strings.HasPrefix(tag, "v0.") {
+		return false
+	}
+	base, n, ok := strings.Cut(tag, edition.Suffix)
+	if ok {
+		if _, err := strconv.Atoi(n); err != nil {
+			return false
+		}
+		tag = base
+	}
+	return !strings.Contains(tag, "-")
 }
 
 // trusted fails when keys (the updater's release keys) is set but doesn't

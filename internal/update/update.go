@@ -20,6 +20,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ApolloF/Seaglass/internal/edition"
 )
 
 // Asset names every release carries. They stay the same across versions, so
@@ -40,16 +42,16 @@ type Feed struct {
 	Keys []ed25519.PublicKey
 }
 
-// GitHub is Seaglass's own release feed.
+// GitHub is this edition's own release feed.
 var GitHub = Feed{
-	LatestURL:   "https://api.github.com/repos/ApolloF/Seaglass/releases/latest",
-	AssetPrefix: "https://github.com/ApolloF/Seaglass/releases/download/",
+	LatestURL:   "https://api.github.com/repos/" + edition.Repo + "/releases/latest",
+	AssetPrefix: "https://github.com/" + edition.Repo + "/releases/download/",
 	Hosts:       []string{"github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com"},
 	Keys:        ReleaseKeys,
 }
 
 // ReleasesPage is where people download Seaglass by hand.
-const ReleasesPage = "https://github.com/ApolloF/Seaglass/releases/latest"
+const ReleasesPage = "https://github.com/" + edition.Repo + "/releases/latest"
 
 // Asset is one downloadable file of a release.
 type Asset struct {
@@ -200,9 +202,18 @@ func Valid(v string) bool {
 	return ok
 }
 
-func parse(v string) ([3]int, bool) {
-	var out [3]int
+// parse reads a version as major, minor, patch and the edition's own
+// release number (v1.9.0-store.2), which counts after the three.
+func parse(v string) ([4]int, bool) {
+	var out [4]int
 	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
+	if i := strings.Index(v, edition.Suffix); i >= 0 {
+		n, err := strconv.Atoi(v[i+len(edition.Suffix):])
+		if err != nil || n < 0 {
+			return out, false
+		}
+		out[3], v = n, v[:i]
+	}
 	if i := strings.IndexAny(v, "-+"); i >= 0 {
 		v = v[:i] // pre-release or build suffix
 	}

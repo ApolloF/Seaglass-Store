@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ApolloF/Seaglass/internal/edition"
 	"github.com/ApolloF/Seaglass/internal/logx"
 	"github.com/ApolloF/Seaglass/internal/platform"
 	"github.com/ApolloF/Seaglass/internal/syncer"
@@ -107,7 +108,7 @@ func WriteDiagnostics(c *Core) (string, error) {
 
 // ReportProblem opens a new GitHub issue for Seaglass.
 func (s *SettingsService) ReportProblem() error {
-	return platform.OpenWebPage("https://github.com/ApolloF/Seaglass/issues/new")
+	return platform.OpenWebPage("https://github.com/" + edition.Repo + "/issues/new")
 }
 
 func (c *Core) diagnostics() string {

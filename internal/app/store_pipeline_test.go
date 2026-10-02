@@ -59,13 +59,19 @@ func TestPipelinePortableGame(t *testing.T) {
 	if got.Safety.Verdict == safety.Clean {
 		// Clean and asked to install: advance starts it.
 		p.advance(c.store.jobs.All())
-		waitFor(t, func() bool { j, _ := c.store.jobs.Get(j.ID); return j.State == jobs.Installed || j.State == jobs.Failed })
+		waitFor(t, func() bool {
+			j, _ := c.store.jobs.Get(j.ID)
+			return j.State == jobs.Installed || j.State == jobs.Failed
+		})
 	} else {
 		t.Logf("checks warned (%v), installing by hand", got.Safety.Findings)
 		if err := NewStoreService(c).DownloadAction(j.ID, jobs.Install, false); err != nil {
 			t.Fatal(err)
 		}
-		waitFor(t, func() bool { j, _ := c.store.jobs.Get(j.ID); return j.State == jobs.Installed || j.State == jobs.Failed })
+		waitFor(t, func() bool {
+			j, _ := c.store.jobs.Get(j.ID)
+			return j.State == jobs.Installed || j.State == jobs.Failed
+		})
 	}
 	got, _ = c.store.jobs.Get(j.ID)
 	if got.State != jobs.Installed || got.Installer != "portable" || got.InstallDir != installDir {

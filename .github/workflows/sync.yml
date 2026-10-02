@@ -1,0 +1,111 @@
+name: sync with Seaglass
+
+# Brings Seaglass's own work into the Store Edition every day (and on
+# demand): Seaglass's main is merged into this main, the tests run, and a
+# clean, passing merge is pushed. A merge with conflicts, or one whose
+# tests fail, becomes a pull request to finish by hand.
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency: sync
+
+jobs:
+  sync:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch Seaglass
+        id: fetch
+        run: |
+          git remote add seaglass https://github.com/ApolloF/Seaglass.git
+          git fetch seaglass main
+          echo "sha=$(git rev-parse --short seaglass/main)" >> "$GITHUB_OUTPUT"
+          if git merge-base --is-ancestor seaglass/main HEAD; then
+            echo "Already has everything from Seaglass main."
+            echo "behind=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "behind=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge
+        id: merge
+        if: steps.fetch.outputs.behind == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git merge --no-edit -m "Merge Seaglass main (${{ steps.fetch.outputs.sha }})" seaglass/main; then
+            echo "clean=true" >> "$GITHUB_OUTPUT"
+          else
+            git diff --name-only --diff-filter=U
+            git merge --abort
+            echo "clean=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-go@v5
+        if: steps.merge.outputs.clean == 'true'
+        with:
+          go-version: '1.27.x'
+          check-latest: true
+
+      - uses: actions/setup-node@v4
+        if: steps.merge.outputs.clean == 'true'
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Regenerate bindings
+        # Seaglass's services and the store's meet in the generated bindings.
+        if: steps.merge.outputs.clean == 'true'
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.26
+          wails3 generate bindings -f '-tags production' -clean=true -ts -i
+          if [ -n "$(git status --porcelain frontend/bindings)" ]; then
+            git add frontend/bindings
+            git commit -m "Regenerate bindings after merging Seaglass main"
+          fi
+
+      - name: Test
+        id: test
+        if: steps.merge.outputs.clean == 'true'
+        continue-on-error: true
+        run: |
+          set -e
+          (cd frontend && npm ci && npm run build && npm run check && npm test)
+          go vet ./...
+          go test ./...
+
+      - name: Push
+        if: steps.merge.outputs.clean == 'true' && steps.test.outcome == 'success'
+        run: git push origin HEAD:main
+
+      - name: Pull request for a hand merge
+        if: steps.fetch.outputs.behind == 'true' && (steps.merge.outputs.clean != 'true' || steps.test.outcome != 'success')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="sync/seaglass-${{ steps.fetch.outputs.sha }}"
+          if [ "${{ steps.merge.outputs.clean }}" = "true" ]; then
+            why="It merges cleanly, but the tests fail: see the sync run."
+            git push origin "HEAD:refs/heads/$branch" --force
+          else
+            why="It doesn't merge cleanly: resolve the conflicts on this branch (git merge origin/main), then merge."
+            git push origin "seaglass/main:refs/heads/$branch" --force
+          fi
+          if [ -z "$(gh pr list --head "$branch" --json number --jq '.[0].number')" ]; then
+            gh pr create --base main --head "$branch" \
+              --title "Merge Seaglass main (${{ steps.fetch.outputs.sha }})" \
+              --body "Seaglass's main has changes the Store Edition doesn't have yet. $why Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi

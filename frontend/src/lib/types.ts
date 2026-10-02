@@ -579,6 +579,8 @@ export const storeName = (g: Game) => ({ steam: "Steam", gog: "GOG Galaxy", epic
 
 export interface AppInfo {
   version: string;
+  /** "" for Seaglass; "Store Edition" for the edition with the store. */
+  edition: string;
   dataDir: string;
   logFile: string;
   /** The previous run crashed. */

@@ -393,7 +393,7 @@ export const mockApi: Api = {
     return ["C:\\Program Files (x86)\\DODI-Repacks", "D:\\Games"];
   },
   async info(): Promise<AppInfo> {
-    return { version: "mock", dataDir: "C:\\Users\\you\\AppData\\Roaming\\Seaglass", logFile: "seaglass.log", crashedLastTime: false };
+    return { version: "mock", edition: "Store Edition", dataDir: "C:\\Users\\you\\AppData\\Roaming\\Seaglass", logFile: "seaglass.log", crashedLastTime: false };
   },
   async openLog() {},
   async copyDiagnostics() {

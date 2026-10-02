@@ -1,6 +1,8 @@
 <p align="center"><img src="build/appicon.png" width="96" alt=""></p>
 
-<h1 align="center">Seaglass</h1>
+<h1 align="center">Seaglass Store Edition</h1>
+
+<p align="center"><b>Seaglass with an experimental store:</b> catalogs from feeds you add, background downloads through qBittorrent, safety checks, and installs without the installer's questions. It's <a href="https://github.com/ApolloF/Seaglass">Seaglass</a> plus the store, updated from Seaglass every day. It installs over Seaglass and keeps your library and settings; Seaglass installs back over it. See <a href="docs/experimental-store.md">docs/experimental-store.md</a>.</p>
 
 <p align="center">A Windows game launcher that finds the games installed on your PC on its own, from store launchers and other sources alike, and plays great with a DualSense.</p>
 
@@ -8,7 +10,7 @@
 
 ---
 
-**[Download Seaglass](https://github.com/ApolloF/Seaglass/releases/latest/download/Seaglass-setup.exe)** for Windows 10 and 11 (64-bit). It installs for your account only, without administrator rights, and keeps itself up to date. Release notes are on the [Releases](https://github.com/ApolloF/Seaglass/releases) page; the plan is in [docs/PLAN.md](docs/PLAN.md).
+**[Download Seaglass Store Edition](https://github.com/ApolloF/Seaglass-Store/releases/latest/download/Seaglass-setup.exe)** for Windows 10 and 11 (64-bit). It installs for your account only, without administrator rights, and keeps itself up to date from this repository's releases. Release notes are on the [Releases](https://github.com/ApolloF/Seaglass-Store/releases) page. Plain Seaglass is at [ApolloF/Seaglass](https://github.com/ApolloF/Seaglass).
 
 - Finds Steam, Epic, GOG, EA, Ubisoft, Battle.net and Xbox installs, plus games installed outside a store launcher (*external copies*, such as standalone and DRM-free installers, backups or games set up with a Steam API emulator) and plain game folders, and works out which game each one is.
 - Desktop mode for mouse and keyboard, and a big picture mode for controllers with three layouts to choose from (Deck, Console, Orbit).
@@ -19,7 +21,9 @@
 
 ## Intended use
 
-Seaglass is a library manager. It indexes, identifies and launches games that are already installed on your PC. It does not download, distribute, unlock or modify games, and it contains no tools to bypass copy protection, license checks or DRM.
+Seaglass is a library manager. It indexes, identifies and launches games that are already installed on your PC. It does not unlock or modify games, and it contains no tools to bypass copy protection, license checks or DRM.
+
+The Store Edition adds an opt-in store that downloads and installs what the feeds you add offer. It comes with no feeds and no catalog of its own, and it doesn't host or distribute any games. What you add, download and share through it (downloads are shared with others while qBittorrent runs) is your responsibility: only use feeds for games you're allowed to download and play.
 
 Recognising a game installed outside a store launcher is a compatibility feature, so that every game on the PC can be found in one place; it is not an endorsement of how a copy was obtained. You are responsible for making sure that the games you install and play, and how you use them, comply with their license terms and the laws that apply to you.
 
