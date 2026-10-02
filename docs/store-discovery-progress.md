@@ -120,7 +120,7 @@ Worker proposals and what became of them:
 
 ## Remaining work and limitations
 
-- A feed-only person's Home shows empty shelves (*No releases yet*): shelves go by source publication dates, which feed offers don't have; feed games show on Browse only. Needs a decision (for example a *From your feeds* shelf).
+- Feed games show on Browse only, not on Home's shelves (they have no source publication date). Decided 2 October: no feed shelf; the maintainer uses the repack sources only.
 - The Downloads page hides a queued job and the engine's error while qBittorrent can't start (pre-existing).
 - The desktop shell (sidebar, 980 px minimum window) has no phone layout; the Store content itself is verified at 390 px with the sidebar hidden.
 - The harness's `--dev-data` redirects roaming data only: discovery and enrichment caches go to the real `%LOCALAPPDATA%\Seaglass\store` (removed after the runs here).
