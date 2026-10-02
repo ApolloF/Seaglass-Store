@@ -1,6 +1,6 @@
 # Store discovery: implementation progress
 
-Tracks the implementation of [store-discovery-plan.md](store-discovery-plan.md) so another instance can resume. Branch: `ApolloF/Discovery` (worktree `orca/workspaces/Seaglass-Store/Discovery`), started from `main` at `f38705e`. Nothing is merged, tagged or released.
+Tracks the implementation of [store-discovery-plan.md](store-discovery-plan.md) so another instance can resume. Branch: `ApolloF/Discovery` (worktree `orca/workspaces/Seaglass-Store/Discovery`), started from `main` at `f38705e`. Merged into `main` in #3 (2 October 2026) and released in v1.9.1-store.1.
 
 ## Milestones
 
@@ -125,4 +125,4 @@ Worker proposals and what became of them:
 - The desktop shell (sidebar, 980 px minimum window) has no phone layout; the Store content itself is verified at 390 px with the sidebar hidden.
 - The harness's `--dev-data` redirects roaming data only: discovery and enrichment caches go to the real `%LOCALAPPDATA%\Seaglass\store` (removed after the runs here).
 - Big Picture keeps its existing Downloads screen; it has no discovery Store (as planned).
-- Optional contract additions above. Nothing is merged, tagged or released.
+- Optional contract additions above.
