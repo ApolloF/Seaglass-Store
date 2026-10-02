@@ -135,6 +135,9 @@ func (d *discoveryState) playing() bool { return d.c.Launch != nil && d.c.Launch
 func (d *discoveryState) loop(ctx context.Context) {
 	d.index()
 	go d.detailLoop(ctx)
+	if d.c.wishlist != nil && d.c.Settings.Get().ExperimentalStore {
+		d.c.wishlist.observe(d)
+	}
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	for {
@@ -592,6 +595,9 @@ func (d *discoveryState) detailLoop(ctx context.Context) {
 				}
 				d.save()
 				d.c.emit(EventStoreGames, discovery.Change{Keys: []string{req.key}})
+				if d.c.wishlist != nil {
+					d.c.wishlist.observe(d)
+				}
 			}
 		}
 		d.mu.Lock()
@@ -846,7 +852,7 @@ func (d *discoveryState) searchRemote(text string) ([]discovery.ProviderProgress
 	wg.Wait()
 	if added {
 		d.save()
-		d.c.emit(EventStoreGames, discovery.Change{Keys: []string{}, All: true})
+		d.indexChanged(nil, "")
 	}
 	complete := ctx.Err() == nil
 	mu.Lock()

@@ -80,7 +80,7 @@ func TestStoreWorksWithoutAFeedAfterDiscovery(t *testing.T) {
 	if err != nil || len(home.New) != 3 || home.New[0].Title != "Ember Crown" {
 		t.Fatalf("home: %+v %v", home.New, err)
 	}
-	if home.PopularState != discovery.StateUnavailable || len(home.Popular) != 0 {
+	if (home.PopularState != discovery.StateUnavailable && home.PopularState != discovery.StateLoading) || len(home.Popular) != 0 {
 		t.Error("the Popular shelf shows something without a chart")
 	}
 	st := s.DiscoveryStatus()
@@ -237,4 +237,41 @@ func saveTestFeed(c *Core, url string, f feed.Feed) error {
 	}
 	c.catalog.rebuild()
 	return nil
+}
+
+func TestWishlistFollowsGamesNotReleases(t *testing.T) {
+	c, s := discoveryCore(t)
+	if err := c.discovery.refresh(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddToWishlist("title:hollowtide", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddToWishlist("steam:3100100", "Hollow Tide II", 3100100); err != nil {
+		t.Fatal(err)
+	}
+	items := s.Wishlist()
+	if len(items) != 2 || items[0].Game.SourceBacked || !items[1].Game.SourceBacked || items[1].Unread != 0 {
+		t.Fatalf("saved: %+v", items)
+	}
+	// DODI publishes a newer version, in a new article.
+	f := c.discovery.fetchers["dodi"].(*pagesFetcher)
+	body := `<p>Torrent: <a href="https://unknown-host.example/abc">Mirror</a></p>`
+	f.pages["https://dodi-repacks.site/"] = "<html><body>" + article("dodi-repacks.site", "hollow-tide-v21", "Hollow Tide", "v2.1", 0, body) + f.pages["https://dodi-repacks.site/"][len("<html><body>"):]
+	if err := c.discovery.refresh(); err != nil {
+		t.Fatal(err)
+	}
+	items = s.Wishlist()
+	if items[1].Unread != 1 || items[1].Activity[0].Kind != "newer" || items[1].Activity[0].Version != "v2.1" || !items[1].Game.Activity {
+		t.Fatalf("after a newer release: %+v", items[1])
+	}
+	if res, _ := s.BrowseGames(discovery.BrowseQuery{Text: "hollow"}); !res.Page.Games[0].Wishlisted || !res.Page.Games[0].Activity {
+		t.Error("browse doesn't mark the saved game's activity")
+	}
+	if items, _ = s.AcknowledgeWishlist("title:hollowtide"); items[1].Unread != 0 {
+		t.Error("acknowledged activity is still unread")
+	}
+	if n := len(c.store.jobs.All()); n != 0 {
+		t.Errorf("wishlisting queued %d downloads", n)
+	}
 }

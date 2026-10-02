@@ -69,6 +69,7 @@ type Core struct {
 	// discovery indexes the repack sources; wishlist keeps saved Store games.
 	discovery *discoveryState
 	wishlist  *wishlistState
+	enrich    *enrichState
 	// setMu makes settings changes one at a time (read, change, save), so
 	// settings taken from another PC don't undo one made here.
 	setMu sync.Mutex
@@ -116,6 +117,7 @@ func NewCore(version string) (*Core, error) {
 	c.art = newArtState(c)
 	c.discovery = newDiscoveryState(c)
 	c.wishlist = newWishlistState(c)
+	c.enrich = newEnrichState(c)
 	return c, nil
 }
 
@@ -133,6 +135,7 @@ func (c *Core) Start() {
 		go c.catalog.loop(c.ctx)
 		c.discovery.auto = false
 		go c.discovery.loop(c.ctx)
+		go c.enrich.loop(c.ctx)
 		return
 	}
 	go c.scanLoop()
@@ -144,6 +147,7 @@ func (c *Core) Start() {
 	go c.store.loop(c.ctx)
 	go c.catalog.loop(c.ctx)
 	go c.discovery.loop(c.ctx)
+	go c.enrich.loop(c.ctx)
 	go c.art.loop(c.ctx)
 	c.external = newExternalWatch(c)
 	c.external.set(c.Settings.Get().NoticeExternal)
@@ -187,6 +191,10 @@ func (c *Core) Stop() {
 	c.Launch.Close()
 	c.cancel()
 	c.store.close()
+	c.discovery.save()
+	if err := c.enrich.client.Flush(); err != nil {
+		logx.Printf("store enrichment: %v", err)
+	}
 	if c.watcher != nil {
 		_ = c.watcher.Close()
 	}

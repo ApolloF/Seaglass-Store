@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/url"
@@ -321,7 +322,10 @@ func (s *StoreService) DownloadRelease(key, releaseID string, transport int, opt
 // screen, the first first) and fetches the rest; EventStoreEnrichment
 // brings them.
 func (s *StoreService) EnrichGames(keys []string) []enrich.Enrichment {
-	return []enrich.Enrichment{}
+	if s.on() != nil || len(keys) > 500 {
+		return []enrich.Enrichment{}
+	}
+	return s.c.enrich.request(keys)
 }
 
 // GameEnrichment returns everything known about a game for its page,
@@ -330,8 +334,9 @@ func (s *StoreService) GameEnrichment(key string) (enrich.Enrichment, error) {
 	if err := s.on(); err != nil {
 		return enrich.Enrichment{}, err
 	}
-	return enrich.Enrichment{Key: key, Reviews: enrich.ReviewSummary{State: enrich.StateUnavailable}, Critic: enrich.Critic{State: enrich.StateUnavailable},
-		Completion: enrich.Completion{State: enrich.StateUnavailable}}, nil
+	ctx, cancel := context.WithTimeout(s.c.ctx, 30*time.Second)
+	defer cancel()
+	return s.c.enrich.game(ctx, key)
 }
 
 // GameReviews returns one page of a game's Steam reviews.
@@ -339,7 +344,9 @@ func (s *StoreService) GameReviews(q enrich.ReviewQuery) (enrich.ReviewPage, err
 	if err := s.on(); err != nil {
 		return enrich.ReviewPage{}, err
 	}
-	return enrich.ReviewPage{AppID: q.AppID, Reviews: []enrich.Review{}, State: enrich.StateUnavailable}, nil
+	ctx, cancel := context.WithTimeout(s.c.ctx, 30*time.Second)
+	defer cancel()
+	return s.c.enrich.client.Reviews(ctx, q), nil
 }
 
 // CompletionCandidates searches HowLongToBeat for title, so the person can
@@ -348,17 +355,47 @@ func (s *StoreService) CompletionCandidates(key, title string) ([]enrich.Candida
 	if err := s.on(); err != nil {
 		return nil, err
 	}
-	return []enrich.Candidate{}, nil
+	if strings.TrimSpace(title) == "" {
+		t, _, ok := s.c.storeGameRef(key)
+		if !ok {
+			return nil, errNotIndexed
+		}
+		title = t
+	}
+	ctx, cancel := context.WithTimeout(s.c.ctx, 30*time.Second)
+	defer cancel()
+	found, err := s.c.enrich.client.Candidates(ctx, title)
+	if found == nil {
+		found = []enrich.Candidate{}
+	}
+	return found, err
 }
 
 // SetCompletionMatch makes hltbID the game's HowLongToBeat match, kept
 // across refreshes (0 goes back to the automatic match).
 func (s *StoreService) SetCompletionMatch(key string, hltbID int) (enrich.Enrichment, error) {
+	if err := s.on(); err != nil {
+		return enrich.Enrichment{}, err
+	}
+	if hltbID < 0 {
+		return enrich.Enrichment{}, errors.New("that isn't a HowLongToBeat game")
+	}
+	if _, _, ok := s.c.storeGameRef(key); !ok {
+		return enrich.Enrichment{}, errNotIndexed
+	}
+	if err := s.c.discovery.index().SetCompletionMatch(key, hltbID); err != nil {
+		return enrich.Enrichment{}, err
+	}
 	return s.GameEnrichment(key)
 }
 
 // Wishlist lists the saved games, newest first.
-func (s *StoreService) Wishlist() []WishlistItem { return []WishlistItem{} }
+func (s *StoreService) Wishlist() []WishlistItem {
+	if s.on() != nil {
+		return []WishlistItem{}
+	}
+	return s.c.wishlist.items()
+}
 
 // AddToWishlist saves a game. Its releases known now are the baseline:
 // only later ones become activity.
@@ -366,7 +403,11 @@ func (s *StoreService) AddToWishlist(key, title string, steamAppID int) ([]Wishl
 	if err := s.on(); err != nil {
 		return []WishlistItem{}, err
 	}
-	return []WishlistItem{}, nil
+	if err := s.c.wishlist.add(key, title, steamAppID); err != nil {
+		return s.c.wishlist.items(), err
+	}
+	s.c.emit(EventStoreGames, discovery.Change{Keys: []string{key}})
+	return s.c.wishlist.items(), nil
 }
 
 // RemoveFromWishlist forgets a saved game and its activity.
@@ -374,7 +415,12 @@ func (s *StoreService) RemoveFromWishlist(key string) ([]WishlistItem, error) {
 	if err := s.on(); err != nil {
 		return []WishlistItem{}, err
 	}
-	return []WishlistItem{}, nil
+	if err := s.c.wishlist.store.Remove(key); err != nil {
+		return s.c.wishlist.items(), err
+	}
+	s.c.wishlist.changed()
+	s.c.emit(EventStoreGames, discovery.Change{Keys: []string{key}})
+	return s.c.wishlist.items(), nil
 }
 
 // AcknowledgeWishlist marks a saved game's activity read ("" marks every
@@ -383,7 +429,12 @@ func (s *StoreService) AcknowledgeWishlist(key string) ([]WishlistItem, error) {
 	if err := s.on(); err != nil {
 		return []WishlistItem{}, err
 	}
-	return []WishlistItem{}, nil
+	if err := s.c.wishlist.store.Acknowledge(key); err != nil {
+		return s.c.wishlist.items(), err
+	}
+	s.c.wishlist.changed()
+	s.c.emit(EventStoreGames, discovery.Change{Keys: []string{}, All: key == ""})
+	return s.c.wishlist.items(), nil
 }
 
 // storeLinkHosts are the sites the Store's attribution links may open.

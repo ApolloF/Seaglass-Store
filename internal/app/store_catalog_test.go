@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -11,8 +12,10 @@ import (
 	"github.com/ApolloF/Seaglass/internal/settings"
 	"github.com/ApolloF/Seaglass/internal/store/catalog"
 	"github.com/ApolloF/Seaglass/internal/store/discovery"
+	"github.com/ApolloF/Seaglass/internal/store/enrich"
 	"github.com/ApolloF/Seaglass/internal/store/feed"
 	"github.com/ApolloF/Seaglass/internal/store/jobs"
+	"github.com/ApolloF/Seaglass/internal/store/wishlist"
 )
 
 // testStoreCore is a Core with only what the store needs, in a temp folder.
@@ -26,7 +29,8 @@ func testStoreCore(t *testing.T) *Core {
 	c.catalog = &catalogState{c: c, cache: feed.Cache{Dir: filepath.Join(dir, "feeds")}}
 	c.discovery = newDiscoveryState(c)
 	c.discovery.ix = discovery.OpenIndex(filepath.Join(dir, "discovery"), filepath.Join(dir, "store-identity.json"))
-	c.wishlist = newWishlistState(c)
+	c.wishlist = &wishlistState{c: c, store: wishlist.Open(filepath.Join(dir, "wishlist.json"))}
+	c.enrich = &enrichState{c: c, client: enrich.New(enrich.Options{Dir: filepath.Join(dir, "enrich"), Transport: offline{}}), wake: make(chan struct{}, 1), queued: map[string]bool{}}
 	v := c.Settings.Get()
 	v.ExperimentalStore = true
 	if _, err := c.Settings.Set(v); err != nil {
@@ -110,4 +114,11 @@ func TestCatalogFromFeeds(t *testing.T) {
 	if fs := cs.feeds(); len(fs) != 1 || fs[0].Enabled || fs[0].Name != "Feed B" {
 		t.Errorf("feeds: %+v", fs)
 	}
+}
+
+// offline fails every request: tests never reach a provider.
+type offline struct{}
+
+func (offline) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("offline in tests")
 }
