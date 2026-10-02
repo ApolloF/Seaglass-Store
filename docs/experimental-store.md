@@ -1,6 +1,20 @@
 # Experimental store
 
-An opt-in store, turned on per PC under *Settings → Experimental → Store*. While it's off, nothing of it runs or shows: no qBittorrent, no feed fetches, no art lookups. Seaglass ships no catalogs. The person adds feeds by URL ([store-feed.md](store-feed.md)), and they're responsible for what those feeds offer and for being allowed to download and play it.
+An opt-in store, turned on per PC under *Settings → Experimental → Store*. While it's off, nothing of it runs or shows: no qBittorrent, no feed fetches, no source indexing, no art or review lookups. Games come from the repack sources Seaglass indexes on this PC (FitGirl and DODI, see [Automatic discovery](#automatic-discovery)) and from feeds the person adds by URL ([store-feed.md](store-feed.md)). The person is responsible for what they download and for being allowed to play it; Seaglass doesn't assert rights or authenticity for any release.
+
+## Automatic discovery
+
+*Settings → Experimental → Source discovery* (`internal/store/discovery`, `internal/app/store_discovery.go`).
+
+- **Setup.** A person who turns the Store on for the first time gets both sources and *Browse repack sources* turned on, and indexing starts at once. Someone who used the Store before this version is asked once which sources to use; nothing is indexed until they choose, and their feeds, trust levels and reviewed offers stay as they were. The choice is per PC (`store.sources`, `store.sourceSetup`).
+- **Indexing.** Only public release metadata is read: no torrent peer, payload download or installer. The cached index shows at once at startup. The newest listings (FitGirl's RSS feed and the first listing page, catching up page by page after a long pause) are fetched again when six hours old, or on *Check for new releases*. Older listing pages are read five per source per pass, at most every 30 minutes, until the source's confirmed end (a page past the last one); progress survives restarts and an interrupted page is retried. One request per source is in flight, two seconds apart; `Retry-After` is honoured and failures back off exponentially (one minute doubling to an hour). Passes pause while a game runs and stop when the Store or a source is turned off, or Seaglass closes.
+- **Records.** Each article is kept by source and canonical URL with its claims, references, resolved torrent identities and provenance (first seen, backfill, last seen, changed, detailed). A failed fetch never drops cached games; an article that disappears is marked *no longer listed*, not deleted.
+- **Games.** Releases join one game only through a trusted Steam identity (Seaglass's game database on an exact title, or a title that differs by an edition sold as the same game, the person's correction, or a feed's AppID) or an identical normalized title. Sequels, remasters, definitive editions and DLC stay apart. *Change Steam match* on a game's page (or *Not on Steam*) is kept across refreshes in `store-identity.json`. Feed games join the same games by key.
+- **Search.** Matches from the index come at once; after 600 ms and two characters the chosen sources' own search and Steam's store search fill gaps (cached an hour each). A newer query cancels the older one. A failed provider says so and keeps the local matches. Steam games without a known source release show under *Other games, No known source release*, with wishlist and details but no install.
+- **Home.** New repacks (source publication date), Popular (Steam's most-played chart among source-backed games; without the chart the shelf says so instead of showing another ranking), Recently updated (releases whose claims changed) and Wishlist activity. Source publication dates are never shown as game release or build dates, and a changed article alone is never a newer version.
+- **Game page.** Source-labelled releases with version, size, languages, publication date and availability (*installable*, *needs resolving*, *browser only*, *update only*, *details loading*, *no longer listed*), the comparable-version recommendation and update guards; Steam's overall and recent review summaries and paged review text with helpfulness, playtime and links; the Metacritic score and link Steam gives; HowLongToBeat Main Story, Main + Extras and Completionist times, with *Wrong game?* to choose the match (`internal/store/enrich`). Provider answers are cached (chart and review pages an hour, review summaries six hours, Metacritic and HowLongToBeat seven days); a failed provider shows the cached answer as stale, or *unavailable* with a link. Nothing is estimated. Only games on screen, opened or saved are looked up.
+- **Wishlist.** Source-backed and Steam-only games can be saved (`%APPDATA%\Seaglass\wishlist.json`, this PC only). Saving sets a baseline; a first source release or a confirmed newer game version becomes unread activity in the Store until it is read. Releases found by backfill or old search results never count as news. No desktop notifications.
+- **Installing.** Choosing a release reads its article when only a summary is known and tries the supported torrent-metadata resolver once ([private-catalog.md](private-catalog.md)), then opens the install confirmation with source, version, languages, size and warnings. Without a validated torrent there's no download button: *Release page* opens the article in the browser and *Attach .torrent file* validates a file got there. Downloads then go through the same checks as feed offers: English by default, optional language packs, the payload-scan setting, integrity checks and the update guard.
 
 ## How a game gets onto the PC
 
@@ -58,7 +72,11 @@ They catch what they know: a file that isn't what the feed listed, and what Defe
 | `%APPDATA%\Seaglass\settings.json` (`store`) | feeds, folders, network, safety policy (this PC only, never synced) |
 | `%APPDATA%\Seaglass\downloads.json` | downloads, their checks and what they installed |
 | `%APPDATA%\Seaglass\secrets\store-*.bin` | proxy password and VirusTotal key (DPAPI) |
+| `%APPDATA%\Seaglass\wishlist.json` | saved Store games and their activity (this PC only) |
+| `%APPDATA%\Seaglass\store-identity.json` | the person's Steam and HowLongToBeat match corrections |
 | `%LOCALAPPDATA%\Seaglass\store\` | feed copies, art index, install logs, Windows Sandbox configs, qBittorrent's profile |
+| `%LOCALAPPDATA%\Seaglass\store\discovery\` | the source index and crawl progress (a cache: deleting it means indexing again) |
+| `%LOCALAPPDATA%\Seaglass\store\enrich\` | Steam chart, reviews, Metacritic and HowLongToBeat answers (a cache) |
 
 ## Testing
 
@@ -66,7 +84,10 @@ They catch what they know: a file that isn't what the feed listed, and what Defe
 - Live tests:
   - `WL_REAL_QBIT=1 go test -run RealSidecar -v ./internal/torrent/qbit` (the installed qBittorrent, a Creative Commons magnet added paused and removed)
   - `WL_REAL_DEFENDER=1 go test -run RealDefender -v ./internal/safety`
+  - `WL_STORE_LIVE=1 go test -run LiveDiscovery -v ./internal/store/discovery` (one bounded pass per source and a source search)
+  - `WL_STORE_LIVE=1 go test -run Live -v ./internal/store/enrich` (the chart, one game's reviews, Metacritic and HowLongToBeat)
 - `tools/harness/store.mjs` runs the whole path in the real app against a feed and web seed served by the script itself.
+- `tools/harness/discovery.mjs` drives discovery in the real app: indexing, search, a game page, the wishlist and the install confirmation (closed without downloading), in both themes and at 390 px.
 - Not yet covered by an automated run on a real installer: Inno Setup and NSIS silent installs (their command lines are unit-tested).
 
 Release comparison, repack findings, payload scan settings and torrent/installer languages are documented in [store-release-selection.md](store-release-selection.md). Source discovery is documented in [private-catalog.md](private-catalog.md).

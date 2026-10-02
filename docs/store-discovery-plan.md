@@ -1,6 +1,6 @@
 # Seaglass Store: automatic discovery, search, reviews, and wishlist
 
-Status: agreed implementation plan, 2 October 2026. Not implemented yet.
+Status: agreed implementation plan, 2 October 2026. Implemented on branch `ApolloF/Discovery`, not merged or released; see [store-discovery-progress.md](store-discovery-progress.md).
 
 ## 1. Goal and agreed decisions
 

@@ -10,11 +10,11 @@ The optional resolver supports ordinary File-Me free-download forms and bounded 
 
 ## Desktop integration
 
-Settings / Experimental / Source discovery provides on-demand FitGirl/DODI search. Searching does not start peers or downloads. File-host resolution is separately selected, defaults off and tries at most one mirror per search. Unresolved, CAPTCHA, rate-limited, blocked and manual states stay visible. Attach .torrent metadata opens a local file picker and validates metadata without extracting or executing a payload.
+The Store indexes FitGirl and DODI automatically on this PC ([experimental-store.md](experimental-store.md#automatic-discovery)): a persistent, paced crawler of listing pages and FitGirl's RSS feed, the sources' own search, and release details on demand. Indexing reads metadata only and never starts peers or downloads. File-host resolution runs only when the person chooses a release to install, at most one mirror per attempt. Unresolved, CAPTCHA, rate-limited, blocked and manual states stay visible. *Attach .torrent file* opens a local file picker and validates metadata without extracting or executing a payload.
 
-A resolved release must be reviewed explicitly before becoming a catalog offer. Summary-only and update-only entries cannot become standalone installs. Reviewed offers pass the feed validator and are saved with atomic tmp+rename writes in the store feed cache. Their notes retain the source page, document checksum, language claim and review warnings. Publication dates are not converted to game build dates. Duplicate magnets are retained once within each reviewed source. Disabling Browse repack sources hides those offers; enabling it restores the reviewed cache. Discovery previews are session-local and never auto-added.
+Discovered releases no longer need a separate review step to be offered: a release with a validated torrent opens the install confirmation, which shows the source, version, languages, size and warnings. Summary-only releases are read first; update-only entries cannot become standalone installs. The queued offer passes the feed validator, and its notes retain the source page, document checksum, language claim and warnings. Publication dates are not converted to game build dates. Offers reviewed with the earlier flow stay in the catalog while *Browse repack sources* is on; the earlier preview APIs remain for compatibility.
 
-The CLI and app share parsers, network checks and metadata validation. There is no persistent crawler or scheduled mirror resolver. [store-release-selection.md](store-release-selection.md) describes comparisons, scan controls and language choices.
+The CLI and app share parsers, network checks and metadata validation. [store-release-selection.md](store-release-selection.md) describes comparisons, scan controls and language choices.
 
 ## CLI
 

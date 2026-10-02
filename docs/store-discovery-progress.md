@@ -6,11 +6,13 @@ Tracks the implementation of [store-discovery-plan.md](store-discovery-plan.md) 
 
 | # | Work package | Owner | Status | Commit |
 |---|---|---|---|---|
-| 1 | Contracts, persistence/migration, service interfaces, mock fixtures | coordinator | done | see log below |
-| 2 | Discovery backend | coordinator | not started | |
-| 3 | Metadata providers (`internal/store/enrich`) | Sonnet 5.5 worker, high effort | not started | |
-| 4 | Desktop Store UI | Sonnet 5.5 worker, medium effort | not started | |
-| 5 | Integration, wishlist, bindings, docs, verification | coordinator | not started | |
+| 1 | Contracts, persistence/migration, service interfaces, mock fixtures | coordinator (Opus 5.5) | done | `b16ffd7`, `228f5c9` |
+| 2 | Discovery backend | coordinator | done | `4842da5` |
+| 3 | Metadata providers (`internal/store/enrich`) | Sonnet 5.5 worker, high effort | done, merged | `0783f2c`, merge `f60fd8e` |
+| 4 | Desktop Store UI | Sonnet 5.5 worker, medium effort | done, merged | `2e0a538`, merge `1b35baa` |
+| 5 | Integration, wishlist, bindings, docs, verification | coordinator | done | `75905a5`, `518eae0`, `5ef1998`, docs commit |
+
+All work packages are complete. What is left is listed under [Remaining work](#remaining-work-and-limitations).
 
 ## Shared contracts (work package 1)
 
@@ -20,7 +22,8 @@ Owned by the coordinator. Workers propose changes; they don't make them.
 - `internal/store/enrich/types.go`: `Popularity`, `Score`, `ReviewSummary`, `Review`, `ReviewQuery`, `ReviewPage`, `Critic`, `Completion`, `CompletionQuery`, `Candidate`, `Enrichment`; cache lifetimes. `client.go` holds the `Client` method set the app calls (stubs until work package 3).
 - `internal/store/wishlist/types.go`: `Entry`, `Activity`, `File`, `Observation`, `ActivityView`.
 - `internal/settings`: `StoreSettings.Sources` (per PC; `fitgirl`, `dodi`), `StoreSettings.SourceSetup` (`""` new Store user, `"ask"` existing Store user chooses once, `"done"`), `StoreTurnedOn` (turning the Store on as a new Store user chooses both sources and turns source browsing on), `DiscoveryOn`. Migration: a settings file without `store.sourceSetup` whose Store was on becomes `"ask"` with no sources; feeds, trust and `privateSources` are kept as they were.
-- `internal/app/store_discovery_service.go`: new `StoreService` methods and events (stubs return empty answers until work packages 2 and 5):
+- Later contract changes: `OpenStoreLink` (attribution links, `228f5c9`); `PreparedRelease.installed` and game details for Steam-only keys (`518eae0`).
+- `internal/app/store_discovery_service.go`: new `StoreService` methods and events:
   - Discovery: `DiscoveryStatus`, `SetupSources`, `RefreshDiscovery`, `StoreHome`, `BrowseGames` (local, at once), `SearchGames` (remote fill, newest call wins), `GameDetails`, `SetSteamMatch`, `PrepareRelease`, `AttachSourceTorrent`, `OpenSourceRelease`, `DownloadRelease`.
   - Enrichment: `EnrichGames` (cached for cards; the rest by event), `GameEnrichment` (page, fetches), `GameReviews`, `CompletionCandidates`, `SetCompletionMatch`.
   - Wishlist: `Wishlist`, `AddToWishlist`, `RemoveFromWishlist`, `AcknowledgeWishlist`; `WishlistItem`.
@@ -40,7 +43,7 @@ All JSON, written with tmp + rename.
 
 `steam:<appid>` when a trusted Steam identity exists (Seaglass's game database at confidence 72 or more, a feed's AppID, or the person's correction), else `title:<scan.Normalize(title)>`, the same scheme as `catalog.Entry.Key`, so installed games, downloads (`Job.GameKey`), art and updates line up. Entries merge across sources only through that key: a trusted Steam identity or an identical normalized title. Sequels, remasters and DLC stay apart.
 
-## File ownership while workers run
+## File ownership while the workers ran (historical)
 
 - Worker A (providers, work package 3): `internal/store/enrich/**` except `types.go`. May add hosts to its own allowlist inside the package. Nothing else.
 - Worker B (desktop Store, work package 4): `frontend/src/desktop/Store.svelte`, `StoreGame.svelte`, `InstallDialog.svelte`, `SourceBrowser.svelte`, the source section of `StoreSettings.svelte`, new files under `frontend/src/desktop/store/`, new pure helpers `frontend/src/lib/storefront*.ts` with tests, a new state module `frontend/src/lib/storefront.svelte.ts`. May add fixture data (not shapes) to `api.mock.discovery.ts`.
@@ -66,12 +69,54 @@ Each maps to tests named for the behaviour.
 
 ## Verification log
 
-Filled in as checks run. "Not run" means not run.
+Run on 2 October 2026 on Windows 11 (Go 1.27.0, Node 24.19.0, Wails v3.0.0-beta.26), at `5ef1998` plus the documentation commit. "Not run" means not run.
 
 | Check | Result |
 |---|---|
-| `go test ./...` (baseline, before changes) | pass, except the root package, which needs `frontend/dist` (built by `npm run build`) |
+| `wails3 generate bindings -f '-tags production' -clean=true -ts -i` | pass; output committed, no diff after the last run |
+| `go vet ./...` | pass |
+| `go test ./...` | pass (every package; the root package needs `frontend/dist`, built by `npm run build` first) |
+| `go test -race ./internal/...` | **not run: environment.** `-race requires cgo`; with `CGO_ENABLED=1` there is no gcc on this machine. Needs Windows CI with a C toolchain. |
+| `cd frontend && npm run check` | pass, 0 errors, 0 warnings |
+| `cd frontend && npm run test` | pass, 13 files, 86 tests |
+| `cd frontend && npm run build` | pass |
+| `wails3 build` | pass, `bin/Seaglass.exe` |
+| `git diff --check` (working tree and `f38705e..HEAD`) | pass |
+| Live: `WL_STORE_LIVE=1 go test -run LiveDiscovery -v ./internal/store/discovery` | pass: FitGirl 5 pages, 42 releases; DODI 5 pages, 48 releases; source search "witcher" 7 and 4 results; 92 games, 42 installable |
+| Live: `WL_STORE_LIVE=1 go test -run Live -v ./internal/store/enrich` | pass: chart 100 games; Portal 2 summary 98 % of 467,428 (recent 98 % of 1,715, no Steam label); review pages 1 and 2 through the cursor; Metacritic 95 with link; HowLongToBeat search and detail id 7231, 515 / 826 / 1376 min |
+| Real app: `node tools/harness/discovery.mjs` (dev build) | pass, 22 checks: Home filled from the sources without a feed; search; Enter opens a game, Escape goes back; game page with releases, reviews and times; wishlist saved and persisted; install confirmation opened and closed; nothing downloaded; no horizontal scrolling at 390 px in both themes on every screen |
+| Mock UI (work package 4 worker, Playwright on Edge) | both themes at 1280 and 390 px for Home, Browse, Wishlist, game page, install dialog, Settings; `discovery=setup/empty/offline/nochart/slow` scenarios; keyboard pass |
+| `node tools/harness/store.mjs` (download and install pipeline) | **not run: environment.** Needs qBittorrent 5, which isn't installed here. The pipeline's Go tests (`store_pipeline_test.go`, controlled installer fixture) pass. |
 
-## Remaining work
+Earlier: `go test ./...` before any change passed except the root package (no `frontend/dist` yet).
 
-See the milestone table.
+Bugs found by verification and fixed: a deadlock after the first remote search (found by the real-app harness, `5ef1998`); a feed or listing page with only announcements aborted a pass (found by tests, fixed in `4842da5`).
+
+## Delegation
+
+The in-session agent tool could not pin a subagent's effort: custom agent definitions in a new agents directory load only after a restart, and its isolated worktrees start from `main`. Work packages 3 and 4 therefore ran as headless Claude Code workers (`claude -p --model claude-sonnet-5-5 --effort high|medium`), each in its own git worktree created from `228f5c9` (`Discovery-providers`, `Discovery-ui`, since removed; the branches `store-discovery-providers` and `store-discovery-ui` remain). Both followed the ownership rules; their commits were reviewed and merged with `--no-ff`.
+
+Worker proposals and what became of them:
+- Prepared releases should carry the installed folder: done (`PreparedRelease.installed`, `518eae0`).
+- Game details for Steam-only keys: done (`518eae0`).
+- A type field (game, DLC, mod) on HowLongToBeat candidates: not done; optional.
+- A "being resolved" flag on summaries: not done; optional.
+- Flush the enrichment cache on exit: done (`Core.Stop`).
+
+## Decisions made during implementation
+
+- Steam's keyless `IUserReviewsService/GetAppReviews` ignored the filter, language and day range, had no persona names and totals differing from the store page, so reviews use Steam's documented `store.steampowered.com/appreviews/<appid>?json=1`. The recent summary comes from Steam's review histogram (last 30 days); Steam gives it no label.
+- HowLongToBeat uses the site's own anonymous search flow (`/api/search/site/init` token, then `/api/search/site`). Its init endpoint answered 403 without a `Referer: https://howlongtobeat.com/` header, so the provider sends that header and a descriptive User-Agent; no cookies, accounts, browser spoofing or challenge solving. If the site blocks again, cached times show as stale, otherwise "Times unavailable" with a link. **Maintainer review suggested.**
+- Seaglass's game database identifies releases for merging only on exact titles (confidence 85), or titles differing by an edition sold as the same game (75, unless the edition word is remaster, remake, definitive, director's cut, final cut, enhanced, anniversary, reloaded or redux). Looser matches don't merge, so some games have no Steam identity and therefore no reviews until corrected.
+- A first pass reads the newest listing page and leaves older pages to backfill; later refreshes catch up page by page until a page brings nothing new. A search result published more than a week ago counts as backfill, so finding it is never wishlist news.
+- Language claims are parsed to installer language names; a claim with an unknown part (MULTi9) doesn't restrict the language choice at install.
+- In the test harness's frozen mode (`--dev-data`), discovery indexes only when asked (setup, refresh), like the rest of the store.
+- The old manual review flow (Settings, Source discovery) is replaced in the interface; its service methods remain for compatibility.
+
+## Remaining work and limitations
+
+- Run `go test -race ./internal/...` and `tools/harness/store.mjs` in Windows CI or on a PC with gcc and qBittorrent 5.
+- The desktop shell (sidebar, 980 px minimum window) has no phone layout; the Store content itself is verified at 390 px with the sidebar hidden.
+- The harness's `--dev-data` redirects roaming data only: discovery and enrichment caches go to the real `%LOCALAPPDATA%\Seaglass\store` (removed after the runs here).
+- Big Picture keeps its existing Downloads screen; it has no discovery Store (as planned).
+- Optional contract additions above. Nothing is merged, tagged or released.

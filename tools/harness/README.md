@@ -23,6 +23,7 @@ node smoke.mjs
 | `perf.mjs [--games=500,2000] [--only=orbit] [--trace] [--frames]` | holds a direction for 5 s per scenario at 4K and reads a trace: frames presented and dropped, frames with holes, main-thread time, memory; `--trace` keeps the full trace (`tracesum.py` sums it), `--frames` records a screencast |
 | `achievements.mjs` | a fake Goldberg copy of Portal: the details card, icons, hidden ones, Steam's rarity, the note after playing, and the full list and big picture screen at every size |
 | `store.mjs` | the experimental store end to end: a feed and a web-seeded .torrent served by the script, then Get, download through qBittorrent, safety checks, install into a games folder that joins the library's folders, and uninstall (needs qBittorrent 5) |
+| `discovery.mjs` | Store discovery: indexes the sources (one bounded pass each), then search, a game page, the wishlist and the install confirmation (closed, nothing downloaded), in both themes and at 390 px, with checks in `report.json` (needs the network) |
 | `refresh.mjs` | runs the app once on the real library so its metadata is current, and keeps a copy for the test data |
 
 Contact sheets need Python with Pillow (`sheet.py`).
