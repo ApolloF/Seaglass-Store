@@ -275,3 +275,52 @@ func TestWishlistFollowsGamesNotReleases(t *testing.T) {
 		t.Errorf("wishlisting queued %d downloads", n)
 	}
 }
+
+func TestRemoteSearchFillsGapsAndLeavesTheStoreResponsive(t *testing.T) {
+	c, s := discoveryCore(t)
+	f := c.discovery.fetchers["dodi"].(*pagesFetcher)
+	f.pages["https://dodi-repacks.site/?s=lantern"] = `<html><body><article><h1 class="entry-title"><a href="https://dodi-repacks.site/lantern-season/">123- Lantern Season (v1.0.2) [DODI Repack]</a></h1>` +
+		`<div class="entry-summary"><p>Excerpt</p></div><time class="published" datetime="2024-01-01T00:00:00Z"></time></article></body></html>`
+	done := make(chan discovery.SearchResult)
+	go func() {
+		res, err := s.SearchGames(discovery.BrowseQuery{Text: "lantern"})
+		if err != nil {
+			t.Error(err)
+		}
+		done <- res
+	}()
+	var res discovery.SearchResult
+	select {
+	case res = <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the search hung")
+	}
+	if res.Page.Total != 1 || res.Page.Games[0].Title != "Lantern Season" || !res.Complete {
+		t.Fatalf("remote result: %+v", res)
+	}
+	states := map[string]string{}
+	for _, p := range res.Remote {
+		states[p.ID] = p.State
+	}
+	if states["dodi"] != discovery.StateOK || states["fitgirl"] != discovery.StateError {
+		t.Errorf("provider states: %v (FitGirl's search page isn't served, so it fails without hiding DODI's)", states)
+	}
+	// Answered from the hour's cache the second time; and the Store still answers.
+	res, _ = s.SearchGames(discovery.BrowseQuery{Text: "lantern"})
+	for _, p := range res.Remote {
+		if p.ID == "dodi" && !p.Cached {
+			t.Error("the second search asked DODI again")
+		}
+	}
+	if _, err := s.GameDetails(res.Page.Games[0].Key); err != nil {
+		t.Fatal(err)
+	}
+	// A found summary from long ago is history, not news.
+	r, _ := c.discovery.index().Record("dodi", sources.EntryID("dodi", "https://dodi-repacks.site/lantern-season/"))
+	if !r.Backfill || !r.Entry.SummaryOnly {
+		t.Errorf("search record: %+v", r)
+	}
+	if res, _ := s.SearchGames(discovery.BrowseQuery{Text: "l"}); res.Remote[0].State != discovery.StateSkipped {
+		t.Error("a one-letter query went to the sources")
+	}
+}

@@ -768,11 +768,12 @@ func (d *discoveryState) searchRemote(text string) ([]discovery.ProviderProgress
 		}
 		return progress, nil, true
 	}
+	run := d.ctx() // before d.mu: ctx takes it too
 	d.mu.Lock()
 	if d.searchStop != nil {
 		d.searchStop()
 	}
-	ctx, cancel := context.WithTimeout(d.ctx(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(run, 45*time.Second)
 	d.searchStop = cancel
 	d.searchSeq++
 	seq := d.searchSeq
