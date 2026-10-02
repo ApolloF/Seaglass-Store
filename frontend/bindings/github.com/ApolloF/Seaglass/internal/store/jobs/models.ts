@@ -3,6 +3,9 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as safety$0 from "../../safety/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as torrent$0 from "../../torrent/models.js";
 
 /**
@@ -17,10 +20,34 @@ export enum Action {
     Pause = "pause",
 
     /**
-     * also retries a failed download
+     * also retries a failed download or install
      */
     Resume = "resume",
+
+    /**
+     * forgets the download (an installed game stays)
+     */
     Remove = "remove",
+
+    /**
+     * installs a checked download
+     */
+    Install = "install",
+
+    /**
+     * installs a blocked download anyway (after confirming)
+     */
+    Allow = "allow",
+
+    /**
+     * runs the game's uninstaller
+     */
+    Uninstall = "uninstall",
+
+    /**
+     * runs the safety checks again
+     */
+    Recheck = "recheck",
 };
 
 /**
@@ -61,6 +88,37 @@ export interface Job {
      * install as soon as it's downloaded and checked
      */
     "autoInstall"?: boolean;
+
+    /**
+     * the installer's, from the feed
+     */
+    "sha256"?: string;
+
+    /**
+     * After downloading.
+     */
+    "safety"?: safety$0.Report | null;
+
+    /**
+     * the kind of installer found: inno, nsis, msi, archive, portable
+     */
+    "installer"?: string;
+
+    /**
+     * command line that removes the game
+     */
+    "uninstaller"?: string;
+    "installedAt"?: number;
+
+    /**
+     * bytes in the game's folder while installing
+     */
+    "installDone"?: number;
+
+    /**
+     * the installer has done nothing visible for a while
+     */
+    "stalled"?: boolean;
 
     /**
      * once the engine has it
@@ -119,9 +177,29 @@ export enum State {
     Paused = "paused",
 
     /**
-     * every wanted file is on disk
+     * downloaded; the safety checks run
+     */
+    Scanning = "scanning",
+
+    /**
+     * downloaded and checked: ready to install
      */
     Downloaded = "downloaded",
+
+    /**
+     * the safety checks found a problem
+     */
+    Blocked = "blocked",
+
+    /**
+     * the installer runs
+     */
+    Installing = "installing",
+
+    /**
+     * the game is installed and in the library
+     */
+    Installed = "installed",
 
     /**
      * stopped with an error; can be retried

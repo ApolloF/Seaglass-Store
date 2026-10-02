@@ -18,6 +18,17 @@
   let folder = $state("");
   let gamesFolder = $state("");
   let hasPassword = $state(false);
+  let hasVT = $state(false);
+  let vtDraft = $state("");
+  $effect(() => {
+    api.store.hasVirusTotalKey().then((v) => (hasVT = v));
+  });
+  async function saveVT(k: string) {
+    if ((await lib.run(() => api.store.setVirusTotalKey(k).then(() => true))) === true) {
+      hasVT = !!k;
+      vtDraft = "";
+    }
+  }
   $effect(() => {
     shop.start();
     void st?.downloads;
@@ -146,6 +157,31 @@
     </div>
     <Toggle checked={st.keepDownloads} title="Keep downloads after installing" detail="Keeps sharing them, and lets you install again without downloading. Off: a download is deleted once its game is installed." onchange={(v) => setStore({ keepDownloads: v })} />
     <Toggle checked={st.pauseWhilePlaying} title="Pause downloads while playing" detail="Games get the whole connection and disk. Downloads go on when the game closes." onchange={(v) => setStore({ pauseWhilePlaying: v })} />
+  </div>
+
+  <div class="group">
+    <span class="glabel">Safety checks</span>
+    <p class="hint">Before anything in a download runs, Seaglass compares the installer with the feed's checksum, looks at what's inside, and has Microsoft Defender scan it. These checks catch known problems; they can't prove a download is safe.</p>
+    <Toggle checked={st.blockDetections} title="Block what Defender or VirusTotal flags" detail="Blocked downloads aren't installed unless you type their name to insist. Off: detections are warnings you decide on." onchange={(v) => setStore({ blockDetections: v })} />
+    {#if hasVT}
+      <div class="pathrow">
+        <Icon name="check" size={16} /><span class="path">VirusTotal key saved: installers are looked up by their SHA-256</span>
+        <button type="button" class="btn" onclick={() => saveVT("")}>Remove</button>
+      </div>
+    {:else}
+      <form
+        class="field"
+        onsubmit={(e) => {
+          e.preventDefault();
+          if (vtDraft.trim()) saveVT(vtDraft.trim());
+        }}
+      >
+        <label class="label" for="st-vt">VirusTotal key</label>
+        <input id="st-vt" class="text-in" type="password" autocomplete="off" spellcheck="false" placeholder="Optional: your own API key" bind:value={vtDraft} />
+        <button type="submit" class="btn" disabled={!vtDraft.trim()}>Save</button>
+      </form>
+      <p class="hint">With your free VirusTotal key, installers are looked up by their SHA-256 too. Files are never uploaded. The key is stored encrypted for your Windows account.</p>
+    {/if}
   </div>
 
   <div class="group">

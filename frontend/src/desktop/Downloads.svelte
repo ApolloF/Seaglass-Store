@@ -1,10 +1,10 @@
 <script lang="ts">
   import Icon from "../components/Icon.svelte";
   import { api } from "../lib/api";
-  import { progress, statusLine } from "../lib/downloads";
+  import { needsYou } from "../lib/downloads";
   import { shop } from "../lib/shop.svelte";
   import { lib } from "../lib/store.svelte";
-  import type { Download, DownloadAction } from "../lib/types";
+  import DownloadRow from "./DownloadRow.svelte";
 
   let { onsettings }: { onsettings: () => void } = $props();
 
@@ -24,23 +24,20 @@
     }
   }
 
-  // The download whose removal is being confirmed.
-  let removing = $state<string | null>(null);
-  async function act(d: Download, action: DownloadAction, deleteFiles = false) {
-    removing = null;
-    await lib.run(() => api.store.action(d.id, action, deleteFiles));
-    if (action === "remove") shop.downloads = shop.downloads.filter((x) => x.id !== d.id);
-  }
+  let sandbox = $state(false);
+  $effect(() => {
+    api.store.sandboxAvailable().then((v) => (sandbox = v));
+  });
 
   async function chooseExe() {
     const s = await lib.run(() => api.store.chooseQBittorrent());
     if (s) lib.settings = s;
   }
 
-  // Newest first; finished ones after the ones still going.
-  const list = $derived(
-    [...shop.downloads].sort((a, b) => Number(a.state === "downloaded") - Number(b.state === "downloaded") || b.created - a.created),
-  );
+  // What waits for the person first, then what's still going, then the
+  // rest; newest first within each.
+  const rank = (d: (typeof shop.downloads)[number]) => (needsYou(d) ? 0 : d.state === "installed" ? 2 : d.state === "downloaded" ? 1.5 : 1);
+  const list = $derived([...shop.downloads].sort((a, b) => rank(a) - rank(b) || b.created - a.created));
   const eng = $derived(shop.engine);
 </script>
 
@@ -89,37 +86,7 @@
     {:else}
       <ul class="list">
         {#each list as d (d.id)}
-          <li class="item" class:failed={d.state === "failed"}>
-            <div class="info">
-              <span class="title">{d.title}</span>
-              <span class="status">{statusLine(d, eng)}</span>
-              {#if d.state !== "downloaded"}
-                <div class="bar" role="progressbar" aria-label={`${d.title} progress`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(progress(d) * 100)}>
-                  <span style:width={`${progress(d) * 100}%`} class:paused={d.state !== "downloading"}></span>
-                </div>
-              {/if}
-            </div>
-            {#if removing === d.id}
-              <div class="confirm">
-                <span>Remove it?</span>
-                <button type="button" class="btn" onclick={() => act(d, "remove", false)}>Keep files</button>
-                <button type="button" class="btn danger" onclick={() => act(d, "remove", true)}>Delete files</button>
-                <button type="button" class="icon" aria-label="Don't remove" onclick={() => (removing = null)}><Icon name="close" size={16} /></button>
-              </div>
-            {:else}
-              <div class="actions">
-                {#if d.state === "queued" || d.state === "downloading"}
-                  <button type="button" class="icon" aria-label={`Pause ${d.title}`} title="Pause" onclick={() => act(d, "pause")}><Icon name="stop" size={14} /></button>
-                {:else if d.state === "paused" || d.state === "failed"}
-                  <button type="button" class="icon" aria-label={`${d.state === "failed" ? "Try again" : "Resume"}: ${d.title}`} title={d.state === "failed" ? "Try again" : "Resume"} onclick={() => act(d, "resume")}
-                    ><Icon name={d.state === "failed" ? "refresh" : "play"} size={16} /></button
-                  >
-                {/if}
-                <button type="button" class="icon" aria-label={`Show ${d.title} in Explorer`} title="Show in Explorer" onclick={() => lib.run(() => api.store.showDownload(d.id))}><Icon name="folder" size={16} /></button>
-                <button type="button" class="icon" aria-label={`Remove ${d.title}`} title="Remove" onclick={() => (removing = d.id)}><Icon name="trash" size={16} /></button>
-              </div>
-            {/if}
-          </li>
+          <DownloadRow {d} {eng} {sandbox} />
         {/each}
       </ul>
     {/if}
@@ -248,9 +215,6 @@
     background: var(--accent);
     filter: brightness(1.08);
   }
-  .btn.danger {
-    color: var(--danger);
-  }
   .btn:disabled {
     opacity: 0.5;
   }
@@ -261,81 +225,6 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-  }
-  .item {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 14px 16px;
-    border-radius: var(--radius);
-    background: var(--surface-2);
-  }
-  .info {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .title {
-    font-weight: 700;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .status {
-    font-size: 13.5px;
-    color: var(--muted);
-  }
-  .item.failed .status {
-    color: var(--warn);
-  }
-  .bar {
-    height: 6px;
-    margin-top: 4px;
-    border-radius: 99px;
-    background: var(--surface-3);
-    overflow: hidden;
-  }
-  .bar span {
-    display: block;
-    height: 100%;
-    border-radius: inherit;
-    background: var(--accent);
-    transition: width 0.6s var(--ease);
-  }
-  .bar span.paused {
-    background: var(--muted);
-  }
-  .actions,
-  .confirm {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .confirm {
-    gap: 8px;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-  }
-  .confirm span {
-    font-size: 14px;
-    color: var(--text-2);
-  }
-  .icon {
-    width: 34px;
-    height: 34px;
-    border: 0;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--muted);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .icon:hover {
-    background: var(--surface-3);
-    color: var(--text);
   }
   .empty {
     flex: 1;

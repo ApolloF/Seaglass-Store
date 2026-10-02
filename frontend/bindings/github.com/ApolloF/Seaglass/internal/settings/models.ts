@@ -195,6 +195,11 @@ export interface StoreSettings {
      * downloads wait while a game runs
      */
     "pauseWhilePlaying": boolean;
+
+    /**
+     * a download Defender or VirusTotal flags isn't installed unless the person insists
+     */
+    "blockDetections": boolean;
     "network": torrent$0.Network;
 
     /**

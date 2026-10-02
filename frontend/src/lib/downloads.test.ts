@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeCount, eta, progress, statusLine } from "./downloads";
+import { activeCount, eta, needsYou, progress, statusLine } from "./downloads";
 import type { Download, EngineStatus } from "./types";
 
 const d = (p: Partial<Download>): Download => ({
@@ -10,7 +10,20 @@ const running: EngineStatus = { installed: true, exe: "q.exe", running: true, in
 
 describe("downloads", () => {
   it("counts what's still on its way", () => {
-    expect(activeCount([d({}), d({ state: "queued" }), d({ state: "paused" }), d({ state: "downloaded" })])).toBe(2);
+    expect(activeCount([d({}), d({ state: "queued" }), d({ state: "paused" }), d({ state: "downloaded" }), d({ state: "installing" }), d({ state: "installed" })])).toBe(3);
+  });
+
+  it("says what happens after downloading", () => {
+    const report = (verdict: "clean" | "warn" | "block") => ({ verdict, findings: [], checked: 1 });
+    expect(statusLine(d({ state: "scanning" }), running)).toBe("Downloaded · running the safety checks…");
+    expect(statusLine(d({ state: "downloaded", safety: report("clean") }), running)).toBe("Downloaded and checked · ready to install");
+    expect(statusLine(d({ state: "downloaded", safety: report("warn") }), running)).toBe("Downloaded · the safety checks have warnings");
+    expect(statusLine(d({ state: "blocked", safety: report("block") }), running)).toMatch(/found a problem/);
+    expect(statusLine(d({ state: "installing", installDone: 3e9 }), running)).toBe("Installing… · 3.0 GB so far");
+    expect(statusLine(d({ state: "installing", stalled: true }), running)).toMatch(/no progress/);
+    expect(statusLine(d({ state: "installed", installDir: "D:\\Games\\T" }), running)).toBe("Installed in D:\\Games\\T");
+    expect(needsYou(d({ state: "downloaded", safety: report("warn"), autoInstall: true }))).toBe(true);
+    expect(needsYou(d({ state: "downloaded", safety: report("clean"), autoInstall: true }))).toBe(false);
   });
 
   it("shows progress, done or not", () => {
@@ -39,7 +52,7 @@ describe("downloads", () => {
   it("describes finished, paused and failed downloads whatever the engine does", () => {
     const off = { ...running, running: false };
     expect(statusLine(d({ state: "paused" }), off)).toBe("Paused · 500 MB of 2.0 GB");
-    expect(statusLine(d({ state: "downloaded", done: 2e9, seeding: true, upSpeed: 2e5 }), running)).toBe("Done · 2.0 GB · sharing at 200 KB/s");
+    expect(statusLine(d({ state: "downloaded", done: 2e9, seeding: true, upSpeed: 2e5 }), running)).toBe("Downloaded · 2.0 GB · sharing at 200 KB/s");
     expect(statusLine(d({ state: "failed", error: "Disk full" }), off)).toBe("Disk full");
   });
 });

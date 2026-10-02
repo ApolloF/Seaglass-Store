@@ -51,6 +51,14 @@ export function Addresses(iface: string): $CancellablePromise<string[] | null> {
 }
 
 /**
+ * AllowDownload lets a download the safety checks blocked be installed
+ * after all. confirm must be the download's title, typed by the person.
+ */
+export function AllowDownload(id: string, confirm: string): $CancellablePromise<void> {
+    return $Call.ByID(1595628106, id, confirm);
+}
+
+/**
  * Art returns the art and descriptions known for these catalog games and
  * looks up the rest, in this order (EventStoreArt brings them).
  */
@@ -173,6 +181,13 @@ export function HasProxyPassword(): $CancellablePromise<boolean> {
 }
 
 /**
+ * HasVirusTotalKey reports whether a VirusTotal API key is saved.
+ */
+export function HasVirusTotalKey(): $CancellablePromise<boolean> {
+    return $Call.ByID(3695390901);
+}
+
+/**
  * InstallFolder suggests a folder for a game.
  */
 export function InstallFolder(title: string): $CancellablePromise<string> {
@@ -184,6 +199,14 @@ export function InstallFolder(title: string): $CancellablePromise<string> {
  */
 export function Interfaces(): $CancellablePromise<torrent$0.Interface[] | null> {
     return $Call.ByID(2450318113);
+}
+
+/**
+ * OpenInSandbox opens Windows Sandbox with a download on its desktop,
+ * read-only and without network, to try it there first.
+ */
+export function OpenInSandbox(id: string): $CancellablePromise<void> {
+    return $Call.ByID(4121320589, id);
 }
 
 /**
@@ -201,6 +224,13 @@ export function RemoveFeed(url: string): $CancellablePromise<settings$0.Settings
 }
 
 /**
+ * SandboxAvailable reports whether Windows Sandbox is turned on.
+ */
+export function SandboxAvailable(): $CancellablePromise<boolean> {
+    return $Call.ByID(3185661807);
+}
+
+/**
  * SetFeedEnabled shows a feed's games in the catalog, or not.
  */
 export function SetFeedEnabled(url: string, on: boolean): $CancellablePromise<settings$0.Settings> {
@@ -213,6 +243,14 @@ export function SetFeedEnabled(url: string, on: boolean): $CancellablePromise<se
  */
 export function SetProxyPassword(password: string): $CancellablePromise<void> {
     return $Call.ByID(348886920, password);
+}
+
+/**
+ * SetVirusTotalKey stores the person's VirusTotal API key encrypted for
+ * this Windows account ("" removes it). Only file hashes are looked up.
+ */
+export function SetVirusTotalKey(key: string): $CancellablePromise<void> {
+    return $Call.ByID(3842706853, key);
 }
 
 /**

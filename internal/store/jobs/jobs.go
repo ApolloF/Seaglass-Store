@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ApolloF/Seaglass/internal/safety"
 	"github.com/ApolloF/Seaglass/internal/torrent"
 )
 
@@ -24,7 +25,11 @@ const (
 	Queued      State = "queued"      // waiting to be handed to the engine
 	Downloading State = "downloading" // in the engine and wanted
 	Paused      State = "paused"      // paused by the person
-	Downloaded  State = "downloaded"  // every wanted file is on disk
+	Scanning    State = "scanning"    // downloaded; the safety checks run
+	Downloaded  State = "downloaded"  // downloaded and checked: ready to install
+	Blocked     State = "blocked"     // the safety checks found a problem
+	Installing  State = "installing"  // the installer runs
+	Installed   State = "installed"   // the game is installed and in the library
 	Failed      State = "failed"      // stopped with an error; can be retried
 )
 
@@ -32,20 +37,44 @@ const (
 type Action string
 
 const (
-	Pause  Action = "pause"
-	Resume Action = "resume" // also retries a failed download
-	Remove Action = "remove"
+	Pause     Action = "pause"
+	Resume    Action = "resume"    // also retries a failed download or install
+	Remove    Action = "remove"    // forgets the download (an installed game stays)
+	Install   Action = "install"   // installs a checked download
+	Allow     Action = "allow"     // installs a blocked download anyway (after confirming)
+	Uninstall Action = "uninstall" // runs the game's uninstaller
+	Recheck   Action = "recheck"   // runs the safety checks again
 )
 
-// Can reports whether action makes sense for a download in state s.
-func Can(s State, a Action) bool {
+// Can reports whether action makes sense for the download now.
+func (j Job) Can(a Action) bool {
 	switch a {
 	case Pause:
-		return s == Queued || s == Downloading
+		return j.State == Queued || j.State == Downloading
 	case Resume:
-		return s == Paused || s == Failed
+		return j.State == Paused || j.State == Failed
 	case Remove:
+		return j.State != Scanning && j.State != Installing
+	case Install:
+		return j.State == Downloaded && j.Safety != nil
+	case Allow:
+		return j.State == Blocked
+	case Uninstall:
+		return j.State == Installed
+	case Recheck:
+		return j.State == Downloaded || j.State == Blocked
+	}
+	return false
+}
+
+// pastDownload reports whether the download itself is done with, so the
+// engine's view of the torrent no longer moves the job along.
+func (j Job) pastDownload() bool {
+	switch j.State {
+	case Scanning, Downloaded, Blocked, Installing, Installed:
 		return true
+	case Failed:
+		return j.Safety != nil // failed installing, not downloading
 	}
 	return false
 }
@@ -67,10 +96,18 @@ type Job struct {
 	InstallDir  string `json:"installDir,omitempty"`  // the game's own folder
 	Language    string `json:"language,omitempty"`    // as the feed names it; "" for the installer's default
 	AutoInstall bool   `json:"autoInstall,omitempty"` // install as soon as it's downloaded and checked
-	Hash     string `json:"hash,omitempty"` // once the engine has it
-	Name     string `json:"name,omitempty"` // the torrent's own name: its folder (or file) in SavePath
-	State    State  `json:"state"`
-	Error    string `json:"error,omitempty"`
+	SHA256      string `json:"sha256,omitempty"`      // the installer's, from the feed
+	// After downloading.
+	Safety      *safety.Report `json:"safety,omitempty"`
+	Installer   string         `json:"installer,omitempty"`   // the kind of installer found: inno, nsis, msi, archive, portable
+	Uninstaller string         `json:"uninstaller,omitempty"` // command line that removes the game
+	InstalledAt int64          `json:"installedAt,omitempty"`
+	InstallDone int64          `json:"installDone,omitempty"` // bytes in the game's folder while installing
+	Stalled     bool           `json:"stalled,omitempty"`     // the installer has done nothing visible for a while
+	Hash        string         `json:"hash,omitempty"`        // once the engine has it
+	Name        string         `json:"name,omitempty"`        // the torrent's own name: its folder (or file) in SavePath
+	State       State          `json:"state"`
+	Error       string         `json:"error,omitempty"`
 	// Progress, from the engine.
 	Engine    torrent.State `json:"engine,omitempty"`
 	Size      int64         `json:"size"`
@@ -100,6 +137,12 @@ func (j *Job) Sync(t *torrent.Torrent, now time.Time) bool {
 			j.State = Queued // lost from the engine (its profile was reset): add it again
 		}
 		return j.State != before.State
+	}
+	if j.pastDownload() {
+		j.Hash, j.Name, j.Engine = t.Hash, t.Name, t.State
+		j.DownSpeed, j.UpSpeed, j.Seeds, j.Peers, j.ETA = 0, t.UpSpeed, t.Seeds, t.Peers, 0
+		j.Seeding = t.State == torrent.Seeding
+		return j.Hash != before.Hash || j.Name != before.Name
 	}
 	j.Hash, j.Name, j.Engine, j.Size, j.Done = t.Hash, t.Name, t.State, t.Size, t.Done
 	j.DownSpeed, j.UpSpeed, j.Seeds, j.Peers, j.ETA = t.DownSpeed, t.UpSpeed, t.Seeds, t.Peers, t.ETA
@@ -179,8 +222,8 @@ func (s *Store) Add(j Job, now time.Time) (Job, error) {
 		return Job{}, err
 	}
 	j = Job{ID: "sg-" + hex.EncodeToString(b), Title: j.Title, Source: j.Source, SavePath: j.SavePath,
-		GameKey: j.GameKey, Version: j.Version, FeedName: j.FeedName,
-		InstallDir: j.InstallDir, Language: j.Language, AutoInstall: j.AutoInstall, State: Queued, Created: now.Unix()}
+		GameKey: j.GameKey, Version: j.Version, FeedName: j.FeedName, Installer: j.Installer,
+		InstallDir: j.InstallDir, Language: j.Language, AutoInstall: j.AutoInstall, SHA256: j.SHA256, State: Queued, Created: now.Unix()}
 	s.mu.Lock()
 	s.jobs = append(s.jobs, j)
 	s.mu.Unlock()

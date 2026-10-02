@@ -2,9 +2,14 @@
 import { bytes } from "./format";
 import type { Download, EngineStatus } from "./types";
 
-/** Downloads still on their way (what the sidebar counts). */
+/** Downloads still on their way, checks and installs included (what the sidebar counts). */
 export function activeCount(ds: Download[]): number {
-  return ds.filter((d) => d.state === "queued" || d.state === "downloading").length;
+  return ds.filter((d) => d.state === "queued" || d.state === "downloading" || d.state === "scanning" || d.state === "installing").length;
+}
+
+/** Downloads waiting for the person: checked and ready, blocked, or failed. */
+export function needsYou(d: Download): boolean {
+  return (d.state === "downloaded" && !!d.safety && !d.autoInstall) || (d.state === "downloaded" && d.safety?.verdict === "warn") || d.state === "blocked";
 }
 
 export function progress(d: Download): number {
@@ -26,13 +31,25 @@ const speed = (n: number) => `${bytes(n)}/s`;
 /** The line under a download's title. */
 export function statusLine(d: Download, engine: EngineStatus | null): string {
   const size = d.size ? `${bytes(d.done)} of ${bytes(d.size)}` : "";
+  const sharing = d.seeding ? ` · sharing at ${speed(d.upSpeed)}` : "";
   switch (d.state) {
     case "failed":
       return d.error || "Stopped with an error";
     case "paused":
       return ["Paused", size].filter(Boolean).join(" · ");
+    case "scanning":
+      return "Downloaded · running the safety checks…";
+    case "blocked":
+      return "Not installed: the safety checks found a problem";
+    case "installing":
+      if (d.stalled) return "The installer has shown no progress for a while. It may be waiting for an answer in a window of its own.";
+      return ["Installing…", d.installDone ? `${bytes(d.installDone)} so far` : ""].filter(Boolean).join(" · ");
+    case "installed":
+      return d.installDir ? `Installed in ${d.installDir}` : "Installed where its installer chose";
     case "downloaded":
-      return d.seeding ? `Done · ${bytes(d.size)} · sharing at ${speed(d.upSpeed)}` : `Done · ${bytes(d.size)}`;
+      if (!d.safety) return `Downloaded · ${bytes(d.size)}${sharing}`;
+      if (d.safety.verdict === "warn" && !d.safety.overridden) return `Downloaded · the safety checks have warnings${sharing}`;
+      return `Downloaded and checked · ready to install${sharing}`;
   }
   if (engine?.interfaceMissing) return "Waiting: the network interface downloads are bound to is gone";
   if (engine?.gameRunning) return "Waiting for your game to close";

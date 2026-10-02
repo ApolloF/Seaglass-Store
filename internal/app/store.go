@@ -56,6 +56,7 @@ type EngineStatus struct {
 type storeState struct {
 	c    *Core
 	jobs *jobs.Store
+	pipe *pipeline
 	kick chan struct{}
 
 	mu       sync.Mutex
@@ -71,7 +72,9 @@ type storeState struct {
 const engineIdle = 2 * time.Minute
 
 func newStoreState(c *Core) *storeState {
-	return &storeState{c: c, jobs: jobs.Open(filepath.Join(platform.AppDir(), "downloads.json")), kick: make(chan struct{}, 1)}
+	st := &storeState{c: c, jobs: jobs.Open(filepath.Join(platform.AppDir(), "downloads.json")), kick: make(chan struct{}, 1)}
+	st.pipe = newPipeline(st)
+	return st
 }
 
 // downloadsDir is where downloads go.
@@ -118,6 +121,9 @@ func (st *storeState) wake() {
 func (st *storeState) tick(ctx context.Context) {
 	cfg := st.c.Settings.Get()
 	all := st.jobs.All()
+	if cfg.ExperimentalStore {
+		st.pipe.advance(all)
+	}
 	need := false
 	for _, j := range all {
 		need = need || j.Active()

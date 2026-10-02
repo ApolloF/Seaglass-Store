@@ -9,6 +9,7 @@ export const mockStoreSettings: StoreSettings = {
   games: "",
   keepDownloads: false,
   pauseWhilePlaying: true,
+  blockDetections: true,
   network: {
     interface: "",
     address: "",
@@ -59,9 +60,29 @@ let downloads: Download[] = [
   dl({ id: "sg-2", title: "Sintel", state: "paused", size: 1.4 * gb, done: 0.2 * gb, engine: "paused" }),
   dl({ id: "sg-3", title: "Tears of Steel", state: "downloaded", size: 3.1 * gb, done: 3.1 * gb, seeding: true, upSpeed: 4e5, peers: 3, engine: "seeding", finished: now() - 300 }),
   dl({ id: "sg-4", title: "Elephants Dream", state: "failed", size: 0.8 * gb, done: 0.1 * gb, error: "Not enough free space: 700 MB more is needed, 120 MB is free." }),
+  dl({
+    id: "sg-5", title: "Brass Orchard Build 15302", gameKey: "title:brassorchard", state: "downloaded", size: 2.1 * gb, done: 2.1 * gb, installer: "nsis",
+    installDir: "C:\\Users\\you\\Games\\Brass Orchard", finished: now() - 900,
+    safety: { verdict: "warn", checked: now() - 800, main: "setup.exe", findings: [
+      { check: "integrity", level: "info", text: "The feed gives no checksum, so the installer can't be compared with what it lists. The download itself was verified piece by piece." },
+      { check: "signature", level: "info", text: "setup.exe isn't digitally signed, so its publisher can't be confirmed." },
+      { check: "files", level: "ok", text: "412 files, nothing unusual among them." },
+      { check: "defender", level: "ok", text: "Microsoft Defender found nothing." },
+      { check: "virustotal", level: "warn", text: "1 of 72 VirusTotal engines flag setup.exe (often a false alarm with few engines)." },
+    ] },
+  }),
+  dl({
+    id: "sg-6", title: "Glass Meridian v0.9 beta", gameKey: "title:glassmeridian", state: "blocked", size: 3.4 * gb, done: 3.4 * gb, finished: now() - 4000,
+    safety: { verdict: "block", checked: now() - 3900, main: "setup.exe", findings: [
+      { check: "integrity", level: "block", text: "setup.exe isn't the file the feed lists: its SHA-256 differs. It was changed or replaced." },
+      { check: "defender", level: "ok", text: "Microsoft Defender found nothing." },
+    ] },
+  }),
+  dl({ id: "sg-7", title: "Cinder Drift 1.0", gameKey: "title:cinderdrift", state: "installed", size: 0.4 * gb, done: 0.4 * gb, installer: "archive", installDir: "C:\\Users\\you\\Games\\Cinder Drift", installedAt: now() - 86400, safety: { verdict: "clean", checked: now() - 86500, findings: [] } }),
 ];
 let engine: EngineStatus = { installed: true, exe: "C:\\Program Files\\qBittorrent\\qbittorrent.exe", running: true, version: "v5.1.4", interfaceMissing: false, gameRunning: false };
 let proxyPassword = false;
+let vtKey = false;
 const listeners = new Set<(d: Download[]) => void>();
 const engineListeners = new Set<(s: EngineStatus) => void>();
 const copy = <T>(v: T): T => structuredClone(v);
@@ -193,9 +214,26 @@ export function mockStore(getSettings: () => Settings, setSettings: (s: Settings
       return copy(d);
     },
     async action(id, action) {
-      downloads = downloads
-        .filter((d) => !(d.id === id && action === "remove"))
-        .map((d) => (d.id !== id ? d : action === "pause" ? { ...d, state: "paused", downSpeed: 0, engine: "paused" } : { ...d, state: "downloading", error: undefined, downSpeed: 5e6, engine: "downloading" }));
+      const step = (d: Download): Download => {
+        switch (action) {
+          case "pause":
+            return { ...d, state: "paused", downSpeed: 0, engine: "paused" };
+          case "resume":
+            return { ...d, state: "downloading", error: undefined, downSpeed: 5e6, engine: "downloading" };
+          case "install":
+            setTimeout(() => {
+              downloads = downloads.map((x) => (x.id === id ? { ...x, state: "installed", installedAt: now(), installDone: undefined } : x));
+              changed();
+            }, 3000);
+            return { ...d, state: "installing", installDone: 0.6 * d.size };
+          case "uninstall":
+            return { ...d, state: "downloaded", installedAt: undefined };
+          case "recheck":
+            return { ...d, state: "scanning", safety: undefined };
+        }
+        return d;
+      };
+      downloads = downloads.filter((d) => !(d.id === id && action === "remove")).map((d) => (d.id === id ? step(d) : d));
       changed();
     },
     async showDownload() {},
@@ -288,5 +326,21 @@ export function mockStore(getSettings: () => Settings, setSettings: (s: Settings
     onArt() {
       return () => {};
     },
+    async allowDownload(id, confirm) {
+      const d = downloads.find((x) => x.id === id);
+      if (!d || confirm.trim().toLowerCase() !== d.title.toLowerCase()) throw new Error("type the download's name exactly to install it anyway");
+      downloads = downloads.map((x) => (x.id === id && x.safety ? { ...x, state: "downloaded", safety: { ...x.safety, overridden: true } } : x));
+      changed();
+    },
+    async hasVirusTotalKey() {
+      return vtKey;
+    },
+    async setVirusTotalKey(k) {
+      vtKey = !!k;
+    },
+    async sandboxAvailable() {
+      return true;
+    },
+    async openInSandbox() {},
   };
 }

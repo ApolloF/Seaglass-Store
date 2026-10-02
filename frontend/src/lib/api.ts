@@ -174,6 +174,14 @@ export interface Api {
     chooseGamesFolder(): Promise<Settings>;
     /** Known art for these games; the rest is looked up and arrives through onArt. */
     art(keys: string[]): Promise<StoreArt[]>;
+    /** Installs a blocked download after all; confirm is its title, typed by the person. */
+    allowDownload(id: string, confirm: string): Promise<void>;
+    hasVirusTotalKey(): Promise<boolean>;
+    /** "" removes it. Only file hashes are looked up. */
+    setVirusTotalKey(key: string): Promise<void>;
+    sandboxAvailable(): Promise<boolean>;
+    /** Opens Windows Sandbox with the download on its desktop (read-only, no network). */
+    openInSandbox(id: string): Promise<void>;
     onArt(cb: (a: StoreArt) => void): () => void;
     /** The catalog changed (its number of games). */
     onCatalog(cb: (games: number) => void): () => void;

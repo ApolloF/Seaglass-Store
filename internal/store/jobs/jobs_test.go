@@ -6,22 +6,46 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ApolloF/Seaglass/internal/safety"
 	"github.com/ApolloF/Seaglass/internal/torrent"
 )
 
 func TestCan(t *testing.T) {
+	checked := &safety.Report{Verdict: safety.Clean}
 	for _, c := range []struct {
-		s    State
+		j    Job
 		a    Action
 		want bool
 	}{
-		{Queued, Pause, true}, {Downloading, Pause, true}, {Paused, Pause, false}, {Downloaded, Pause, false},
-		{Paused, Resume, true}, {Failed, Resume, true}, {Downloading, Resume, false}, {Downloaded, Resume, false},
-		{Downloaded, Remove, true}, {Failed, Remove, true},
+		{Job{State: Queued}, Pause, true}, {Job{State: Downloading}, Pause, true}, {Job{State: Paused}, Pause, false}, {Job{State: Downloaded}, Pause, false},
+		{Job{State: Paused}, Resume, true}, {Job{State: Failed}, Resume, true}, {Job{State: Downloading}, Resume, false}, {Job{State: Downloaded}, Resume, false},
+		{Job{State: Downloaded}, Remove, true}, {Job{State: Failed}, Remove, true}, {Job{State: Installing}, Remove, false}, {Job{State: Scanning}, Remove, false},
+		{Job{State: Downloaded, Safety: checked}, Install, true}, {Job{State: Downloaded}, Install, false}, {Job{State: Blocked, Safety: checked}, Install, false},
+		{Job{State: Blocked}, Allow, true}, {Job{State: Downloaded}, Allow, false},
+		{Job{State: Installed}, Uninstall, true}, {Job{State: Downloaded}, Uninstall, false},
 	} {
-		if got := Can(c.s, c.a); got != c.want {
-			t.Errorf("Can(%s, %s) = %v, want %v", c.s, c.a, got, c.want)
+		if got := c.j.Can(c.a); got != c.want {
+			t.Errorf("%s job, %s = %v, want %v", c.j.State, c.a, got, c.want)
 		}
+	}
+}
+
+// Once downloaded, the engine's view (seeding, stopped, even failing
+// after the files were cleaned up) doesn't move the job back.
+func TestSyncAfterDownload(t *testing.T) {
+	now := time.Unix(1000, 0)
+	for _, s := range []State{Scanning, Downloaded, Blocked, Installing, Installed} {
+		j := Job{State: s, Safety: &safety.Report{}}
+		j.Sync(&torrent.Torrent{Hash: "aa", State: torrent.Failed}, now)
+		j.Sync(&torrent.Torrent{Hash: "aa", State: torrent.Complete}, now)
+		if j.State != s {
+			t.Errorf("%s became %s", s, j.State)
+		}
+	}
+	f := Job{State: Failed, Safety: &safety.Report{}, Error: "installer failed"}
+	f.Sync(&torrent.Torrent{Hash: "aa", State: torrent.Seeding}, now)
+	if f.State != Failed || f.Error != "installer failed" || !f.Seeding {
+		t.Errorf("a failed install: %+v", f)
 	}
 }
 

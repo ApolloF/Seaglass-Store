@@ -130,6 +130,8 @@ export interface StoreSettings {
   /** Keep a download (and share it) after its game is installed. */
   keepDownloads: boolean;
   pauseWhilePlaying: boolean;
+  /** Defender or VirusTotal detections block an install (else they warn). */
+  blockDetections: boolean;
   network: TorrentNetwork;
   /** Catalog feeds, in the order they were added. */
   feeds: FeedSource[];
@@ -245,8 +247,22 @@ export interface TorrentInterface {
   name: string;
 }
 
-export type DownloadState = "queued" | "downloading" | "paused" | "downloaded" | "failed";
-export type DownloadAction = "pause" | "resume" | "remove";
+export type DownloadState = "queued" | "downloading" | "paused" | "scanning" | "downloaded" | "blocked" | "installing" | "installed" | "failed";
+export type DownloadAction = "pause" | "resume" | "remove" | "install" | "uninstall" | "recheck";
+
+export type SafetyLevel = "ok" | "info" | "warn" | "block";
+
+/** What the safety checks found. Mirrors internal/safety.Report. */
+export interface SafetyReport {
+  verdict: "clean" | "warn" | "block";
+  findings: { check: string; level: SafetyLevel; text: string }[];
+  /** The installer, relative to the download. */
+  main?: string;
+  sha256?: string;
+  checked: number;
+  /** The person chose to install it anyway. */
+  overridden?: boolean;
+}
 
 /** One download. Mirrors internal/store/jobs.Job. */
 export interface Download {
@@ -278,6 +294,16 @@ export interface Download {
   installDir?: string;
   language?: string;
   autoInstall?: boolean;
+  sha256?: string;
+  safety?: SafetyReport;
+  /** inno, nsis, msi, archive, portable or other. */
+  installer?: string;
+  uninstaller?: string;
+  installedAt?: number;
+  /** Bytes in the game's folder while installing. */
+  installDone?: number;
+  /** The installer has done nothing visible for a while. */
+  stalled?: boolean;
 }
 
 /** Chosen before a game downloads. Mirrors internal/app.InstallOptions. */

@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ApolloF/Seaglass/internal/logx"
 	"github.com/ApolloF/Seaglass/internal/platform"
+	"github.com/ApolloF/Seaglass/internal/safety"
 	"github.com/ApolloF/Seaglass/internal/settings"
 	"github.com/ApolloF/Seaglass/internal/store/catalog"
 	"github.com/ApolloF/Seaglass/internal/store/jobs"
@@ -174,7 +176,7 @@ func (s *StoreService) DownloadAction(id string, action jobs.Action, deleteFiles
 	if !ok {
 		return jobs.ErrNotFound
 	}
-	if !jobs.Can(j.State, action) {
+	if !j.Can(action) {
 		return nil // already done (a double click)
 	}
 	switch action {
@@ -183,15 +185,31 @@ func (s *StoreService) DownloadAction(id string, action jobs.Action, deleteFiles
 		s.c.store.wake()
 		return err
 	case jobs.Resume:
+		if j.Safety != nil { // it failed installing: install again
+			return s.startInstall(j)
+		}
 		_, err := s.c.store.jobs.Update(id, func(j *jobs.Job) bool {
 			j.State, j.Error = jobs.Queued, ""
 			return true
 		})
 		s.c.store.wake()
 		return err
+	case jobs.Install:
+		return s.startInstall(j)
+	case jobs.Recheck:
+		_, err := s.c.store.jobs.Update(id, func(j *jobs.Job) bool {
+			j.State, j.Safety = jobs.Downloaded, nil
+			return true
+		})
+		s.c.store.wake()
+		return err
+	case jobs.Uninstall:
+		return s.c.store.pipe.uninstall(id)
+	case jobs.Allow:
+		return errors.New("installing a blocked download needs AllowDownload")
 	}
 	// The engine may have it before its hash reached the download.
-	if j.Hash != "" || s.c.store.engineRunning() {
+	if j.Hash != "" || (s.c.store.engineRunning() && j.State != jobs.Installed) {
 		if err := s.c.store.removeTorrent(j, deleteFiles); err != nil {
 			return err
 		}
@@ -201,6 +219,92 @@ func (s *StoreService) DownloadAction(id string, action jobs.Action, deleteFiles
 	}
 	s.c.emit(EventStoreJobs, s.c.store.jobs.All())
 	return nil
+}
+
+func (s *StoreService) startInstall(j jobs.Job) error {
+	if j.Safety == nil {
+		return errors.New("the download hasn't been checked yet")
+	}
+	if j.Safety.Verdict == safety.Blocked && !j.Safety.Overridden {
+		return errors.New("the safety checks blocked this download")
+	}
+	if !s.c.store.pipe.claim(j.ID) {
+		return nil // already installing
+	}
+	go s.c.store.pipe.install(j.ID)
+	return nil
+}
+
+// AllowDownload lets a download the safety checks blocked be installed
+// after all. confirm must be the download's title, typed by the person.
+func (s *StoreService) AllowDownload(id, confirm string) error {
+	if err := s.on(); err != nil {
+		return err
+	}
+	j, ok := s.c.store.jobs.Get(id)
+	if !ok {
+		return jobs.ErrNotFound
+	}
+	if !j.Can(jobs.Allow) || j.Safety == nil {
+		return errors.New("that download isn't blocked")
+	}
+	if !strings.EqualFold(strings.TrimSpace(confirm), strings.TrimSpace(j.Title)) {
+		return errors.New("type the download's name exactly to install it anyway")
+	}
+	_, err := s.c.store.jobs.Update(id, func(j *jobs.Job) bool {
+		j.Safety.Overridden, j.State = true, jobs.Downloaded
+		return true
+	})
+	if err == nil {
+		logx.Printf("store: %s installed despite the safety checks, as the person chose", j.Title)
+		s.c.emit(EventStoreJobs, s.c.store.jobs.All())
+	}
+	return err
+}
+
+// HasVirusTotalKey reports whether a VirusTotal API key is saved.
+func (s *StoreService) HasVirusTotalKey() bool { return platform.LoadSecret(virusTotalSecret) != "" }
+
+// SetVirusTotalKey stores the person's VirusTotal API key encrypted for
+// this Windows account ("" removes it). Only file hashes are looked up.
+func (s *StoreService) SetVirusTotalKey(key string) error {
+	if err := s.on(); err != nil {
+		return err
+	}
+	return platform.SaveSecret(virusTotalSecret, strings.TrimSpace(key))
+}
+
+// SandboxAvailable reports whether Windows Sandbox is turned on.
+func (s *StoreService) SandboxAvailable() bool { return sandboxExe() != "" }
+
+// OpenInSandbox opens Windows Sandbox with a download on its desktop,
+// read-only and without network, to try it there first.
+func (s *StoreService) OpenInSandbox(id string) error {
+	if err := s.on(); err != nil {
+		return err
+	}
+	j, ok := s.c.store.jobs.Get(id)
+	if !ok || j.Name == "" {
+		return jobs.ErrNotFound
+	}
+	if sandboxExe() == "" {
+		return errors.New("Windows Sandbox isn't turned on (Windows features, Windows Sandbox)")
+	}
+	folder := root(j)
+	if fi, err := os.Stat(folder); err != nil {
+		return err
+	} else if !fi.IsDir() {
+		folder = filepath.Dir(folder)
+	}
+	b, err := sandboxConfig(folder)
+	if err != nil {
+		return err
+	}
+	p := filepath.Join(platform.CacheDir("store", "sandbox"), j.ID+".wsb")
+	if err := os.WriteFile(p, b, 0o644); err != nil {
+		return err
+	}
+	return platform.OpenFile(p)
 }
 
 // ShowDownload opens a download's folder in Explorer.
@@ -372,7 +476,7 @@ func (s *StoreService) DownloadOffer(key string, offer int, opts InstallOptions)
 		title += " " + o.Version
 	}
 	j, err := s.c.store.jobs.Add(jobs.Job{Title: title, Source: o.Source(), SavePath: dir, GameKey: e.Key, Version: o.Version, FeedName: o.FeedName,
-		InstallDir: filepath.Clean(opts.Dir), Language: opts.Language, AutoInstall: opts.Install}, time.Now())
+		InstallDir: filepath.Clean(opts.Dir), Language: opts.Language, AutoInstall: opts.Install, SHA256: o.SHA256, Installer: o.InstallerType}, time.Now())
 	if err == nil {
 		s.c.store.wake()
 	}

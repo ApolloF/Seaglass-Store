@@ -21,6 +21,7 @@ func testStoreCore(t *testing.T) *Core {
 	t.Cleanup(cancel)
 	c := &Core{Settings: settings.Open(filepath.Join(dir, "settings.json")), Manifest: identify.NewManager(filepath.Join(dir, "manifest")), ctx: ctx, cancel: cancel}
 	c.store = &storeState{c: c, jobs: jobs.Open(filepath.Join(dir, "downloads.json")), kick: make(chan struct{}, 1)}
+	c.store.pipe = newPipeline(c.store)
 	c.catalog = &catalogState{c: c, cache: feed.Cache{Dir: filepath.Join(dir, "feeds")}}
 	v := c.Settings.Get()
 	v.ExperimentalStore = true
