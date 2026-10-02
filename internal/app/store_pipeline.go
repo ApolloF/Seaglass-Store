@@ -53,6 +53,13 @@ func (p *pipeline) claim(id string) bool {
 	return true
 }
 
+// working reports whether a download is being checked or installed.
+func (p *pipeline) working(id string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.busy[id]
+}
+
 func (p *pipeline) release(id string) {
 	p.mu.Lock()
 	delete(p.busy, id)

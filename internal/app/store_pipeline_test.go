@@ -61,7 +61,7 @@ func TestPipelinePortableGame(t *testing.T) {
 		p.advance(c.store.jobs.All())
 		waitFor(t, func() bool {
 			j, _ := c.store.jobs.Get(j.ID)
-			return j.State == jobs.Installed || j.State == jobs.Failed
+			return (j.State == jobs.Installed || j.State == jobs.Failed) && !p.working(j.ID)
 		})
 	} else {
 		t.Logf("checks warned (%v), installing by hand", got.Safety.Findings)
@@ -70,7 +70,7 @@ func TestPipelinePortableGame(t *testing.T) {
 		}
 		waitFor(t, func() bool {
 			j, _ := c.store.jobs.Get(j.ID)
-			return j.State == jobs.Installed || j.State == jobs.Failed
+			return (j.State == jobs.Installed || j.State == jobs.Failed) && !p.working(j.ID)
 		})
 	}
 	got, _ = c.store.jobs.Get(j.ID)
