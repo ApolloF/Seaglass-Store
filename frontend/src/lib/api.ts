@@ -1,7 +1,7 @@
 // The frontend's one door to the Go side. In mock mode (`npm run dev:mock`)
 // the same interface is served by made-up data, so the interface can be
 // built and checked in a normal browser. Vite drops the unused one.
-import type { Accounts, Achievements, AppInfo, ArtChoice, ArtKind, CatalogEntry, CatalogPage, CatalogQuery, Download, DownloadAction, EngineStatus, FeedInfo, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
+import type { Accounts, Achievements, AppInfo, ArtChoice, ArtKind, CatalogEntry, CatalogPage, CatalogQuery, Download, InstallOptions, StoreArt, DownloadAction, EngineStatus, FeedInfo, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
 import { realApi } from "./api.real";
 import { mockApi } from "./api.mock";
 
@@ -165,7 +165,16 @@ export interface Api {
     catalogLanguages(): Promise<string[]>;
     catalogEntry(key: string): Promise<CatalogEntry>;
     /** Queues one of a game's offers, by its place in entry.offers. */
-    downloadOffer(key: string, offer: number): Promise<Download>;
+    downloadOffer(key: string, offer: number, opts: InstallOptions): Promise<Download>;
+    /** A suggested folder for a game. */
+    installFolder(title: string): Promise<string>;
+    /** Asks for a game's folder; returns current when cancelled. */
+    chooseInstallFolder(current: string): Promise<string>;
+    gamesFolder(): Promise<string>;
+    chooseGamesFolder(): Promise<Settings>;
+    /** Known art for these games; the rest is looked up and arrives through onArt. */
+    art(keys: string[]): Promise<StoreArt[]>;
+    onArt(cb: (a: StoreArt) => void): () => void;
     /** The catalog changed (its number of games). */
     onCatalog(cb: (games: number) => void): () => void;
   };

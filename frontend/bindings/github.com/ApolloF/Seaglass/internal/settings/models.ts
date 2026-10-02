@@ -182,6 +182,16 @@ export interface StoreSettings {
     "downloads": string;
 
     /**
+     * where games are installed; "" is Games in the user's folder
+     */
+    "games": string;
+
+    /**
+     * keep a download (and seed it) after its game is installed
+     */
+    "keepDownloads": boolean;
+
+    /**
      * downloads wait while a game runs
      */
     "pauseWhilePlaying": boolean;

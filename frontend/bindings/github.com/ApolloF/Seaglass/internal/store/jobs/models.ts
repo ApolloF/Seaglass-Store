@@ -47,6 +47,22 @@ export interface Job {
     "feedName"?: string;
 
     /**
+     * How to install it, chosen before downloading.
+     * the game's own folder
+     */
+    "installDir"?: string;
+
+    /**
+     * as the feed names it; "" for the installer's default
+     */
+    "language"?: string;
+
+    /**
+     * install as soon as it's downloaded and checked
+     */
+    "autoInstall"?: boolean;
+
+    /**
      * once the engine has it
      */
     "hash"?: string;

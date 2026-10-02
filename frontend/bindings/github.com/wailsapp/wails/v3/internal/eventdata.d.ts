@@ -40,6 +40,7 @@ declare module "@wailsio/runtime" {
             "profile:changed": app$0.Profile;
             "scan:state": app$0.ScanState;
             "settings:changed": settings$0.Settings;
+            "store:art": app$0.StoreArt;
             "store:catalog": number;
             "store:engine": app$0.EngineStatus;
             "store:jobs": jobs$0.Job[] | null;

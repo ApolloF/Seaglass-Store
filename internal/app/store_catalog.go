@@ -111,6 +111,13 @@ func (cs *catalogState) rebuild() {
 	cs.mu.Lock()
 	cs.entries = entries
 	cs.mu.Unlock()
+	if len(entries) > 0 && cs.c.art != nil {
+		keys := make(map[string]bool, len(entries))
+		for _, e := range entries {
+			keys[e.Key] = true
+		}
+		cs.c.art.forget(keys)
+	}
 	cs.c.emit(EventStoreCatalog, len(entries))
 }
 

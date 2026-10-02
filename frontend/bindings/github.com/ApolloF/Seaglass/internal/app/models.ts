@@ -6,6 +6,9 @@
 import * as achievements$0 from "../achievements/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as library$0 from "../library/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as syncer$0 from "../syncer/models.js";
 
 /**
@@ -86,6 +89,26 @@ export interface FeedInfo {
     "error"?: string;
     "etag"?: string;
     "enabled": boolean;
+}
+
+/**
+ * InstallOptions are chosen before a game downloads.
+ */
+export interface InstallOptions {
+    /**
+     * the game's own folder; "" uses one in the games folder
+     */
+    "dir": string;
+
+    /**
+     * one of the offer's languages; "" for the installer's default
+     */
+    "language": string;
+
+    /**
+     * install once downloaded and checked; false only downloads
+     */
+    "install": boolean;
 }
 
 /**
@@ -224,6 +247,18 @@ export interface StoreAccount {
     "synced"?: number;
     "syncing": boolean;
     "error"?: string;
+}
+
+/**
+ * StoreArt is a catalog game's metadata, for the store's pages.
+ */
+export interface StoreArt {
+    "key": string;
+
+    /**
+     * nil: nothing was found
+     */
+    "meta": library$0.Meta | null;
 }
 
 /**

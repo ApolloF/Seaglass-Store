@@ -63,6 +63,10 @@ type Job struct {
 	GameKey  string `json:"gameKey,omitempty"`
 	Version  string `json:"version,omitempty"`
 	FeedName string `json:"feedName,omitempty"`
+	// How to install it, chosen before downloading.
+	InstallDir  string `json:"installDir,omitempty"`  // the game's own folder
+	Language    string `json:"language,omitempty"`    // as the feed names it; "" for the installer's default
+	AutoInstall bool   `json:"autoInstall,omitempty"` // install as soon as it's downloaded and checked
 	Hash     string `json:"hash,omitempty"` // once the engine has it
 	Name     string `json:"name,omitempty"` // the torrent's own name: its folder (or file) in SavePath
 	State    State  `json:"state"`
@@ -175,7 +179,8 @@ func (s *Store) Add(j Job, now time.Time) (Job, error) {
 		return Job{}, err
 	}
 	j = Job{ID: "sg-" + hex.EncodeToString(b), Title: j.Title, Source: j.Source, SavePath: j.SavePath,
-		GameKey: j.GameKey, Version: j.Version, FeedName: j.FeedName, State: Queued, Created: now.Unix()}
+		GameKey: j.GameKey, Version: j.Version, FeedName: j.FeedName,
+		InstallDir: j.InstallDir, Language: j.Language, AutoInstall: j.AutoInstall, State: Queued, Created: now.Unix()}
 	s.mu.Lock()
 	s.jobs = append(s.jobs, j)
 	s.mu.Unlock()

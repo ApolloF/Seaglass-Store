@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/ApolloF/Seaglass/internal/platform"
@@ -277,9 +279,65 @@ func (s *StoreService) CatalogEntry(key string) (catalog.Entry, error) {
 	return e, nil
 }
 
+// InstallOptions are chosen before a game downloads.
+type InstallOptions struct {
+	Dir      string `json:"dir"`      // the game's own folder; "" uses one in the games folder
+	Language string `json:"language"` // one of the offer's languages; "" for the installer's default
+	Install  bool   `json:"install"`  // install once downloaded and checked; false only downloads
+}
+
+// InstallFolder suggests a folder for a game.
+func (s *StoreService) InstallFolder(title string) string {
+	return filepath.Join(gamesDir(s.c.Settings.Get().Store), folderName(title))
+}
+
+// ChooseInstallFolder asks for a game's folder (it isn't saved).
+func (s *StoreService) ChooseInstallFolder(current string) (string, error) {
+	d := application.Get().Dialog.OpenFile().
+		SetTitle("Choose where the game goes").
+		CanChooseDirectories(true).CanChooseFiles(false).CanCreateDirectories(true)
+	if dir := filepath.Dir(current); platform.IsDir(dir) {
+		d.SetDirectory(dir)
+	}
+	p, err := d.PromptForSingleSelection()
+	if err != nil || p == "" {
+		return current, err
+	}
+	return p, nil
+}
+
+// ChooseGamesFolder asks where games are installed.
+func (s *StoreService) ChooseGamesFolder() (settings.Settings, error) {
+	if err := s.on(); err != nil {
+		return s.c.Settings.Get(), err
+	}
+	p, err := application.Get().Dialog.OpenFile().
+		SetTitle("Choose where games are installed").
+		CanChooseDirectories(true).CanChooseFiles(false).CanCreateDirectories(true).
+		PromptForSingleSelection()
+	if err != nil || p == "" {
+		return s.c.Settings.Get(), err
+	}
+	v := s.c.Settings.Get()
+	v.Store.Games = p
+	return NewSettingsService(s.c).Save(v)
+}
+
+// GamesFolder is where games are installed.
+func (s *StoreService) GamesFolder() string { return gamesDir(s.c.Settings.Get().Store) }
+
+// Art returns the art and descriptions known for these catalog games and
+// looks up the rest, in this order (EventStoreArt brings them).
+func (s *StoreService) Art(keys []string) []StoreArt {
+	if s.on() != nil || len(keys) > 500 {
+		return []StoreArt{}
+	}
+	return s.c.art.get(keys)
+}
+
 // DownloadOffer queues one of a game's offers (by its place in the
 // entry's offers).
-func (s *StoreService) DownloadOffer(key string, offer int) (jobs.Job, error) {
+func (s *StoreService) DownloadOffer(key string, offer int, opts InstallOptions) (jobs.Job, error) {
 	e, err := s.CatalogEntry(key)
 	if err != nil {
 		return jobs.Job{}, err
@@ -288,20 +346,89 @@ func (s *StoreService) DownloadOffer(key string, offer int) (jobs.Job, error) {
 		return jobs.Job{}, errors.New("that version isn't offered anymore")
 	}
 	o := e.Offers[offer]
+	if opts.Language != "" && !slices.Contains(o.Languages, opts.Language) {
+		return jobs.Job{}, fmt.Errorf("this version doesn't offer %s", opts.Language)
+	}
+	if opts.Dir == "" {
+		opts.Dir = s.InstallFolder(e.Title)
+	}
+	if err := checkInstallDir(opts.Dir); err != nil {
+		return jobs.Job{}, err
+	}
 	dir := downloadsDir(s.c.Settings.Get().Store)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return jobs.Job{}, err
 	}
-	if free, err := platform.FreeSpace(dir); err == nil && o.SizeBytes > 0 && free < uint64(o.SizeBytes)+256<<20 {
-		return jobs.Job{}, fmt.Errorf("not enough free space: %s is needed, %s is free", bytesText(o.SizeBytes), bytesText(int64(free)))
+	if err := enoughSpace(dir, o.SizeBytes); err != nil {
+		return jobs.Job{}, err
+	}
+	if opts.Install && o.InstalledSizeBytes > 0 {
+		if err := enoughSpace(existingParent(opts.Dir), o.InstalledSizeBytes); err != nil {
+			return jobs.Job{}, fmt.Errorf("for the installed game: %w", err)
+		}
 	}
 	title := e.Title
 	if o.Version != "" {
 		title += " " + o.Version
 	}
-	j, err := s.c.store.jobs.Add(jobs.Job{Title: title, Source: o.Source(), SavePath: dir, GameKey: e.Key, Version: o.Version, FeedName: o.FeedName}, time.Now())
+	j, err := s.c.store.jobs.Add(jobs.Job{Title: title, Source: o.Source(), SavePath: dir, GameKey: e.Key, Version: o.Version, FeedName: o.FeedName,
+		InstallDir: filepath.Clean(opts.Dir), Language: opts.Language, AutoInstall: opts.Install}, time.Now())
 	if err == nil {
 		s.c.store.wake()
 	}
 	return j, err
+}
+
+// gamesDir is where games are installed.
+func gamesDir(s settings.StoreSettings) string {
+	if s.Games != "" {
+		return s.Games
+	}
+	return filepath.Join(platform.Profile, "Games")
+}
+
+// folderName makes a title safe as a folder name.
+func folderName(title string) string {
+	name := strings.Map(func(r rune) rune {
+		if r < 32 || strings.ContainsRune(`<>:"/\|?*`, r) {
+			return -1
+		}
+		return r
+	}, title)
+	name = strings.TrimRight(strings.TrimSpace(name), ". ")
+	if name == "" {
+		name = "Game"
+	}
+	return name
+}
+
+// checkInstallDir accepts a folder a game can be installed into: absolute,
+// not a drive or Windows itself, and empty when it exists.
+func checkInstallDir(dir string) error {
+	dir = filepath.Clean(dir)
+	switch {
+	case !filepath.IsAbs(dir) || filepath.Dir(dir) == dir:
+		return errors.New("choose a folder for the game, not a whole drive")
+	case platform.WindowsDir != "" && platform.Within(platform.WindowsDir, dir):
+		return errors.New("games can't go into the Windows folder")
+	}
+	if entries, err := os.ReadDir(dir); err == nil && len(entries) > 0 {
+		return fmt.Errorf("%s isn't empty: choose a new folder for the game", dir)
+	}
+	return nil
+}
+
+// existingParent is dir, or its closest parent that exists.
+func existingParent(dir string) string {
+	for !platform.IsDir(dir) && filepath.Dir(dir) != dir {
+		dir = filepath.Dir(dir)
+	}
+	return dir
+}
+
+func enoughSpace(dir string, need int64) error {
+	if free, err := platform.FreeSpace(dir); err == nil && need > 0 && free < uint64(need)+256<<20 {
+		return fmt.Errorf("not enough free space: %s is needed, %s is free", bytesText(need), bytesText(int64(free)))
+	}
+	return nil
 }

@@ -73,6 +73,8 @@ type Settings struct {
 type StoreSettings struct {
 	QBittorrent       string          `json:"qbittorrent"`       // qbittorrent.exe; "" uses the installed one
 	Downloads         string          `json:"downloads"`         // where downloads go; "" is Downloads\Seaglass in the user's folder
+	Games             string          `json:"games"`             // where games are installed; "" is Games in the user's folder
+	KeepDownloads     bool            `json:"keepDownloads"`     // keep a download (and seed it) after its game is installed
 	PauseWhilePlaying bool            `json:"pauseWhilePlaying"` // downloads wait while a game runs
 	Network           torrent.Network `json:"network"`
 	Feeds             []FeedSource    `json:"feeds"` // catalogs, in the order they were added
@@ -305,6 +307,9 @@ func normalizeStore(s StoreSettings) StoreSettings {
 	}
 	if s.Downloads = filepath.Clean(strings.TrimSpace(s.Downloads)); !filepath.IsAbs(s.Downloads) || filepath.Dir(s.Downloads) == s.Downloads {
 		s.Downloads = ""
+	}
+	if s.Games = filepath.Clean(strings.TrimSpace(s.Games)); !filepath.IsAbs(s.Games) || filepath.Dir(s.Games) == s.Games {
+		s.Games = ""
 	}
 	s.Network = s.Network.Normalize()
 	feeds := []FeedSource{}

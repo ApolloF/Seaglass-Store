@@ -1,11 +1,13 @@
 // The experimental store for `npm run dev:mock`: a pretend engine whose
 // downloads move along on their own.
 import type { Api } from "./api";
-import type { CatalogEntry, CatalogOffer, Download, EngineStatus, FeedInfo, Settings, StoreSettings } from "./types";
+import type { CatalogEntry, CatalogOffer, Download, EngineStatus, FeedInfo, Settings, StoreArt, StoreSettings } from "./types";
 
 export const mockStoreSettings: StoreSettings = {
   qbittorrent: "",
   downloads: "",
+  games: "",
+  keepDownloads: false,
   pauseWhilePlaying: true,
   network: {
     interface: "",
@@ -119,6 +121,18 @@ const catalogEntries: CatalogEntry[] = [
   entry("Glass Meridian", [offer(INDIE, { title: "Glass Meridian", version: "v0.9 beta", buildDate: "2026-09-30", sizeBytes: 3.4 * gb, installerType: "msi", languages: ["English", "Japanese"] })]),
   entry("Harbor Nine", [offer(FREE, { title: "Harbor Nine", version: "v3.1", buildDate: "2026-02-14", sizeBytes: 1.2 * gb, installerType: "nsis", languages: ["English", "German"] })]),
 ];
+// Descriptions only: the mock has no pictures, so covers show the generated art.
+const blurbs: Record<string, [string, string, string[]]> = {
+  "Ashen Lanterns": ["Carry the last lit lantern through a city of ash, where every light you kindle wakes something else.", "Kiln & Co.", ["Adventure", "Puzzle"]],
+  "Brass Orchard": ["Build clockwork trees and harvest gears in a cosy factory sim.", "Gearwright", ["Simulation", "Strategy"]],
+  "Cinder Drift": ["A one-button racer down an erupting mountain.", "Small Fire", ["Racing", "Arcade"]],
+  "Dune Lark": ["Glide over shifting dunes as a messenger bird, delivering letters between desert towns.", "Lark Studio", ["Adventure", "Exploration"]],
+  "Ember Crown": ["A fallen knight climbs a burning mountain to take back a crown that was never theirs.", "Ashgrove", ["Action", "RPG"]],
+  "Fable of the Fen": ["A short point-and-click tale about a frog who wants to see the sea.", "Fen Folk", ["Adventure"]],
+  "Glass Meridian": ["Bend light through glass towers to restore a broken skyline.", "Prism Works", ["Puzzle"]],
+  "Harbor Nine": ["Run a harbour at the edge of the world, one storm at a time.", "Ninefold", ["Management"]],
+};
+
 const squash = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, "");
 
 function feedInfo(url: string, enabled: boolean): FeedInfo {
@@ -235,17 +249,43 @@ export function mockStore(getSettings: () => Settings, setSettings: (s: Settings
       if (!e) throw new Error("that game isn't in the catalog anymore");
       return copy(e);
     },
-    async downloadOffer(key, i) {
+    async downloadOffer(key, i, opts) {
       const e = catalogEntries.find((x) => x.key === key);
       const o = e?.offers[i];
       if (!e || !o) throw new Error("that version isn't offered anymore");
       const title = o.version ? `${e.title} ${o.version}` : e.title;
-      const d = dl({ id: `sg-${Date.now()}`, title, name: e.title, source: o.magnet ?? "", size: o.sizeBytes ?? 0, downSpeed: 3e7, seeds: 40, peers: 8, engine: "downloading", created: now(), gameKey: key, version: o.version, feedName: o.feedName });
+      const d = dl({ id: `sg-${Date.now()}`, title, name: e.title, source: o.magnet ?? "", size: o.sizeBytes ?? 0, downSpeed: 3e7, seeds: 40, peers: 8, engine: "downloading", created: now(), gameKey: key, version: o.version, feedName: o.feedName, installDir: opts.dir, language: opts.language, autoInstall: opts.install });
       downloads = [...downloads, d];
       changed();
       return copy(d);
     },
     onCatalog() {
+      return () => {};
+    },
+    async installFolder(title) {
+      return `${getSettings().store.games || "C:\\Users\\you\\Games"}\\${title.replace(/[<>:"/\\|?*]/g, "")}`;
+    },
+    async chooseInstallFolder(current) {
+      return current.replace(/^C:\\Users\\you\\Games/, "D:\\Games");
+    },
+    async gamesFolder() {
+      return getSettings().store.games || "C:\\Users\\you\\Games";
+    },
+    async chooseGamesFolder() {
+      const s = getSettings();
+      setSettings({ ...s, store: { ...s.store, games: "D:\\Games" } });
+      return copy(getSettings());
+    },
+    async art(keys) {
+      const out: StoreArt[] = [];
+      for (const k of keys) {
+        const e = catalogEntries.find((x) => x.key === k);
+        const b = e && blurbs[e.title];
+        if (b) out.push({ key: k, meta: { description: b[0], developers: [b[1]], genres: b[2], releaseYear: Number(e.updated.slice(0, 4)) || undefined } });
+      }
+      return out;
+    },
+    onArt() {
       return () => {};
     },
   };

@@ -125,6 +125,10 @@ export interface StoreSettings {
   qbittorrent: string;
   /** Where downloads go; "" is Downloads\Seaglass. */
   downloads: string;
+  /** Where games are installed; "" is Games in the user's folder. */
+  games: string;
+  /** Keep a download (and share it) after its game is installed. */
+  keepDownloads: boolean;
   pauseWhilePlaying: boolean;
   network: TorrentNetwork;
   /** Catalog feeds, in the order they were added. */
@@ -271,6 +275,25 @@ export interface Download {
   gameKey?: string;
   version?: string;
   feedName?: string;
+  installDir?: string;
+  language?: string;
+  autoInstall?: boolean;
+}
+
+/** Chosen before a game downloads. Mirrors internal/app.InstallOptions. */
+export interface InstallOptions {
+  /** The game's own folder; "" uses one in the games folder. */
+  dir: string;
+  /** One of the offer's languages; "" for the installer's default. */
+  language: string;
+  /** Install once downloaded and checked; false only downloads. */
+  install: boolean;
+}
+
+/** A catalog game's art and description. */
+export interface StoreArt {
+  key: string;
+  meta: Meta;
 }
 
 /** One achievement. Mirrors internal/achievements.Achievement. */

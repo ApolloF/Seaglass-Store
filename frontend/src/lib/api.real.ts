@@ -1,7 +1,7 @@
 import { Events, Window } from "@wailsio/runtime";
 import { AccountsService, AchievementsService, LaunchService, LibraryService, PadService, ProfileService, SavesService, SettingsService, StoreService, UpdateService } from "../../bindings/github.com/ApolloF/Seaglass/internal/app";
 import type { Api } from "./api";
-import type { Accounts, Achievements, AppInfo, ArtChoice, CatalogEntry, CatalogPage, Download, EngineStatus, FeedInfo, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
+import type { Accounts, Achievements, AppInfo, ArtChoice, CatalogEntry, CatalogPage, Download, StoreArt, EngineStatus, FeedInfo, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
 
 // The generated bindings return the Go structs; their JSON matches ./types.
 const g = (p: Promise<unknown>) => p as Promise<Game>;
@@ -73,7 +73,13 @@ export const realApi: Api = {
     catalog: (q) => StoreService.Catalog(q as never).then((p) => ({ entries: (p.entries ?? []) as unknown as CatalogEntry[], total: p.total })) as Promise<CatalogPage>,
     catalogLanguages: () => StoreService.CatalogLanguages().then((l) => l ?? []),
     catalogEntry: (key) => StoreService.CatalogEntry(key) as Promise<unknown> as Promise<CatalogEntry>,
-    downloadOffer: (key, offer) => StoreService.DownloadOffer(key, offer) as Promise<unknown> as Promise<Download>,
+    downloadOffer: (key, offer, opts) => StoreService.DownloadOffer(key, offer, opts) as Promise<unknown> as Promise<Download>,
+    installFolder: (title) => StoreService.InstallFolder(title),
+    chooseInstallFolder: (current) => StoreService.ChooseInstallFolder(current),
+    gamesFolder: () => StoreService.GamesFolder(),
+    chooseGamesFolder: () => StoreService.ChooseGamesFolder() as Promise<unknown> as Promise<Settings>,
+    art: (keys) => StoreService.Art(keys).then((a) => (a ?? []) as unknown as StoreArt[]),
+    onArt: (cb) => Events.On("store:art", (e) => cb(e.data as unknown as StoreArt)),
     onCatalog: (cb) => Events.On("store:catalog", (e) => cb(e.data as unknown as number)),
   },
 

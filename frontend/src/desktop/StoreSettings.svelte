@@ -16,11 +16,14 @@
   const setNet = (patch: Partial<TorrentNetwork>) => s && lib.saveSettings({ ...s, store: { ...s.store, network: { ...s.store.network, ...patch } } });
 
   let folder = $state("");
+  let gamesFolder = $state("");
   let hasPassword = $state(false);
   $effect(() => {
     shop.start();
     void st?.downloads;
+    void st?.games;
     api.store.downloadsFolder().then((f) => (folder = f));
+    api.store.gamesFolder().then((f) => (gamesFolder = f));
   });
   $effect(() => {
     api.store.hasProxyPassword().then((v) => (hasPassword = v));
@@ -137,6 +140,11 @@
       <Icon name="folder" size={16} /><span class="path">{folder}</span>
       <button type="button" class="btn" onclick={() => apply(() => api.store.chooseDownloadsFolder())}>Change</button>
     </div>
+    <div class="pathrow">
+      <Icon name="pad" size={16} /><span class="path" title="Where games are installed">{gamesFolder}</span>
+      <button type="button" class="btn" onclick={() => apply(() => api.store.chooseGamesFolder())}>Change</button>
+    </div>
+    <Toggle checked={st.keepDownloads} title="Keep downloads after installing" detail="Keeps sharing them, and lets you install again without downloading. Off: a download is deleted once its game is installed." onchange={(v) => setStore({ keepDownloads: v })} />
     <Toggle checked={st.pauseWhilePlaying} title="Pause downloads while playing" detail="Games get the whole connection and disk. Downloads go on when the game closes." onchange={(v) => setStore({ pauseWhilePlaying: v })} />
   </div>
 

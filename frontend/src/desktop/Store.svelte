@@ -1,10 +1,12 @@
 <script lang="ts">
+  import GameArt from "../components/GameArt.svelte";
   import Icon from "../components/Icon.svelte";
   import { api } from "../lib/api";
-  import { entryLine, offerLine } from "../lib/catalog";
+  import { bytes } from "../lib/format";
   import { shop } from "../lib/shop.svelte";
   import { lib } from "../lib/store.svelte";
   import type { CatalogEntry, CatalogQuery } from "../lib/types";
+  import StoreGame from "./StoreGame.svelte";
 
   let { onsettings }: { onsettings: () => void } = $props();
 
@@ -43,16 +45,17 @@
   }
 
   const hasFeeds = $derived((lib.settings?.store.feeds ?? []).some((f) => f.enabled));
-  let open = $state<string | null>(null);
+  let selected = $state<CatalogEntry | null>(null);
 
-  // A game already on its way shows that instead of a second download.
+  // Art for what's on screen, first things first.
+  $effect(() => shop.requestArt(entries.map((e) => e.key)));
+  // A game already on its way is marked.
   const downloading = $derived(new Set(shop.downloads.filter((d) => d.gameKey && d.state !== "failed").map((d) => d.gameKey)));
-  async function get(e: CatalogEntry, offer: number) {
-    const d = await lib.run(() => api.store.downloadOffer(e.key, offer));
-    if (d) lib.toast(`${d.title} is downloading. Follow it in Downloads.`);
-  }
 </script>
 
+{#if selected}
+  <StoreGame entry={selected} onback={() => (selected = null)} />
+{:else}
 <div class="store">
   <div class="toolbar">
     <h1>Store</h1>
@@ -98,38 +101,17 @@
     </div>
   {:else}
     <div class="body">
-      <ul class="list">
+      <ul class="grid">
         {#each entries as e (e.key)}
-          <li class="entry" class:open={open === e.key}>
-            <div class="head">
-              <button type="button" class="expand" aria-expanded={open === e.key} onclick={() => (open = open === e.key ? null : e.key)}>
-                <span class="title">{e.title}</span>
-                <span class="line">{entryLine(e)}</span>
-              </button>
-              {#if downloading.has(e.key)}
-                <span class="on-way"><Icon name="download" size={16} />In Downloads</span>
-              {:else}
-                <button type="button" class="get" onclick={() => get(e, 0)}><Icon name="download" size={16} />Get{e.offers.length > 1 ? " newest" : ""}</button>
-              {/if}
-              <button type="button" class="icon" aria-label={open === e.key ? `Hide ${e.title}'s versions` : `Show ${e.title}'s versions`} onclick={() => (open = open === e.key ? null : e.key)}>
-                <span class="chev" class:up={open === e.key}><Icon name="chevronDown" size={16} stroke={2.2} /></span>
-              </button>
-            </div>
-            {#if open === e.key}
-              <ul class="offers">
-                {#each e.offers as o, i (i)}
-                  <li>
-                    <div class="text">
-                      <span class="v">{o.version || "Version not given"}{#if i === 0 && e.offers.length > 1}<span class="newest">Newest</span>{/if}</span>
-                      <span class="line">{offerLine(o)}</span>
-                      {#if o.languages?.length}<span class="line">{o.languages.join(", ")}</span>{/if}
-                      {#if o.notes}<span class="line">{o.notes}</span>{/if}
-                    </div>
-                    <button type="button" class="btn" disabled={downloading.has(e.key)} onclick={() => get(e, i)}>Download</button>
-                  </li>
-                {/each}
-              </ul>
-            {/if}
+          <li>
+            <button type="button" class="card" onclick={() => (selected = e)}>
+              <span class="cover">
+                <GameArt game={{ key: e.key, meta: shop.art[e.key] }} />
+                {#if downloading.has(e.key)}<span class="flag"><Icon name="download" size={14} stroke={2.4} />In Downloads</span>{/if}
+              </span>
+              <span class="title">{e.title}</span>
+              <span class="line">{[e.version, bytes(e.size)].filter(Boolean).join(" · ")}</span>
+            </button>
           </li>
         {/each}
       </ul>
@@ -139,6 +121,7 @@
     </div>
   {/if}
 </div>
+{/if}
 
 <style>
   .store {
@@ -240,48 +223,68 @@
     flex-direction: column;
     gap: 12px;
   }
-  .list,
-  .offers {
+  .grid {
     list-style: none;
     margin: 0;
     padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 18px 16px;
+  }
+  .card {
+    width: 100%;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-  }
-  .entry {
-    border-radius: var(--radius);
-    background: var(--surface-2);
-  }
-  .head {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 8px 8px 0;
-  }
-  .expand {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    padding: 6px 16px;
+    gap: 4px;
+    padding: 0;
     border: 0;
     background: none;
     text-align: left;
   }
+  .cover {
+    position: relative;
+    aspect-ratio: 2 / 3;
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--surface-2);
+    margin-bottom: 4px;
+    transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease);
+  }
+  .cover :global(img),
+  .cover :global(.art) {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .card:hover .cover,
+  .card:focus-visible .cover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow);
+  }
+  .flag {
+    position: absolute;
+    left: 8px;
+    bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-size: 12px;
+    font-weight: 700;
+  }
   .title {
     font-weight: 700;
-    font-size: 16px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .line {
-    font-size: 13.5px;
+    font-size: 13px;
     color: var(--muted);
   }
-  .get,
   .btn,
   .primary {
     flex-shrink: 0;
@@ -294,13 +297,12 @@
     font-size: 14.5px;
     font-weight: 700;
   }
-  .get,
   .primary {
     border: 0;
     background: var(--accent);
     color: var(--accent-ink);
+    margin-top: 12px;
   }
-  .get:hover,
   .primary:hover {
     filter: brightness(1.08);
   }
@@ -308,77 +310,11 @@
     border: 1px solid var(--line-strong);
     background: transparent;
   }
-  .btn:hover:not(:disabled) {
+  .btn:hover {
     background: var(--surface-3);
-  }
-  .btn:disabled {
-    opacity: 0.5;
   }
   .more {
     align-self: center;
-  }
-  .on-way {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0 8px;
-    color: var(--accent-text);
-    font-size: 14px;
-    font-weight: 700;
-  }
-  .icon {
-    width: 34px;
-    height: 34px;
-    border: 0;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--muted);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .icon:hover {
-    background: var(--surface-3);
-    color: var(--text);
-  }
-  .chev {
-    display: flex;
-    transition: transform 0.2s var(--ease);
-  }
-  .chev.up {
-    transform: rotate(180deg);
-  }
-  .offers {
-    padding: 0 12px 12px;
-    gap: 6px;
-  }
-  .offers li {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 10px 10px 14px;
-    border-radius: 10px;
-    background: var(--surface-3);
-  }
-  .offers .text {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-  .v {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-weight: 700;
-  }
-  .newest {
-    padding: 1px 7px;
-    border-radius: 999px;
-    background: var(--accent-soft);
-    color: var(--accent-text);
-    font-size: 11.5px;
   }
   .empty {
     flex: 1;
@@ -400,8 +336,5 @@
   .empty p {
     margin: 0;
     max-width: 460px;
-  }
-  .primary {
-    margin-top: 12px;
   }
 </style>

@@ -65,6 +65,7 @@ type Core struct {
 	profile  *profileState
 	store    *storeState
 	catalog  *catalogState
+	art      *artState
 	// setMu makes settings changes one at a time (read, change, save), so
 	// settings taken from another PC don't undo one made here.
 	setMu sync.Mutex
@@ -109,6 +110,7 @@ func NewCore(version string) (*Core, error) {
 	c.profile = newProfileState(c)
 	c.store = newStoreState(c)
 	c.catalog = newCatalogState(c)
+	c.art = newArtState(c)
 	return c, nil
 }
 
@@ -130,6 +132,7 @@ func (c *Core) Start() {
 	go c.updates.loop(c.ctx)
 	go c.store.loop(c.ctx)
 	go c.catalog.loop(c.ctx)
+	go c.art.loop(c.ctx)
 	c.external = newExternalWatch(c)
 	c.external.set(c.Settings.Get().NoticeExternal)
 	if exe, err := os.Executable(); err == nil && platform.MoveOldStartup(exe) {
@@ -417,6 +420,7 @@ func (c *Core) pruneArt() {
 	if len(keep) == 0 {
 		return // an empty (or lost) library: leave the art for a restored one
 	}
+	c.art.keep(keep)
 	if n, freed := meta.PruneArt(platform.CacheDir("art"), keep, 24*time.Hour); n > 0 {
 		logx.Printf("art: removed %d unused images (%d KB)", n, freed>>10)
 	}

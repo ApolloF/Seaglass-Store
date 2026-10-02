@@ -29,6 +29,7 @@ export type {
     AppInfo,
     EngineStatus,
     FeedInfo,
+    InstallOptions,
     MetaState,
     PadAction,
     Profile,
@@ -36,6 +37,7 @@ export type {
     ScanState,
     SessionAchievements,
     StoreAccount,
+    StoreArt,
     SyncerStatus,
     UpdateState
 } from "./models.js";

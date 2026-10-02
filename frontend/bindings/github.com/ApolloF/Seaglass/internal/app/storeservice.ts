@@ -51,6 +51,14 @@ export function Addresses(iface: string): $CancellablePromise<string[] | null> {
 }
 
 /**
+ * Art returns the art and descriptions known for these catalog games and
+ * looks up the rest, in this order (EventStoreArt brings them).
+ */
+export function Art(keys: string[] | null): $CancellablePromise<$models.StoreArt[] | null> {
+    return $Call.ByID(1109411426, keys);
+}
+
+/**
  * Catalog returns a page of the catalog.
  */
 export function Catalog(q: catalog$0.Query): $CancellablePromise<catalog$0.Page> {
@@ -79,6 +87,20 @@ export function ChooseDownloadsFolder(): $CancellablePromise<settings$0.Settings
 }
 
 /**
+ * ChooseGamesFolder asks where games are installed.
+ */
+export function ChooseGamesFolder(): $CancellablePromise<settings$0.Settings> {
+    return $Call.ByID(2838195199);
+}
+
+/**
+ * ChooseInstallFolder asks for a game's folder (it isn't saved).
+ */
+export function ChooseInstallFolder(current: string): $CancellablePromise<string> {
+    return $Call.ByID(1865893871, current);
+}
+
+/**
  * ChooseQBittorrent asks where qbittorrent.exe is.
  */
 export function ChooseQBittorrent(): $CancellablePromise<settings$0.Settings> {
@@ -97,8 +119,8 @@ export function DownloadAction(id: string, action: jobs$0.Action, deleteFiles: b
  * DownloadOffer queues one of a game's offers (by its place in the
  * entry's offers).
  */
-export function DownloadOffer(key: string, offer: number): $CancellablePromise<jobs$0.Job> {
-    return $Call.ByID(4276194449, key, offer);
+export function DownloadOffer(key: string, offer: number, opts: $models.InstallOptions): $CancellablePromise<jobs$0.Job> {
+    return $Call.ByID(4276194449, key, offer, opts);
 }
 
 /**
@@ -130,6 +152,13 @@ export function Feeds(): $CancellablePromise<$models.FeedInfo[] | null> {
 }
 
 /**
+ * GamesFolder is where games are installed.
+ */
+export function GamesFolder(): $CancellablePromise<string> {
+    return $Call.ByID(1560198000);
+}
+
+/**
  * GetQBittorrent opens qBittorrent's download page.
  */
 export function GetQBittorrent(): $CancellablePromise<void> {
@@ -141,6 +170,13 @@ export function GetQBittorrent(): $CancellablePromise<void> {
  */
 export function HasProxyPassword(): $CancellablePromise<boolean> {
     return $Call.ByID(1740591640);
+}
+
+/**
+ * InstallFolder suggests a folder for a game.
+ */
+export function InstallFolder(title: string): $CancellablePromise<string> {
+    return $Call.ByID(3474141276, title);
 }
 
 /**

@@ -72,15 +72,20 @@ func TestCatalogFromFeeds(t *testing.T) {
 
 	key := page.Entries[0].Key
 	svc := NewStoreService(c)
-	j, err := svc.DownloadOffer(key, 1)
+	gameDir := filepath.Join(t.TempDir(), "Ember Crown")
+	j, err := svc.DownloadOffer(key, 1, InstallOptions{Dir: gameDir, Language: "English", Install: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if j.Title != "Ember Crown v1.0" || j.Source != m || j.GameKey != key || j.FeedName != "Feed A" || j.State != jobs.Queued {
+	if j.Title != "Ember Crown v1.0" || j.Source != m || j.GameKey != key || j.FeedName != "Feed A" || j.State != jobs.Queued ||
+		j.InstallDir != gameDir || j.Language != "English" || !j.AutoInstall {
 		t.Errorf("queued offer: %+v", j)
 	}
-	if _, err := svc.DownloadOffer(key, 5); err == nil {
+	if _, err := svc.DownloadOffer(key, 5, InstallOptions{}); err == nil {
 		t.Error("an offer that doesn't exist was queued")
+	}
+	if _, err := svc.DownloadOffer(key, 1, InstallOptions{Dir: gameDir, Language: "Klingon"}); err == nil {
+		t.Error("a language the version doesn't offer was accepted")
 	}
 
 	if _, err := cs.setFeedEnabled(srv.URL+"/b.json", false); err != nil {

@@ -2,11 +2,13 @@ package app
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"slices"
 	"testing"
 	"time"
 
+	"github.com/ApolloF/Seaglass/internal/platform"
 	"github.com/ApolloF/Seaglass/internal/store/jobs"
 	"github.com/ApolloF/Seaglass/internal/torrent"
 )
@@ -101,5 +103,31 @@ func TestDownloadSource(t *testing.T) {
 func TestBytesText(t *testing.T) {
 	if bytesText(5<<30+1<<29) != "5.5 GB" || bytesText(1) != "1 MB" {
 		t.Errorf("%s, %s", bytesText(5<<30+1<<29), bytesText(1))
+	}
+}
+
+func TestFolderName(t *testing.T) {
+	for in, want := range map[string]string{"Ember: Crown?": "Ember Crown", `A/B\C`: "ABC", " ... ": "Game", "Dune Lark v2.": "Dune Lark v2"} {
+		if got := folderName(in); got != want {
+			t.Errorf("folderName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestCheckInstallDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := checkInstallDir(filepath.Join(dir, "New Game")); err != nil {
+		t.Errorf("a new folder: %v", err)
+	}
+	if err := checkInstallDir(dir); err != nil {
+		t.Errorf("an empty folder: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "x"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{dir, `C:\`, `relative\path`, filepath.Join(platform.WindowsDir, "Games")} {
+		if err := checkInstallDir(bad); err == nil {
+			t.Errorf("%q was accepted", bad)
+		}
 	}
 }

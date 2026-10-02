@@ -5,7 +5,7 @@
   import { artFor } from "../lib/art";
   import type { Game } from "../lib/types";
 
-  let { game, kind = "cover" }: { game: Game; kind?: "cover" | "hero" | "backdrop" } = $props();
+  let { game, kind = "cover" }: { game: Pick<Game, "key" | "meta">; kind?: "cover" | "hero" | "backdrop" } = $props();
 
   // What to try, in order: a backdrop falls back to the hero, and a hero to
   // the cover, which is better than nothing. A picture that fails to load
