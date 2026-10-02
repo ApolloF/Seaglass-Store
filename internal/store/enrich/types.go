@@ -135,6 +135,7 @@ type Candidate struct {
 	HLTBID        int    `json:"hltbId"`
 	Title         string `json:"title"`
 	Year          int    `json:"year"`
+	Type          string `json:"type"` // HowLongToBeat's kind of entry: game, dlc, mod, …; "" when not given
 	Main          int    `json:"main"`
 	MainExtras    int    `json:"mainExtras"`
 	Completionist int    `json:"completionist"`

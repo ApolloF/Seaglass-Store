@@ -3,7 +3,7 @@
   // or go back to the automatic match.
   import { api } from "../../lib/api";
   import { errText, lib } from "../../lib/store.svelte";
-  import { hoursText } from "../../lib/storefront";
+  import { completionKind, hoursText } from "../../lib/storefront";
   import type { CompletionCandidate, Enrichment } from "../../lib/types";
   import Modal from "./Modal.svelte";
 
@@ -44,7 +44,7 @@
       {#each list as c (c.hltbId)}
         <li>
           <div class="text">
-            <span class="t">{c.title}{c.year ? ` (${c.year})` : ""}</span>
+            <span class="t">{c.title}{c.year ? ` (${c.year})` : ""}{#if completionKind(c.type)}<span class="sf-chip kind">{completionKind(c.type)}</span>{/if}</span>
             <span class="sf-muted">{[c.main && `Main ${hoursText(c.main)}`, c.mainExtras && `Extras ${hoursText(c.mainExtras)}`, c.completionist && `Full ${hoursText(c.completionist)}`].filter(Boolean).join(" · ") || "No times given"}</span>
           </div>
           <button type="button" class="sf-btn" disabled={busy} onclick={() => choose(c.hltbId)}>Use this</button>
@@ -91,6 +91,10 @@
   .t {
     font-weight: 700;
     overflow-wrap: anywhere;
+  }
+  .kind {
+    margin-left: 8px;
+    vertical-align: 2px;
   }
   .actions {
     display: flex;

@@ -8,6 +8,11 @@ export interface Candidate {
     "hltbId": number;
     "title": string;
     "year": number;
+
+    /**
+     * HowLongToBeat's kind of entry: game, dlc, mod, …; "" when not given
+     */
+    "type": string;
     "main": number;
     "mainExtras": number;
     "completionist": number;

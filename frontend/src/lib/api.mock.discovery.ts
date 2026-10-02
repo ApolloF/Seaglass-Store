@@ -358,10 +358,12 @@ function others(q: BrowseQuery): GameSummary[] {
 const enrichedKeys = new Set<string>();
 const hltbOverride: Record<string, number> = {};
 const candidates: CompletionCandidate[] = [
-  { hltbId: 90001, title: "Ember Crown", year: 2026, main: 3540, mainExtras: 6060, completionist: 8880, url: "https://howlongtobeat.com/game/90001" },
-  { hltbId: 90002, title: "Ember Crown (2009)", year: 2009, main: 600, mainExtras: 900, completionist: 1400, url: "https://howlongtobeat.com/game/90002" },
-  { hltbId: 90003, title: "Ashen Lanterns", year: 2025, main: 960, mainExtras: 1500, completionist: 2280, url: "https://howlongtobeat.com/game/90003" },
-  { hltbId: 90004, title: "Ashen Lanterns 2", year: 2026, main: 0, mainExtras: 0, completionist: 0, url: "https://howlongtobeat.com/game/90004" },
+  { hltbId: 90001, title: "Ember Crown", year: 2026, type: "game", main: 3540, mainExtras: 6060, completionist: 8880, url: "https://howlongtobeat.com/game/90001" },
+  { hltbId: 90002, title: "Ember Crown", year: 2009, type: "game", main: 600, mainExtras: 900, completionist: 1400, url: "https://howlongtobeat.com/game/90002" },
+  { hltbId: 90003, title: "Ashen Lanterns", year: 2025, type: "game", main: 960, mainExtras: 1500, completionist: 2280, url: "https://howlongtobeat.com/game/90003" },
+  { hltbId: 90004, title: "Ashen Lanterns 2", year: 2026, type: "game", main: 0, mainExtras: 0, completionist: 0, url: "https://howlongtobeat.com/game/90004" },
+  { hltbId: 90005, title: "Ember Crown: Tides of Ash", year: 2026, type: "dlc", main: 540, mainExtras: 780, completionist: 1020, url: "https://howlongtobeat.com/game/90005" },
+  { hltbId: 90006, title: "Ember Crown Remixed", year: 2026, type: "mod", main: 0, mainExtras: 0, completionist: 0, url: "https://howlongtobeat.com/game/90006" },
 ];
 
 function findAny(key: string): { g: G; title: string; appId?: number } | undefined {

@@ -269,6 +269,17 @@ export function hoursText(minutes: number): string {
   return `${whole || ""}${h % 1 ? "½" : ""} h`;
 }
 
+// HowLongToBeat lists DLC and mods next to the game they belong to; a plain
+// game needs no label.
+const completionKinds: Record<string, string> = { dlc: "DLC", mod: "Mod", hack: "ROM hack", multi: "Multiplayer", compilation: "Collection" };
+
+/** The label for a HowLongToBeat entry's kind, or "" for a game. */
+export function completionKind(type: string): string {
+  const t = type.trim().toLowerCase();
+  if (!t || t === "game") return "";
+  return completionKinds[t] ?? t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 const availabilityLabels: Record<ReleaseAvailability, string> = {
   installable: "Installable",
   unresolved: "Needs resolving",

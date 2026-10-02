@@ -6,6 +6,7 @@ import {
   createSearchController,
   emptyQuery,
   hoursText,
+  completionKind,
   languagesLine,
   providerText,
   publishedText,
@@ -284,6 +285,13 @@ describe("labels", () => {
     expect(hoursText(720)).toBe("12 h");
     expect(hoursText(750)).toBe("12½ h");
     expect(hoursText(30)).toBe("30 min");
+  });
+  it("labels HowLongToBeat's DLC and mods, and nothing for a game", () => {
+    expect(completionKind("game")).toBe("");
+    expect(completionKind("")).toBe("");
+    expect(completionKind("dlc")).toBe("DLC");
+    expect(completionKind("Mod")).toBe("Mod");
+    expect(completionKind("expansion")).toBe("Expansion");
   });
   it("labels the source date as publication, and nothing when unknown", () => {
     expect(publishedText(0)).toBe("");

@@ -104,14 +104,14 @@ The in-session agent tool could not pin a subagent's effort: custom agent defini
 Worker proposals and what became of them:
 - Prepared releases should carry the installed folder: done (`PreparedRelease.installed`, `518eae0`).
 - Game details for Steam-only keys: done (`518eae0`).
-- A type field (game, DLC, mod) on HowLongToBeat candidates: not done; optional.
+- A type field (game, DLC, mod) on HowLongToBeat candidates: done (`Candidate.type`); the *Wrong game?* picker labels DLC and mods.
 - A "being resolved" flag on summaries: not done; optional.
 - Flush the enrichment cache on exit: done (`Core.Stop`).
 
 ## Decisions made during implementation
 
 - Steam's keyless `IUserReviewsService/GetAppReviews` ignored the filter, language and day range, had no persona names and totals differing from the store page, so reviews use Steam's documented `store.steampowered.com/appreviews/<appid>?json=1`. The recent summary comes from Steam's review histogram (last 30 days); Steam gives it no label.
-- HowLongToBeat uses the site's own anonymous search flow (`/api/search/site/init` token, then `/api/search/site`). Its init endpoint answered 403 without a `Referer: https://howlongtobeat.com/` header, so the provider sends that header and a descriptive User-Agent; no cookies, accounts, browser spoofing or challenge solving. If the site blocks again, cached times show as stale, otherwise "Times unavailable" with a link. **Maintainer review suggested.**
+- HowLongToBeat uses the site's own anonymous search flow (`/api/search/site/init` token, then `/api/search/site`). Its init endpoint answered 403 without a `Referer: https://howlongtobeat.com/` header, so the provider sends that header and a descriptive User-Agent; no cookies, accounts, browser spoofing or challenge solving. If the site blocks again, cached times show as stale, otherwise "Times unavailable" with a link. Reviewed and kept by the maintainer on 2 October; the plan's rule no longer lists CAPTCHA bypasses.
 - Seaglass's game database identifies releases for merging only on exact titles (confidence 85), or titles differing by an edition sold as the same game (75, unless the edition word is remaster, remake, definitive, director's cut, final cut, enhanced, anniversary, reloaded or redux). Looser matches don't merge, so some games have no Steam identity and therefore no reviews until corrected.
 - A first pass reads the newest listing page and leaves older pages to backfill; later refreshes catch up page by page until a page brings nothing new. A search result published more than a week ago counts as backfill, so finding it is never wishlist news.
 - Language claims are parsed to installer language names; a claim with an unknown part (MULTi9) doesn't restrict the language choice at install.

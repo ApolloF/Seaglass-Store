@@ -418,8 +418,16 @@ func TestCandidatesListSearchResultsToChooseFrom(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 4 || list[0] != (Candidate{HLTBID: 7231, Title: "Portal 2", Year: 2011, Main: 515, MainExtras: 826, Completionist: 1376, URL: "https://howlongtobeat.com/game/7231"}) {
+	if len(list) != 4 || list[0] != (Candidate{HLTBID: 7231, Title: "Portal 2", Year: 2011, Type: "game", Main: 515, MainExtras: 826, Completionist: 1376, URL: "https://howlongtobeat.com/game/7231"}) {
 		t.Fatalf("%+v", list)
+	}
+	// The kind of entry comes along, so DLC and mods can be told from the game.
+	kinds := map[string]string{}
+	for _, l := range list {
+		kinds[l.Title] = l.Type
+	}
+	if kinds["Portal 2: Peer Review"] != "dlc" || kinds["Portal 2: Confinement"] != "mod" {
+		t.Fatalf("kinds: %v", kinds)
 	}
 	n := fn.count()
 	if again, err := c.Candidates(ctx, "portal 2"); err != nil || len(again) != 4 || fn.count() != n {

@@ -491,7 +491,7 @@ func (c *Client) Candidates(ctx context.Context, title string) ([]Candidate, err
 	}
 	out := make([]Candidate, 0, len(hits))
 	for _, h := range hits {
-		out = append(out, Candidate{HLTBID: h.ID, Title: h.Title, Year: h.Year, Main: h.Main,
+		out = append(out, Candidate{HLTBID: h.ID, Title: h.Title, Year: h.Year, Type: strings.ToLower(strings.TrimSpace(h.Type)), Main: h.Main,
 			MainExtras: h.MainExtras, Completionist: h.Completionist, URL: gameURL(h.ID)})
 	}
 	return out, nil

@@ -25,7 +25,7 @@ Agreed behavior:
 
 This is an implementation handoff with product decisions already agreed by the maintainer. Proceed with these decisions without reopening settled preferences. Follow the repository's AGENTS.md, inspect the current implementation, and complete each runnable milestone. Record concrete blockers and continue independent work that remains feasible. Report what actually ran and avoid claiming unsupported results.
 
-The task covers public release metadata discovery, game metadata enrichment, wishlist persistence, and integration with the existing user-initiated download/install pipeline. Do not add copy-protection bypasses, CAPTCHA bypasses, account/session harvesting, new payload execution paths, or automatic game downloads. Source transport limitations remain explicit in the UI. This plan does not assert rights or authenticity for any particular third-party release.
+The task covers public release metadata discovery, game metadata enrichment, wishlist persistence, and integration with the existing user-initiated download/install pipeline. Do not add copy-protection bypasses, account/session harvesting, new payload execution paths, or automatic game downloads. Source transport limitations remain explicit in the UI. This plan does not assert rights or authenticity for any particular third-party release.
 
 Do not merge, tag, or publish a release without a later instruction. Additional chats or agents should only be dispatched when requested; the work packages below can also be completed sequentially by one instance.
 
