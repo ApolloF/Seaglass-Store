@@ -1,0 +1,12 @@
+{
+ "success": 1,
+ "results": {
+  "start_date": 0,
+  "end_date": 0,
+  "weeks": [],
+  "rollup_type": "week",
+  "recent": []
+ },
+ "count_all_reviews": false,
+ "expand_graph": false
+}

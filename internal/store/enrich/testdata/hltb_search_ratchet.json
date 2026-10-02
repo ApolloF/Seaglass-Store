@@ -1,0 +1,38 @@
+{
+ "count": 3,
+ "pageCurrent": 1,
+ "pageTotal": 1,
+ "pageSize": 20,
+ "data": [
+  {
+   "game_id": 35859,
+   "game_name": "Ratchet & Clank",
+   "game_alias": "",
+   "game_type": "game",
+   "comp_main": 34200,
+   "comp_plus": 39600,
+   "comp_100": 57600,
+   "release_world": 2016
+  },
+  {
+   "game_id": 7585,
+   "game_name": "Ratchet & Clank",
+   "game_alias": "",
+   "game_type": "game",
+   "comp_main": 36000,
+   "comp_plus": 43200,
+   "comp_100": 66000,
+   "release_world": 2002
+  },
+  {
+   "game_id": 79776,
+   "game_name": "Ratchet & Clank: Rift Apart",
+   "game_alias": "",
+   "game_type": "game",
+   "comp_main": 40000,
+   "comp_plus": 50000,
+   "comp_100": 70000,
+   "release_world": 2021
+  }
+ ]
+}
