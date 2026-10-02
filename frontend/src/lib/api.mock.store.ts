@@ -1,6 +1,7 @@
 // The experimental store for `npm run dev:mock`: a pretend engine whose
 // downloads move along on their own.
 import type { Api } from "./api";
+import { mockDiscovery, mockDiscoveryArt } from "./api.mock.discovery";
 import type { CatalogEntry, CatalogOffer, Download, EngineStatus, FeedInfo, Settings, SourceRelease, StoreArt, StoreSettings } from "./types";
 
 export const mockStoreSettings: StoreSettings = {
@@ -10,7 +11,9 @@ export const mockStoreSettings: StoreSettings = {
   keepDownloads: false,
   pauseWhilePlaying: true,
   disablePayloadScanning: false,
-  privateSources: false,
+  privateSources: true,
+  sources: ["fitgirl", "dodi"],
+  sourceSetup: "done",
   blockDetections: true,
   language: "English",
   network: {
@@ -183,7 +186,14 @@ function feedInfo(url: string, enabled: boolean): FeedInfo {
 /** The store namespace; settings come and go through the mock's own settings. */
 export function mockStore(getSettings: () => Settings, setSettings: (s: Settings) => void): Api["store"] {
   mockStoreSettingsRef = getSettings;
+  const queue = (p: Partial<Download> & { title: string; gameKey: string }): Download => {
+    const d = dl({ id: `sg-${Date.now()}`, name: p.title, size: 2 * gb, downSpeed: 3e7, seeds: 40, peers: 8, engine: "downloading", created: now(), ...p });
+    downloads = [...downloads, d];
+    changed();
+    return copy(d);
+  };
   return {
+    ...mockDiscovery(getSettings, setSettings, queue),
     async engine() {
       return copy(engine);
     },
@@ -367,6 +377,7 @@ export function mockStore(getSettings: () => Settings, setSettings: (s: Settings
         const e = catalogEntries.find((x) => x.key === k);
         const b = e && blurbs[e.title];
         if (b) out.push({ key: k, meta: { description: b[0], developers: [b[1]], genres: b[2], releaseYear: Number(e.updated.slice(0, 4)) || undefined } });
+        else if (mockDiscoveryArt(k)) out.push({ key: k, meta: mockDiscoveryArt(k)! });
       }
       return out;
     },

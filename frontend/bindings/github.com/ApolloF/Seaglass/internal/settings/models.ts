@@ -207,9 +207,19 @@ export interface StoreSettings {
     "disablePayloadScanning": boolean;
 
     /**
-     * opt-in source discovery
+     * browse repack sources (discovery runs only with this on)
      */
     "privateSources": boolean;
+
+    /**
+     * the sources discovery indexes on this PC (DiscoverySources)
+     */
+    "sources": string[] | null;
+
+    /**
+     * SetupPending, SetupAsk or SetupDone
+     */
+    "sourceSetup": string;
 
     /**
      * a download Defender or VirusTotal flags isn't installed unless the person insists

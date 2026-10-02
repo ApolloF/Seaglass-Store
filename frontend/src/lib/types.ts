@@ -132,7 +132,12 @@ export interface StoreSettings {
   pauseWhilePlaying: boolean;
   /** Defender or VirusTotal detections block an install (else they warn). */
   disablePayloadScanning: boolean;
+  /** Browse repack sources: discovery runs only with this on. */
   privateSources: boolean;
+  /** The sources discovery indexes on this PC (fitgirl, dodi). */
+  sources: string[];
+  /** "": decided when the Store is turned on; "ask": choose once; "done". */
+  sourceSetup: "" | "ask" | "done";
   blockDetections: boolean;
   /** The language versions are recommended in; "" for any. */
   language: string;
@@ -635,3 +640,355 @@ export const played = (g: Game) => Math.max(g.playtime ?? 0, g.storePlaytime ?? 
 
 /** When the game was last played, by Seaglass or the store. */
 export const lastPlayed = (g: Game) => Math.max(g.lastPlayed ?? 0, g.storeLastPlayed ?? 0);
+
+// ---------------------------------------------------------------------------
+// Store discovery, enrichment and wishlist. Mirror internal/store/discovery,
+// internal/store/enrich, internal/store/wishlist and internal/app
+// (store_discovery_service.go). Times are unix seconds; 0 is unknown.
+
+/** Provider and request states. A failure never hides what is cached: it comes back "stale". */
+export type ProviderState = "ok" | "loading" | "stale" | "unavailable" | "error" | "skipped";
+export type CrawlState = "idle" | "recent" | "backfill" | "paused" | "backoff" | "disabled";
+export type ReleaseAvailability = "installable" | "unresolved" | "manual" | "update-only" | "summary" | "unavailable";
+
+/** One source's indexing state. Mirrors discovery.SourceStatus. */
+export interface DiscoverySourceStatus {
+  id: string;
+  name: string;
+  enabled: boolean;
+  state: CrawlState;
+  releases: number;
+  recentAt: number;
+  /** Next older listing page; 0 before the first pass. */
+  backfillPage: number;
+  backfillDone: boolean;
+  retryAt: number;
+  error?: string;
+}
+
+/** What discovery is doing. Mirrors discovery.Status. */
+export interface DiscoveryStatus {
+  /** The Store and source browsing are on and a source is chosen. */
+  enabled: boolean;
+  /** An existing Store user makes the one-time source choice first. */
+  setupNeeded: boolean;
+  sources: DiscoverySourceStatus[];
+  games: number;
+  releases: number;
+  refreshing: boolean;
+  /** Newest listings older than six hours, or their last refresh failed. */
+  stale: boolean;
+}
+
+/** One game on a shelf, in Browse or search. Mirrors discovery.GameSummary. */
+export interface GameSummary {
+  /** "steam:<appid>" or "title:<normalized title>", as CatalogEntry.key. */
+  key: string;
+  title: string;
+  steamAppId?: number;
+  /** A source release or feed offer exists; Steam-only results have none. */
+  sourceBacked: boolean;
+  /** fitgirl, dodi, feeds */
+  sources: string[];
+  releases: number;
+  version?: string;
+  /** Newest source publication (not the game's release date). */
+  publishedAt: number;
+  /** Newest change to a source release. */
+  updatedAt: number;
+  sizeBytes: number;
+  /** Empty: unknown. */
+  languages: string[];
+  /** Empty: unknown. */
+  genres: string[];
+  installable: boolean;
+  /** Place on Steam's most-played chart; 0 off the chart or unknown. */
+  popularRank: number;
+  reviewPercent: number;
+  /** 0: unknown or no reviews. */
+  reviewTotal: number;
+  reviewLabel?: string;
+  installed?: { download: string; version: string; update: boolean };
+  wishlisted: boolean;
+  /** Unread wishlist activity. */
+  activity: boolean;
+}
+
+export type BrowseSort = "title" | "published" | "popular" | "reviews";
+
+/** Mirrors discovery.BrowseQuery. */
+export interface BrowseQuery {
+  text: string;
+  /** fitgirl, dodi, feeds; empty: all. */
+  sources: string[];
+  language: string;
+  genre: string;
+  availability: "" | "installable" | "unresolved";
+  installed: "" | "installed" | "not-installed";
+  sort: BrowseSort;
+  offset: number;
+  /** 60 by default, at most 200. */
+  limit: number;
+}
+
+/** Mirrors discovery.BrowsePage. */
+export interface BrowsePage {
+  games: GameSummary[];
+  total: number;
+  /** Left out only because the filtered field is unknown for them. */
+  unknown: number;
+  languages: string[];
+  genres: string[];
+}
+
+/** One remote search. Mirrors discovery.ProviderProgress. */
+export interface ProviderProgress {
+  /** fitgirl, dodi, steam */
+  id: string;
+  name: string;
+  state: ProviderState;
+  found: number;
+  error?: string;
+  cached: boolean;
+}
+
+/** Mirrors discovery.SearchResult. */
+export interface SearchResult {
+  query: BrowseQuery;
+  page: BrowsePage;
+  /** Steam games with no known source release: wishlist only. */
+  other: GameSummary[];
+  remote: ProviderProgress[];
+  complete: boolean;
+}
+
+/** Mirrors discovery.SearchProgress (the store:search event). */
+export interface SearchProgress {
+  text: string;
+  remote: ProviderProgress[];
+}
+
+/** The Store's front page. Mirrors discovery.Home. */
+export interface StoreHome {
+  new: GameSummary[];
+  popular: GameSummary[];
+  /** "unavailable": no chart, the shelf shows its empty state. */
+  popularState: ProviderState;
+  updated: GameSummary[];
+  wishlist: GameSummary[];
+  status: DiscoveryStatus;
+}
+
+/** One release choice on a game's page. Mirrors discovery.Release. */
+export interface Release {
+  /** The source entry ID, or "feed:<n>". */
+  id: string;
+  origin: "source" | "feed";
+  /** fitgirl, dodi, or the feed's URL. */
+  source: string;
+  sourceName: string;
+  title: string;
+  rawTitle: string;
+  version?: string;
+  pageUrl?: string;
+  publishedAt: number;
+  updatedAt: number;
+  sizeBytes: number;
+  sizeClaim?: string;
+  sizeIsMinimum?: boolean;
+  installedSizeBytes?: number;
+  /** Empty: unknown. */
+  languages: string[];
+  languageClaim?: string;
+  kind: "release" | "update";
+  availability: ReleaseAvailability;
+  /** Validated torrent identities. */
+  transports: number;
+  /** Why mirrors aren't usable yet, one line each. */
+  unresolved: string[];
+  warnings: string[];
+  /** A confirmed newer game version than the installed one. */
+  newer: boolean;
+  feedKey?: string;
+  feedOffer: number;
+}
+
+/** How a game's Steam match was made. Mirrors discovery.Identity. */
+export interface Identity {
+  steamAppId: number;
+  name?: string;
+  how: "game-database" | "correction" | "feed" | "";
+  corrected: boolean;
+}
+
+/** A game's page. Mirrors discovery.GameDetails. */
+export interface GameDetails {
+  summary: GameSummary;
+  /** Newest publication first. */
+  releases: Release[];
+  /** Index in releases to offer first; -1 none. */
+  recommended: number;
+  why: string[];
+  identity: Identity;
+  /** Release details are loading; onGames brings them. */
+  loading: boolean;
+}
+
+/** One validated way to download a prepared release. Mirrors discovery.PreparedOffer. */
+export interface PreparedOffer {
+  transport: number;
+  title: string;
+  version?: string;
+  sizeBytes: number;
+  installedSizeBytes?: number;
+  languages: string[];
+  torrentName?: string;
+  infoHash: string;
+  sourceName: string;
+}
+
+/** A release made ready for the install confirmation. Mirrors discovery.PreparedRelease. */
+export interface PreparedRelease {
+  gameKey: string;
+  release: Release;
+  ready: boolean;
+  offers: PreparedOffer[];
+  state: "ready" | "unresolved" | "update-only" | "unavailable";
+  reason?: string;
+  warnings: string[];
+}
+
+/** Which games changed. Mirrors discovery.Change (the store:games event). */
+export interface DiscoveryChange {
+  keys: string[];
+  all: boolean;
+}
+
+/** Mirrors enrich.Score. */
+export interface ReviewScore {
+  label?: string;
+  percent: number;
+  /** 0: no reviews or unknown. */
+  total: number;
+}
+
+/** Mirrors enrich.ReviewSummary. */
+export interface ReviewSummary {
+  appId: number;
+  overall: ReviewScore;
+  /** Last 30 days. */
+  recent: ReviewScore;
+  url: string;
+  fetchedAt: number;
+  state: ProviderState;
+  error?: string;
+}
+
+/** One Steam review, shown as plain text. Mirrors enrich.Review. */
+export interface Review {
+  id: string;
+  author: string;
+  recommended: boolean;
+  text: string;
+  language?: string;
+  helpful: number;
+  funny: number;
+  /** Minutes; 0 unknown. */
+  playtimeAtReview: number;
+  playtimeForever: number;
+  posted: number;
+  url: string;
+}
+
+/** Mirrors enrich.ReviewQuery. */
+export interface ReviewQuery {
+  appId: number;
+  /** "" for the first page, then ReviewPage.cursor. */
+  cursor: string;
+  filter: "helpful" | "recent";
+  /** Steam language name ("english"); "" all. */
+  language: string;
+}
+
+/** Mirrors enrich.ReviewPage. */
+export interface ReviewPage {
+  appId: number;
+  reviews: Review[];
+  cursor: string;
+  more: boolean;
+  state: ProviderState;
+  error?: string;
+}
+
+/** Metacritic score and link as Steam gives them. Mirrors enrich.Critic. */
+export interface Critic {
+  appId: number;
+  /** 0: none given. */
+  score: number;
+  url?: string;
+  fetchedAt: number;
+  state: ProviderState;
+  error?: string;
+}
+
+/** HowLongToBeat times in minutes; 0 unknown. Mirrors enrich.Completion. */
+export interface Completion {
+  /** 0: no confident match. */
+  hltbId: number;
+  title?: string;
+  main: number;
+  mainExtras: number;
+  completionist: number;
+  /** The game's page, or a search on HowLongToBeat. */
+  url: string;
+  corrected: boolean;
+  fetchedAt: number;
+  state: ProviderState;
+  error?: string;
+}
+
+/** A HowLongToBeat search result. Mirrors enrich.Candidate. */
+export interface CompletionCandidate {
+  hltbId: number;
+  title: string;
+  year: number;
+  main: number;
+  mainExtras: number;
+  completionist: number;
+  url: string;
+}
+
+/** Everything known about a game besides its releases. Mirrors enrich.Enrichment. */
+export interface Enrichment {
+  key: string;
+  steamAppId: number;
+  reviews: ReviewSummary;
+  critic: Critic;
+  completion: Completion;
+  popularRank: number;
+}
+
+/** Mirrors wishlist.ActivityView. */
+export interface WishlistActivity {
+  id: string;
+  /** available: a first source release; newer: a confirmed newer version. */
+  kind: "available" | "newer";
+  releaseId: string;
+  source: string;
+  sourceName: string;
+  version?: string;
+  at: number;
+  read: boolean;
+}
+
+/** A saved game. Mirrors internal/app.WishlistItem. */
+export interface WishlistItem {
+  key: string;
+  title: string;
+  steamAppId?: number;
+  addedAt: number;
+  game: GameSummary;
+  /** Newest first. */
+  activity: WishlistActivity[];
+  unread: number;
+}

@@ -19,6 +19,12 @@ import * as settings$0 from "../settings/models.js";
 import * as catalog$0 from "../store/catalog/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as discovery$0 from "../store/discovery/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as enrich$0 from "../store/enrich/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as jobs$0 from "../store/jobs/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -30,6 +36,14 @@ import * as torrent$0 from "../torrent/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
+
+/**
+ * AcknowledgeWishlist marks a saved game's activity read ("" marks every
+ * game's).
+ */
+export function AcknowledgeWishlist(key: string): $CancellablePromise<$models.WishlistItem[] | null> {
+    return $Call.ByID(4020317092, key);
+}
 
 /**
  * AddDownload queues a magnet link or a link to a .torrent file. title
@@ -44,6 +58,14 @@ export function AddDownload(source: string, title: string): $CancellablePromise<
  */
 export function AddFeed(url: string): $CancellablePromise<settings$0.Settings> {
     return $Call.ByID(1527192760, url);
+}
+
+/**
+ * AddToWishlist saves a game. Its releases known now are the baseline:
+ * only later ones become activity.
+ */
+export function AddToWishlist(key: string, title: string, steamAppID: number): $CancellablePromise<$models.WishlistItem[] | null> {
+    return $Call.ByID(2922844770, key, title, steamAppID);
 }
 
 /**
@@ -74,6 +96,22 @@ export function Art(keys: string[] | null): $CancellablePromise<$models.StoreArt
  */
 export function AttachReleaseTorrent(source: string, id: string): $CancellablePromise<sources$0.Entry> {
     return $Call.ByID(2977056769, source, id);
+}
+
+/**
+ * AttachSourceTorrent asks for a .torrent file the person got in their
+ * browser for an unresolved release and validates it.
+ */
+export function AttachSourceTorrent(key: string, releaseID: string): $CancellablePromise<discovery$0.PreparedRelease> {
+    return $Call.ByID(3274921097, key, releaseID);
+}
+
+/**
+ * BrowseGames answers a browse or search query from the index alone, at
+ * once.
+ */
+export function BrowseGames(q: discovery$0.BrowseQuery): $CancellablePromise<discovery$0.SearchResult> {
+    return $Call.ByID(3654478962, q);
 }
 
 /**
@@ -126,10 +164,25 @@ export function ChooseQBittorrent(): $CancellablePromise<settings$0.Settings> {
 }
 
 /**
+ * CompletionCandidates searches HowLongToBeat for title, so the person can
+ * choose the right game.
+ */
+export function CompletionCandidates(key: string, title: string): $CancellablePromise<enrich$0.Candidate[] | null> {
+    return $Call.ByID(1351683049, key, title);
+}
+
+/**
  * DiscoverReleases fetches metadata on demand; it never queues payload downloads.
  */
 export function DiscoverReleases(source: string, query: string, resolve: boolean): $CancellablePromise<sources$0.Snapshot> {
     return $Call.ByID(2634802980, source, query, resolve);
+}
+
+/**
+ * DiscoveryStatus says what discovery is doing.
+ */
+export function DiscoveryStatus(): $CancellablePromise<discovery$0.Status> {
+    return $Call.ByID(2366554855);
 }
 
 /**
@@ -150,6 +203,14 @@ export function DownloadLanguages(id: string): $CancellablePromise<$models.Downl
  */
 export function DownloadOffer(key: string, offer: number, opts: $models.InstallOptions): $CancellablePromise<jobs$0.Job> {
     return $Call.ByID(4276194449, key, offer, opts);
+}
+
+/**
+ * DownloadRelease queues a prepared release's validated transport, after
+ * the person confirmed it, through the same checks as DownloadOffer.
+ */
+export function DownloadRelease(key: string, releaseID: string, transport: number, opts: $models.InstallOptions): $CancellablePromise<jobs$0.Job> {
+    return $Call.ByID(27636162, key, releaseID, transport, opts);
 }
 
 /**
@@ -174,10 +235,42 @@ export function Engine(): $CancellablePromise<$models.EngineStatus> {
 }
 
 /**
+ * EnrichGames returns the cached enrichment for these games (cards on
+ * screen, the first first) and fetches the rest; EventStoreEnrichment
+ * brings them.
+ */
+export function EnrichGames(keys: string[] | null): $CancellablePromise<enrich$0.Enrichment[] | null> {
+    return $Call.ByID(3788116099, keys);
+}
+
+/**
  * Feeds lists the catalog feeds and how their last fetch went.
  */
 export function Feeds(): $CancellablePromise<$models.FeedInfo[] | null> {
     return $Call.ByID(340743898);
+}
+
+/**
+ * GameDetails returns a game's page from the index and fetches missing
+ * release details in the background (EventStoreGames brings them).
+ */
+export function GameDetails(key: string): $CancellablePromise<discovery$0.GameDetails> {
+    return $Call.ByID(2861761367, key);
+}
+
+/**
+ * GameEnrichment returns everything known about a game for its page,
+ * fetching what is missing or old first (a few seconds at most).
+ */
+export function GameEnrichment(key: string): $CancellablePromise<enrich$0.Enrichment> {
+    return $Call.ByID(2492157158, key);
+}
+
+/**
+ * GameReviews returns one page of a game's Steam reviews.
+ */
+export function GameReviews(q: enrich$0.ReviewQuery): $CancellablePromise<enrich$0.ReviewPage> {
+    return $Call.ByID(1340848476, q);
 }
 
 /**
@@ -245,6 +338,30 @@ export function OpenReleasePage(source: string, id: string): $CancellablePromise
 }
 
 /**
+ * OpenSourceRelease opens a release's article in the browser.
+ */
+export function OpenSourceRelease(key: string, releaseID: string): $CancellablePromise<void> {
+    return $Call.ByID(3577528353, key, releaseID);
+}
+
+/**
+ * PrepareRelease makes a release ready for the install confirmation: it
+ * fetches the article when only its summary is known and tries the
+ * supported torrent-metadata resolver once. Nothing is downloaded but
+ * metadata.
+ */
+export function PrepareRelease(key: string, releaseID: string): $CancellablePromise<discovery$0.PreparedRelease> {
+    return $Call.ByID(4259217065, key, releaseID);
+}
+
+/**
+ * RefreshDiscovery fetches the newest listings of every chosen source now.
+ */
+export function RefreshDiscovery(): $CancellablePromise<discovery$0.Status> {
+    return $Call.ByID(2968838102);
+}
+
+/**
  * RefreshFeeds fetches every enabled feed now.
  */
 export function RefreshFeeds(): $CancellablePromise<$models.FeedInfo[] | null> {
@@ -259,6 +376,13 @@ export function RemoveFeed(url: string): $CancellablePromise<settings$0.Settings
 }
 
 /**
+ * RemoveFromWishlist forgets a saved game and its activity.
+ */
+export function RemoveFromWishlist(key: string): $CancellablePromise<$models.WishlistItem[] | null> {
+    return $Call.ByID(437754034, key);
+}
+
+/**
  * ReviewRelease adds only a resolved, explicitly reviewed offer to the catalog.
  */
 export function ReviewRelease(source: string, id: string, transport: number): $CancellablePromise<string> {
@@ -270,6 +394,23 @@ export function ReviewRelease(source: string, id: string, transport: number): $C
  */
 export function SandboxAvailable(): $CancellablePromise<boolean> {
     return $Call.ByID(3185661807);
+}
+
+/**
+ * SearchGames searches the chosen source sites and Steam for q.Text to
+ * fill gaps in the index, then answers like BrowseGames. A newer call
+ * cancels an older one, which then returns its partial result.
+ */
+export function SearchGames(q: discovery$0.BrowseQuery): $CancellablePromise<discovery$0.SearchResult> {
+    return $Call.ByID(836849064, q);
+}
+
+/**
+ * SetCompletionMatch makes hltbID the game's HowLongToBeat match, kept
+ * across refreshes (0 goes back to the automatic match).
+ */
+export function SetCompletionMatch(key: string, hltbID: number): $CancellablePromise<enrich$0.Enrichment> {
+    return $Call.ByID(3699193174, key, hltbID);
 }
 
 /**
@@ -296,11 +437,28 @@ export function SetProxyPassword(password: string): $CancellablePromise<void> {
 }
 
 /**
+ * SetSteamMatch corrects which Steam game a game's releases are (appID 0:
+ * not on Steam). The correction survives refreshes. The game's key can
+ * change; the returned details carry the new one.
+ */
+export function SetSteamMatch(key: string, appID: number, name: string): $CancellablePromise<discovery$0.GameDetails> {
+    return $Call.ByID(3816352282, key, appID, name);
+}
+
+/**
  * SetVirusTotalKey stores the person's VirusTotal API key encrypted for
  * this Windows account ("" removes it). Only file hashes are looked up.
  */
 export function SetVirusTotalKey(key: string): $CancellablePromise<void> {
     return $Call.ByID(3842706853, key);
+}
+
+/**
+ * SetupSources records the one-time source choice (or a later change in
+ * Settings) and starts indexing the chosen sources at once.
+ */
+export function SetupSources(chosen: string[] | null): $CancellablePromise<settings$0.Settings> {
+    return $Call.ByID(2194619824, chosen);
 }
 
 /**
@@ -319,8 +477,22 @@ export function StartEngine(): $CancellablePromise<$models.EngineStatus> {
 }
 
 /**
+ * StoreHome returns the Store's front page from the index.
+ */
+export function StoreHome(): $CancellablePromise<discovery$0.Home> {
+    return $Call.ByID(1545618969);
+}
+
+/**
  * Updates lists the games the store installed that have a newer version.
  */
 export function Updates(): $CancellablePromise<catalog$0.Entry[] | null> {
     return $Call.ByID(4210487325);
+}
+
+/**
+ * Wishlist lists the saved games, newest first.
+ */
+export function Wishlist(): $CancellablePromise<$models.WishlistItem[] | null> {
+    return $Call.ByID(2412536106);
 }

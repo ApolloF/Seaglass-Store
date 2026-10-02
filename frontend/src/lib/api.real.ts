@@ -1,7 +1,7 @@
 import { Events, Window } from "@wailsio/runtime";
 import { AccountsService, AchievementsService, LaunchService, LibraryService, PadService, ProfileService, SavesService, SettingsService, StoreService, UpdateService } from "../../bindings/github.com/ApolloF/Seaglass/internal/app";
 import type { Api } from "./api";
-import type { SourceSnapshot, SourceRelease, DownloadLanguageOptions, Accounts, Achievements, AppInfo, ArtChoice, CatalogEntry, CatalogPage, Download, StoreArt, EngineStatus, FeedInfo, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
+import type { CompletionCandidate, DiscoveryChange, DiscoveryStatus, Enrichment, GameDetails, PreparedRelease, ReviewPage, SearchProgress, SearchResult, StoreHome, WishlistItem, SourceSnapshot, SourceRelease, DownloadLanguageOptions, Accounts, Achievements, AppInfo, ArtChoice, CatalogEntry, CatalogPage, Download, StoreArt, EngineStatus, FeedInfo, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
 
 // The generated bindings return the Go structs; their JSON matches ./types.
 const g = (p: Promise<unknown>) => p as Promise<Game>;
@@ -94,6 +94,38 @@ export const realApi: Api = {
     openInSandbox: (id) => StoreService.OpenInSandbox(id),
     onArt: (cb) => Events.On("store:art", (e) => cb(e.data as unknown as StoreArt)),
     onCatalog: (cb) => Events.On("store:catalog", (e) => cb(e.data as unknown as number)),
+    discovery: {
+      status: () => StoreService.DiscoveryStatus() as Promise<unknown> as Promise<DiscoveryStatus>,
+      setupSources: (sources) => StoreService.SetupSources(sources) as Promise<unknown> as Promise<Settings>,
+      refresh: () => StoreService.RefreshDiscovery() as Promise<unknown> as Promise<DiscoveryStatus>,
+      home: () => StoreService.StoreHome() as Promise<unknown> as Promise<StoreHome>,
+      browse: (q) => StoreService.BrowseGames(q as never) as Promise<unknown> as Promise<SearchResult>,
+      search: (q) => StoreService.SearchGames(q as never) as Promise<unknown> as Promise<SearchResult>,
+      game: (key) => StoreService.GameDetails(key) as Promise<unknown> as Promise<GameDetails>,
+      setSteamMatch: (key, appId, name) => StoreService.SetSteamMatch(key, appId, name) as Promise<unknown> as Promise<GameDetails>,
+      prepareRelease: (key, id) => StoreService.PrepareRelease(key, id) as Promise<unknown> as Promise<PreparedRelease>,
+      attachTorrent: (key, id) => StoreService.AttachSourceTorrent(key, id) as Promise<unknown> as Promise<PreparedRelease>,
+      openRelease: (key, id) => StoreService.OpenSourceRelease(key, id),
+      downloadRelease: (key, id, transport, opts) => StoreService.DownloadRelease(key, id, transport, { ...opts, update: !!opts.update }) as Promise<unknown> as Promise<Download>,
+      onStatus: (cb) => Events.On("store:discovery", (e) => cb(e.data as unknown as DiscoveryStatus)),
+      onGames: (cb) => Events.On("store:games", (e) => cb(e.data as unknown as DiscoveryChange)),
+      onSearch: (cb) => Events.On("store:search", (e) => cb(e.data as unknown as SearchProgress)),
+    },
+    enrich: {
+      games: (keys) => StoreService.EnrichGames(keys).then((l) => (l ?? []) as unknown as Enrichment[]),
+      game: (key) => StoreService.GameEnrichment(key) as Promise<unknown> as Promise<Enrichment>,
+      reviews: (q) => StoreService.GameReviews(q as never) as Promise<unknown> as Promise<ReviewPage>,
+      completionCandidates: (key, title) => StoreService.CompletionCandidates(key, title).then((l) => (l ?? []) as unknown as CompletionCandidate[]),
+      setCompletionMatch: (key, id) => StoreService.SetCompletionMatch(key, id) as Promise<unknown> as Promise<Enrichment>,
+      onEnrichment: (cb) => Events.On("store:enrichment", (e) => cb(e.data as unknown as Enrichment)),
+    },
+    wishlist: {
+      list: () => StoreService.Wishlist().then((l) => (l ?? []) as unknown as WishlistItem[]),
+      add: (key, title, appId) => StoreService.AddToWishlist(key, title, appId).then((l) => (l ?? []) as unknown as WishlistItem[]),
+      remove: (key) => StoreService.RemoveFromWishlist(key).then((l) => (l ?? []) as unknown as WishlistItem[]),
+      acknowledge: (key) => StoreService.AcknowledgeWishlist(key).then((l) => (l ?? []) as unknown as WishlistItem[]),
+      onChange: (cb) => Events.On("store:wishlist", (e) => cb((e.data ?? []) as unknown as WishlistItem[])),
+    },
   },
 
   updates: {

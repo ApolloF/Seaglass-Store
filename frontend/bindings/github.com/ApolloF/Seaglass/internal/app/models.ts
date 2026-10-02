@@ -9,6 +9,12 @@ import * as achievements$0 from "../achievements/models.js";
 import * as library$0 from "../library/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as discovery$0 from "../store/discovery/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as wishlist$0 from "../store/wishlist/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as syncer$0 from "../syncer/models.js";
 
 /**
@@ -351,4 +357,21 @@ export interface UpdateState {
      * the old version, so it isn't retried on its own.
      */
     "failed": boolean;
+}
+
+/**
+ * WishlistItem is a saved game with its current state and activity.
+ */
+export interface WishlistItem {
+    "key": string;
+    "title": string;
+    "steamAppId"?: number;
+    "addedAt": number;
+    "game": discovery$0.GameSummary;
+
+    /**
+     * newest first
+     */
+    "activity": wishlist$0.ActivityView[] | null;
+    "unread": number;
 }

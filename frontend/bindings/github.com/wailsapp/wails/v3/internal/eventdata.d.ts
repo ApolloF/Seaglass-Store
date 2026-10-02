@@ -22,6 +22,12 @@ import type * as pad$0 from "../../../../ApolloF/Seaglass/internal/pad/models.js
 import type * as settings$0 from "../../../../ApolloF/Seaglass/internal/settings/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import type * as discovery$0 from "../../../../ApolloF/Seaglass/internal/store/discovery/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import type * as enrich$0 from "../../../../ApolloF/Seaglass/internal/store/enrich/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import type * as jobs$0 from "../../../../ApolloF/Seaglass/internal/store/jobs/models.js";
 
 declare module "@wailsio/runtime" {
@@ -42,8 +48,13 @@ declare module "@wailsio/runtime" {
             "settings:changed": settings$0.Settings;
             "store:art": app$0.StoreArt;
             "store:catalog": number;
+            "store:discovery": discovery$0.Status;
             "store:engine": app$0.EngineStatus;
+            "store:enrichment": enrich$0.Enrichment;
+            "store:games": discovery$0.Change;
             "store:jobs": jobs$0.Job[] | null;
+            "store:search": discovery$0.SearchProgress;
+            "store:wishlist": app$0.WishlistItem[] | null;
             "ui:mode": string;
             "update:state": app$0.UpdateState;
         }

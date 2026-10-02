@@ -168,3 +168,78 @@ func TestLegacyUnofficial(t *testing.T) {
 		t.Error("detectExternal should win over detectUnofficial")
 	}
 }
+
+// A new Store user gets both sources when they turn the Store on; nothing
+// is chosen for them while it stays off.
+func TestStoreOnChoosesSources(t *testing.T) {
+	s := Open(filepath.Join(t.TempDir(), "settings.json"))
+	v := s.Get()
+	if v.Store.SourceSetup != SetupPending || len(v.Store.Sources) != 0 || v.Store.PrivateSources {
+		t.Fatalf("new settings chose sources already: %+v", v.Store)
+	}
+	v.Theme = "dark"
+	if got, _ := s.Set(v); got.Store.PrivateSources || len(got.Store.Sources) != 0 {
+		t.Fatalf("sources were chosen with the Store off: %+v", got.Store)
+	}
+	v.ExperimentalStore = true
+	got, err := s.Set(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Store.PrivateSources || got.Store.SourceSetup != SetupDone || len(got.Store.Sources) != 2 {
+		t.Fatalf("turning the Store on: %+v", got.Store)
+	}
+	if !got.Store.DiscoveryOn("fitgirl") || !got.Store.DiscoveryOn("dodi") || got.Store.DiscoveryOn("1337x") {
+		t.Error("DiscoveryOn disagrees with the chosen sources")
+	}
+	// Turning it off and on again keeps what the person chose meanwhile.
+	got.Store.Sources = []string{"dodi"}
+	got.ExperimentalStore = false
+	got, _ = s.Set(got)
+	got.ExperimentalStore = true
+	if got, _ = s.Set(got); len(got.Store.Sources) != 1 || got.Store.Sources[0] != "dodi" {
+		t.Errorf("the choice was replaced: %v", got.Store.Sources)
+	}
+}
+
+// Someone who used the Store before discovery existed chooses its sources
+// once; their feeds and a disabled source preference stay as they were.
+func TestExistingStoreUserIsAsked(t *testing.T) {
+	dir := t.TempDir()
+	for _, private := range []bool{false, true} {
+		p := filepath.Join(dir, "settings.json")
+		raw := `{"welcomed":true,"experimentalStore":true,"store":{"privateSources":` + map[bool]string{false: "false", true: "true"}[private] +
+			`,"feeds":[{"url":"https://a.example/feed.json","enabled":true,"trust":1}]}}`
+		if err := os.WriteFile(p, []byte(raw), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		got := Open(p).Get().Store
+		if got.SourceSetup != SetupAsk || len(got.Sources) != 0 || got.PrivateSources != private {
+			t.Errorf("privateSources %v: %+v", private, got)
+		}
+		if len(got.Feeds) != 1 || got.Feeds[0].Trust != 1 {
+			t.Errorf("feeds changed: %+v", got.Feeds)
+		}
+		if got.DiscoveryOn("fitgirl") {
+			t.Error("discovery runs before the person chose")
+		}
+	}
+	// A settings file from before the Store was ever on is a new Store user.
+	p := filepath.Join(dir, "off.json")
+	if err := os.WriteFile(p, []byte(`{"welcomed":true,"experimentalStore":false}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := Open(p).Get().Store.SourceSetup; got != SetupPending {
+		t.Errorf("store off: setup %q", got)
+	}
+	// Saved settings are not asked again, and unknown values are dropped.
+	s := Open(p)
+	v := s.Get()
+	v.Store.SourceSetup, v.Store.Sources = SetupDone, []string{"dodi", "nope", "fitgirl", "dodi"}
+	if got, _ := s.Set(v); got.Store.SourceSetup != SetupDone || len(got.Store.Sources) != 2 || got.Store.Sources[0] != "fitgirl" {
+		t.Errorf("normalized sources: %+v", got.Store)
+	}
+	if got := Open(p).Get().Store.SourceSetup; got != SetupDone {
+		t.Errorf("reopened: %q", got)
+	}
+}
