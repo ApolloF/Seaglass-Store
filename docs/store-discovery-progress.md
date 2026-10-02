@@ -76,7 +76,7 @@ Run on 2 October 2026 on Windows 11 (Go 1.27.0, Node 24.19.0, Wails v3.0.0-beta.
 | `wails3 generate bindings -f '-tags production' -clean=true -ts -i` | pass; output committed, no diff after the last run |
 | `go vet ./...` | pass |
 | `go test ./...` | pass (every package; the root package needs `frontend/dist`, built by `npm run build` first) |
-| `go test -race ./internal/...` | **not run: environment.** `-race requires cgo`; with `CGO_ENABLED=1` there is no gcc on this machine. Needs Windows CI with a C toolchain. |
+| `go test -race ./internal/...` | pass (every package), after installing gcc (WinLibs MinGW-w64 16.2) on 2 October; earlier not run because the machine had no C toolchain |
 | `cd frontend && npm run check` | pass, 0 errors, 0 warnings |
 | `cd frontend && npm run test` | pass, 13 files, 86 tests |
 | `cd frontend && npm run build` | pass |
@@ -86,11 +86,16 @@ Run on 2 October 2026 on Windows 11 (Go 1.27.0, Node 24.19.0, Wails v3.0.0-beta.
 | Live: `WL_STORE_LIVE=1 go test -run Live -v ./internal/store/enrich` | pass: chart 100 games; Portal 2 summary 98 % of 467,428 (recent 98 % of 1,715, no Steam label); review pages 1 and 2 through the cursor; Metacritic 95 with link; HowLongToBeat search and detail id 7231, 515 / 826 / 1376 min |
 | Real app: `node tools/harness/discovery.mjs` (dev build) | pass, 22 checks: Home filled from the sources without a feed; search; Enter opens a game, Escape goes back; game page with releases, reviews and times; wishlist saved and persisted; install confirmation opened and closed; nothing downloaded; no horizontal scrolling at 390 px in both themes on every screen |
 | Mock UI (work package 4 worker, Playwright on Edge) | both themes at 1280 and 390 px for Home, Browse, Wishlist, game page, install dialog, Settings; `discovery=setup/empty/offline/nochart/slow` scenarios; keyboard pass |
-| `node tools/harness/store.mjs` (download and install pipeline) | **not run: environment.** Needs qBittorrent 5, which isn't installed here. The pipeline's Go tests (`store_pipeline_test.go`, controlled installer fixture) pass. |
+| `WL_REAL_QBIT=1 go test -run Real -v ./internal/torrent/qbit` | pass on qBittorrent 5.2.4 after the login and add fix below; failed before it ("qBittorrent refused the login") |
+| `node tools/harness/store.mjs` (download and install pipeline) | pass on qBittorrent 5.2.4: Get, download through the web seed, install into the games folder (joins the library's folders), uninstall. The harness's test data now answers source setup (feed only) and opens the feed game from Browse. |
 
 Earlier: `go test ./...` before any change passed except the root package (no `frontend/dist` yet).
 
 Bugs found by verification and fixed: a deadlock after the first remote search (found by the real-app harness, `5ef1998`); a feed or listing page with only announcements aborted a pass (found by tests, fixed in `4842da5`).
+
+Pre-existing, found by `store.mjs` and fixed: qBittorrent 5.2 answers a login with an empty 204 (401 when refused) and an add with JSON counts, where 5.1 said `Ok.`/`Fails.`. Seaglass took the 204 for a refusal and restarted the sidecar with backoff, so every Store download stayed queued with any current qBittorrent. `internal/torrent/qbit/client.go` now accepts both versions' answers (`TestClientLogsInToQBittorrent52`).
+
+Pre-existing, found while debugging and not changed: while qBittorrent failed to start, the Downloads page said *No downloads* although a job was queued, and the engine's error isn't shown anywhere on that page.
 
 ## Delegation
 
@@ -115,7 +120,8 @@ Worker proposals and what became of them:
 
 ## Remaining work and limitations
 
-- Run `go test -race ./internal/...` and `tools/harness/store.mjs` in Windows CI or on a PC with gcc and qBittorrent 5.
+- A feed-only person's Home shows empty shelves (*No releases yet*): shelves go by source publication dates, which feed offers don't have; feed games show on Browse only. Needs a decision (for example a *From your feeds* shelf).
+- The Downloads page hides a queued job and the engine's error while qBittorrent can't start (pre-existing).
 - The desktop shell (sidebar, 980 px minimum window) has no phone layout; the Store content itself is verified at 390 px with the sidebar hidden.
 - The harness's `--dev-data` redirects roaming data only: discovery and enrichment caches go to the real `%LOCALAPPDATA%\Seaglass\store` (removed after the runs here).
 - Big Picture keeps its existing Downloads screen; it has no discovery Store (as planned).
