@@ -132,6 +132,8 @@ export interface StoreSettings {
   pauseWhilePlaying: boolean;
   /** Defender or VirusTotal detections block an install (else they warn). */
   blockDetections: boolean;
+  /** The language versions are recommended in; "" for any. */
+  language: string;
   network: TorrentNetwork;
   /** Catalog feeds, in the order they were added. */
   feeds: FeedSource[];
@@ -140,6 +142,8 @@ export interface StoreSettings {
 export interface FeedSource {
   url: string;
   enabled: boolean;
+  /** -2 (less) … 2 (more): weighs in when versions are recommended. */
+  trust: number;
 }
 
 /** A feed and its last fetch. Mirrors internal/app.FeedInfo. */
@@ -187,6 +191,10 @@ export interface CatalogEntry {
   updated: string;
   size: number;
   languages: string[];
+  /** The version to get, and why. */
+  recommended?: { offer: number; why: string[] };
+  /** The store installed this game. */
+  installed?: { download: string; version: string; dir: string; update: boolean };
 }
 
 export interface CatalogQuery {
@@ -240,6 +248,8 @@ export interface EngineStatus {
   interfaceMissing: boolean;
   /** Downloads wait for the game to close. */
   gameRunning: boolean;
+  /** Paused from the tray (or here) until resumed. */
+  held: boolean;
 }
 
 export interface TorrentInterface {
@@ -314,6 +324,8 @@ export interface InstallOptions {
   language: string;
   /** Install once downloaded and checked; false only downloads. */
   install: boolean;
+  /** Install over the version the store installed before, in its folder. */
+  update?: boolean;
 }
 
 /** A catalog game's art and description. */

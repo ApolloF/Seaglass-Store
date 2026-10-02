@@ -10,6 +10,7 @@ export const mockStoreSettings: StoreSettings = {
   keepDownloads: false,
   pauseWhilePlaying: true,
   blockDetections: true,
+  language: "",
   network: {
     interface: "",
     address: "",
@@ -31,9 +32,9 @@ export const mockStoreSettings: StoreSettings = {
     seedRatio: 1,
   },
   feeds: [
-    { url: "https://feeds.example/indie.json", enabled: true },
-    { url: "https://feeds.example/freeware.json", enabled: true },
-    { url: "https://old.example/feed.json", enabled: false },
+    { url: "https://feeds.example/indie.json", enabled: true, trust: 0 },
+    { url: "https://feeds.example/freeware.json", enabled: true, trust: 0 },
+    { url: "https://old.example/feed.json", enabled: false, trust: 0 },
   ],
 };
 
@@ -78,9 +79,9 @@ let downloads: Download[] = [
       { check: "defender", level: "ok", text: "Microsoft Defender found nothing." },
     ] },
   }),
-  dl({ id: "sg-7", title: "Cinder Drift 1.0", gameKey: "title:cinderdrift", state: "installed", size: 0.4 * gb, done: 0.4 * gb, installer: "archive", installDir: "C:\\Users\\you\\Games\\Cinder Drift", installedAt: now() - 86400, safety: { verdict: "clean", checked: now() - 86500, findings: [] } }),
+  dl({ id: "sg-7", title: "Cinder Drift 0.9", version: "0.9", gameKey: "title:cinderdrift", state: "installed", size: 0.4 * gb, done: 0.4 * gb, installer: "archive", installDir: "C:\\Users\\you\\Games\\Cinder Drift", installedAt: now() - 86400, safety: { verdict: "clean", checked: now() - 86500, findings: [] } }),
 ];
-let engine: EngineStatus = { installed: true, exe: "C:\\Program Files\\qBittorrent\\qbittorrent.exe", running: true, version: "v5.1.4", interfaceMissing: false, gameRunning: false };
+let engine: EngineStatus = { installed: true, exe: "C:\\Program Files\\qBittorrent\\qbittorrent.exe", running: true, version: "v5.1.4", interfaceMissing: false, gameRunning: false, held: false };
 let proxyPassword = false;
 let vtKey = false;
 const listeners = new Set<(d: Download[]) => void>();
@@ -156,6 +157,21 @@ const blurbs: Record<string, [string, string, string[]]> = {
 
 const squash = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, "");
 
+// What the backend adds to an entry: the version to get, and what's installed.
+function annotate(e: CatalogEntry): CatalogEntry {
+  const lang = mockStoreSettingsRef?.().store.language ?? "";
+  let pick = 0;
+  if (lang) {
+    const i = e.offers.findIndex((o) => o.languages?.some((l) => l.toLowerCase() === lang.toLowerCase()));
+    if (i > 0 && !e.offers[0].languages?.some((l) => l.toLowerCase() === lang.toLowerCase())) pick = i;
+  }
+  const why = pick === 0 ? (e.offers.length > 1 ? ["The newest version", "Installs without the installer's questions"] : ["The only version offered"]) : [`Has ${lang}`, `Not the newest (${e.offers[0].version}): it doesn't have ${lang}`];
+  const inst = downloads.find((d) => d.gameKey === e.key && d.state === "installed");
+  const installed = inst ? { download: inst.id, version: inst.version ?? inst.title.split(" ").pop() ?? "", dir: inst.installDir ?? "", update: e.key === "title:cinderdrift" } : undefined;
+  return { ...e, recommended: { offer: pick, why }, installed };
+}
+let mockStoreSettingsRef: (() => Settings) | undefined;
+
 function feedInfo(url: string, enabled: boolean): FeedInfo {
   const items = catalogEntries.reduce((n, e) => n + e.offers.filter((o) => o.feedUrl === url).length, 0);
   return { url, enabled, name: feedNames[url] ?? "", items, skipped: url === FREE ? 2 : 0, fetched: feedErrors[url] ? 0 : now() - 1800, error: feedErrors[url] };
@@ -163,6 +179,7 @@ function feedInfo(url: string, enabled: boolean): FeedInfo {
 
 /** The store namespace; settings come and go through the mock's own settings. */
 export function mockStore(getSettings: () => Settings, setSettings: (s: Settings) => void): Api["store"] {
+  mockStoreSettingsRef = getSettings;
   return {
     async engine() {
       return copy(engine);
@@ -253,7 +270,7 @@ export function mockStore(getSettings: () => Settings, setSettings: (s: Settings
       const s = getSettings();
       if (s.store.feeds.some((f) => f.url === url)) throw new Error("that feed is added already");
       feedNames[url] = new URL(url).hostname;
-      setSettings({ ...s, store: { ...s.store, feeds: [...s.store.feeds, { url, enabled: true }] } });
+      setSettings({ ...s, store: { ...s.store, feeds: [...s.store.feeds, { url, enabled: true, trust: 0 }] } });
       return copy(getSettings());
     },
     async removeFeed(url) {
@@ -277,7 +294,7 @@ export function mockStore(getSettings: () => Settings, setSettings: (s: Settings
         .filter((e) => !q.language || e.languages.some((l) => l.toLowerCase() === q.language.toLowerCase()));
       if (q.sort === "updated") hits = [...hits].sort((a, b) => b.updated.localeCompare(a.updated));
       if (q.sort === "size") hits = [...hits].sort((a, b) => a.size - b.size);
-      return copy({ entries: hits.slice(q.offset, q.offset + (q.limit || 200)), total: hits.length });
+      return copy({ entries: hits.slice(q.offset, q.offset + (q.limit || 200)).map(annotate), total: hits.length });
     },
     async catalogLanguages() {
       return [...new Set(catalogEntries.flatMap((e) => e.languages))];
@@ -285,7 +302,7 @@ export function mockStore(getSettings: () => Settings, setSettings: (s: Settings
     async catalogEntry(key) {
       const e = catalogEntries.find((x) => x.key === key);
       if (!e) throw new Error("that game isn't in the catalog anymore");
-      return copy(e);
+      return copy(annotate(e));
     },
     async downloadOffer(key, i, opts) {
       const e = catalogEntries.find((x) => x.key === key);
@@ -340,6 +357,14 @@ export function mockStore(getSettings: () => Settings, setSettings: (s: Settings
     },
     async sandboxAvailable() {
       return true;
+    },
+    async updates() {
+      return copy(catalogEntries.map(annotate).filter((e) => e.installed?.update));
+    },
+    async holdDownloads(on) {
+      engine = { ...engine, held: on };
+      engineListeners.forEach((cb) => cb(copy(engine)));
+      changed();
     },
     async openInSandbox() {},
   };

@@ -188,6 +188,13 @@ export function HasVirusTotalKey(): $CancellablePromise<boolean> {
 }
 
 /**
+ * HoldDownloads pauses every download until resumed (the tray does the same).
+ */
+export function HoldDownloads(on: boolean): $CancellablePromise<void> {
+    return $Call.ByID(2973794121, on);
+}
+
+/**
  * InstallFolder suggests a folder for a game.
  */
 export function InstallFolder(title: string): $CancellablePromise<string> {
@@ -266,4 +273,11 @@ export function ShowDownload(id: string): $CancellablePromise<void> {
  */
 export function StartEngine(): $CancellablePromise<$models.EngineStatus> {
     return $Call.ByID(2094697353);
+}
+
+/**
+ * Updates lists the games the store installed that have a newer version.
+ */
+export function Updates(): $CancellablePromise<catalog$0.Entry[] | null> {
+    return $Call.ByID(4210487325);
 }

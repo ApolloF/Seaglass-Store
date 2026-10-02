@@ -50,7 +50,7 @@
   // Art for what's on screen, first things first.
   $effect(() => shop.requestArt(entries.map((e) => e.key)));
   // A game already on its way is marked.
-  const downloading = $derived(new Set(shop.downloads.filter((d) => d.gameKey && d.state !== "failed").map((d) => d.gameKey)));
+  const downloading = $derived(new Set(shop.downloads.filter((d) => d.gameKey && d.state !== "failed" && d.state !== "installed").map((d) => d.gameKey)));
 </script>
 
 {#if selected}
@@ -107,7 +107,9 @@
             <button type="button" class="card" onclick={() => (selected = e)}>
               <span class="cover">
                 <GameArt game={{ key: e.key, meta: shop.art[e.key] }} />
-                {#if downloading.has(e.key)}<span class="flag"><Icon name="download" size={14} stroke={2.4} />In Downloads</span>{/if}
+                {#if downloading.has(e.key)}<span class="flag"><Icon name="download" size={14} stroke={2.4} />In Downloads</span>
+                {:else if e.installed?.update}<span class="flag"><Icon name="sparkle" size={14} stroke={2.4} />Update</span>
+                {:else if e.installed}<span class="flag quiet"><Icon name="check" size={14} stroke={2.4} />Installed</span>{/if}
               </span>
               <span class="title">{e.title}</span>
               <span class="line">{[e.version, bytes(e.size)].filter(Boolean).join(" · ")}</span>
@@ -274,6 +276,10 @@
     color: var(--accent-ink);
     font-size: 12px;
     font-weight: 700;
+  }
+  .flag.quiet {
+    background: var(--surface);
+    color: var(--text-2);
   }
   .title {
     font-weight: 700;

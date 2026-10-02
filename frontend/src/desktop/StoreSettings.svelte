@@ -47,6 +47,12 @@
   }
 
   let feeds = $state<FeedInfo[]>([]);
+  let languages = $state<string[]>([]);
+  $effect(() => {
+    api.store.catalogLanguages().then((l) => (languages = l));
+  });
+  const trustOf = (url: string) => st?.feeds.find((f) => f.url === url)?.trust ?? 0;
+  const setTrust = (url: string, trust: number) => st && setStore({ feeds: st.feeds.map((f) => (f.url === url ? { ...f, trust } : f)) });
   const loadFeeds = () => api.store.feeds().then((f) => (feeds = f));
   $effect(() => {
     void loadFeeds();
@@ -129,11 +135,30 @@
               {#if f.name}<span class="url">{f.url}</span>{/if}
               <span class="d" class:err={!!f.error}>{feedLine(f)}</span>
             </div>
+            <label class="trust">
+              <span class="sr-only">How much you trust {f.name || f.url}</span>
+              <select value={trustOf(f.url)} onchange={(e) => setTrust(f.url, Number(e.currentTarget.value))} title="Weighs in when versions are recommended">
+                <option value={2}>Trust more</option>
+                <option value={1}>Trust a little more</option>
+                <option value={0}>Normal trust</option>
+                <option value={-1}>Trust a little less</option>
+                <option value={-2}>Trust less</option>
+              </select>
+            </label>
             <button type="button" class="btn" aria-pressed={f.enabled} onclick={() => feedChange(() => api.store.setFeedEnabled(f.url, !f.enabled))}>{f.enabled ? "Turn off" : "Turn on"}</button>
             <button type="button" class="icon" aria-label={`Remove ${f.name || f.url}`} title="Remove" onclick={() => feedChange(() => api.store.removeFeed(f.url))}><Icon name="trash" size={16} /></button>
           </li>
         {/each}
       </ul>
+    {/if}
+    {#if languages.length}
+      <div class="field">
+        <span class="label">Recommend versions in</span>
+        <select aria-label="Recommend versions in" value={st.language} onchange={(e) => setStore({ language: e.currentTarget.value })}>
+          <option value="">Any language</option>
+          {#each languages as l (l)}<option value={l}>{l}</option>{/each}
+        </select>
+      </div>
     {/if}
     <form class="row" onsubmit={addFeed}>
       <label class="sr-only" for="st-feed">Feed address</label>
@@ -430,6 +455,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .trust select {
+    flex: none;
+    width: auto;
   }
   .d.err {
     color: var(--warn);

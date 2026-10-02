@@ -3,6 +3,7 @@
   import { dispatchFrom, feedback, input, keyIntent, setBase, setLight, toHex } from "../lib/input.svelte";
   import { lib } from "../lib/store.svelte";
   import type { Game } from "../lib/types";
+  import BPDownloads from "./BPDownloads.svelte";
   import BPSettings from "./BPSettings.svelte";
   import Console from "./Console.svelte";
   import Deck from "./Deck.svelte";
@@ -18,7 +19,7 @@
 
   let { onexit }: { onexit: () => void } = $props();
 
-  type Screen = Section | "settings" | "found" | "padtest";
+  type Screen = Section | "settings" | "found" | "padtest" | "downloads";
   let screen = $state<Screen>("home");
   let qa = $state(false);
   let sheetId = $state<number | null>(null);
@@ -177,6 +178,8 @@
         <LibraryScreen {width} {height} onplay={play} oninfo={info} {onfocus} onback={() => go("home")} onsection={(s) => go(s)} />
       {:else if screen === "found"}
         <LibraryScreen {width} {height} games={found} review onplay={play} oninfo={info} {onfocus} onback={() => go("home")} onsection={(s) => go(s)} />
+      {:else if screen === "downloads"}
+        <BPDownloads onback={() => go("home")} />
       {:else if screen === "padtest"}
         <PadTest onback={() => go("settings")} />
       {:else if screen === "search"}
@@ -189,7 +192,7 @@
         <GameSheet game={sheet} onplay={() => play(sheet)} onclose={() => (sheetId = null)} />
       {/if}
       {#if qa}
-        <QuickAccess light={lightHex} onclose={() => (qa = false)} onsettings={() => go("settings")} ondesktop={onexit} />
+        <QuickAccess light={lightHex} onclose={() => (qa = false)} onsettings={() => go("settings")} ondesktop={onexit} ondownloads={() => go("downloads")} />
       {/if}
       {#if showLaunch && session}
         <Launching {session} game={launchGame} onclose={() => (hiddenSession = session.id)} />

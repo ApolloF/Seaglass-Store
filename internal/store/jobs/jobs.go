@@ -97,6 +97,7 @@ type Job struct {
 	Language    string `json:"language,omitempty"`    // as the feed names it; "" for the installer's default
 	AutoInstall bool   `json:"autoInstall,omitempty"` // install as soon as it's downloaded and checked
 	SHA256      string `json:"sha256,omitempty"`      // the installer's, from the feed
+	Replaces    string `json:"replaces,omitempty"`    // the installed download this one updates, in its folder
 	// After downloading.
 	Safety      *safety.Report `json:"safety,omitempty"`
 	Installer   string         `json:"installer,omitempty"`   // the kind of installer found: inno, nsis, msi, archive, portable
@@ -222,7 +223,7 @@ func (s *Store) Add(j Job, now time.Time) (Job, error) {
 		return Job{}, err
 	}
 	j = Job{ID: "sg-" + hex.EncodeToString(b), Title: j.Title, Source: j.Source, SavePath: j.SavePath,
-		GameKey: j.GameKey, Version: j.Version, FeedName: j.FeedName, Installer: j.Installer,
+		GameKey: j.GameKey, Version: j.Version, FeedName: j.FeedName, Installer: j.Installer, Replaces: j.Replaces,
 		InstallDir: j.InstallDir, Language: j.Language, AutoInstall: j.AutoInstall, SHA256: j.SHA256, State: Queued, Created: now.Unix()}
 	s.mu.Lock()
 	s.jobs = append(s.jobs, j)

@@ -36,6 +36,29 @@ export interface Entry {
      * of every offer together
      */
     "languages": string[] | null;
+
+    /**
+     * Filled in for the interface when the entry is asked for.
+     */
+    "recommended"?: Recommendation | null;
+    "installed"?: Installed | null;
+}
+
+/**
+ * Installed is a catalog game the store installed.
+ */
+export interface Installed {
+    /**
+     * the download (job) that installed it
+     */
+    "download": string;
+    "version": string;
+    "dir": string;
+
+    /**
+     * the catalog has a newer version
+     */
+    "update": boolean;
 }
 
 /**
@@ -124,4 +147,15 @@ export interface Query {
      * at most 200
      */
     "limit": number;
+}
+
+/**
+ * Recommendation is the offer to get, and why.
+ */
+export interface Recommendation {
+    /**
+     * index into Entry.Offers
+     */
+    "offer": number;
+    "why": string[] | null;
 }

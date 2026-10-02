@@ -3,7 +3,9 @@
 
 export type {
     Entry,
+    Installed,
     Offer,
     Page,
-    Query
+    Query,
+    Recommendation
 } from "./models.js";

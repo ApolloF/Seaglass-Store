@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -63,6 +64,50 @@ func command(r Request) (Command, error) {
 
 func quote(s string) string { return `"` + s + `"` }
 
+// copyGame copies a download that needs no install (a folder, or a
+// single program) into the game's folder.
+func copyGame(src, dir string) error {
+	fi, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir() {
+		return copyFile(src, filepath.Join(dir, filepath.Base(src)))
+	}
+	// Files already there are replaced: an update goes over the old version.
+	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, p)
+		if err != nil {
+			return err
+		}
+		dst := filepath.Join(dir, rel)
+		if d.IsDir() {
+			return os.MkdirAll(dst, 0o755)
+		}
+		return copyFile(p, dst)
+	})
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
+}
+
 // Progress hears how far an install got: bytes in the game's folder, and
 // how long nothing changed there.
 type Progress func(bytes int64, idle time.Duration)
@@ -74,7 +119,7 @@ func Install(ctx context.Context, r Request, progress Progress) error {
 		return err
 	}
 	if r.Kind == Portable {
-		if err := os.CopyFS(r.Dir, os.DirFS(r.Root)); err != nil {
+		if err := copyGame(r.Root, r.Dir); err != nil {
 			return fmt.Errorf("copying the game: %w", err)
 		}
 		return nil

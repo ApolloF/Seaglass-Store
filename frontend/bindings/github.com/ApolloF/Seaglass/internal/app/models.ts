@@ -63,6 +63,11 @@ export interface EngineStatus {
      * downloads wait for the game to close
      */
     "gameRunning": boolean;
+
+    /**
+     * paused from the tray until resumed
+     */
+    "held": boolean;
 }
 
 /**
@@ -109,6 +114,12 @@ export interface InstallOptions {
      * install once downloaded and checked; false only downloads
      */
     "install": boolean;
+
+    /**
+     * Update installs over the version the store installed before, in its
+     * folder (Dir is ignored).
+     */
+    "update": boolean;
 }
 
 /**

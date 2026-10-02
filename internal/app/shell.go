@@ -22,11 +22,13 @@ type Shell struct {
 	main     *application.WebviewWindow
 	overlay  *application.WebviewWindow
 	tray     *application.SystemTray
-	uiMode   string // "desktop" or "bigpicture": what the main window shows
-	gameMode bool   // the main window was closed for a game
-	closing  bool   // Seaglass closes a window itself (not the user)
-	waitGame int    // counts closeMainWhenGameInFront calls, so only the latest acts
-	made     int    // main windows made so far
+	trayMenu *application.Menu
+	trayHold *application.MenuItem // pauses and resumes the store's downloads
+	uiMode   string                // "desktop" or "bigpicture": what the main window shows
+	gameMode bool                  // the main window was closed for a game
+	closing  bool                  // Seaglass closes a window itself (not the user)
+	waitGame int                   // counts closeMainWhenGameInFront calls, so only the latest acts
+	made     int                   // main windows made so far
 }
 
 // NewShell makes the shell.
@@ -349,13 +351,32 @@ func (s *Shell) startTray() {
 		s.OpenMain()
 		s.c.emit(EventUIMode, "bigpicture")
 	})
+	hold := menu.Add("Pause downloads").OnClick(func(*application.Context) { s.c.store.setHold(!s.c.store.held()) })
+	hold.SetHidden(!s.c.Settings.Get().ExperimentalStore)
 	menu.AddSeparator()
 	menu.Add("Quit Seaglass").OnClick(func(*application.Context) { a.Quit() })
 	t.SetMenu(menu)
 	t.OnClick(func() { s.OpenMain() })
 	s.mu.Lock()
-	s.tray = t
+	s.tray, s.trayMenu, s.trayHold = t, menu, hold
 	s.mu.Unlock()
+}
+
+// syncTrayDownloads shows the tray's download item while the store is on,
+// saying what clicking it does.
+func (s *Shell) syncTrayDownloads(show, held bool) {
+	s.mu.Lock()
+	item, menu := s.trayHold, s.trayMenu
+	s.mu.Unlock()
+	if item == nil {
+		return
+	}
+	label := "Pause downloads"
+	if held {
+		label = "Resume downloads"
+	}
+	item.SetLabel(label).SetHidden(!show)
+	menu.Update()
 }
 
 // setTrayTooltip shows what Seaglass is doing on the tray icon.

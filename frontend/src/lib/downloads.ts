@@ -51,6 +51,7 @@ export function statusLine(d: Download, engine: EngineStatus | null): string {
       if (d.safety.verdict === "warn" && !d.safety.overridden) return `Downloaded · the safety checks have warnings${sharing}`;
       return `Downloaded and checked · ready to install${sharing}`;
   }
+  if (engine?.held) return ["Paused until you resume all downloads", size].filter(Boolean).join(" · ");
   if (engine?.interfaceMissing) return "Waiting: the network interface downloads are bound to is gone";
   if (engine?.gameRunning) return "Waiting for your game to close";
   if (engine && !engine.running) return engine.error ? `Waiting: ${engine.error}` : "Starting qBittorrent…";

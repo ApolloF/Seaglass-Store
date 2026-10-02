@@ -131,6 +131,12 @@ func TestInstallPortableAndArchive(t *testing.T) {
 		t.Errorf("portable copy: %q, %v", b, err)
 	}
 
+	one := write(t, filepath.Join(t.TempDir(), "Solo.exe"), []byte("MZ"))
+	soloDir := filepath.Join(t.TempDir(), "Solo")
+	if err := Install(ctx, Request{Kind: Portable, Root: one, Dir: soloDir}, nil); err != nil || !platform.IsFile(filepath.Join(soloDir, "Solo.exe")) {
+		t.Errorf("a one-file game: %v", err)
+	}
+
 	z := filepath.Join(t.TempDir(), "game.zip")
 	f, err := os.Create(z)
 	if err != nil {

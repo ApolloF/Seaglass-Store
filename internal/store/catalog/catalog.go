@@ -37,8 +37,19 @@ type Entry struct {
 	Updated    string   `json:"updated"`   // the newest build date, YYYY-MM-DD
 	Size       int64    `json:"size"`      // the newest offer's download
 	Languages  []string `json:"languages"` // of every offer together
-	sortTitle  string
-	search     string
+	// Filled in for the interface when the entry is asked for.
+	Recommended *Recommendation `json:"recommended,omitempty"`
+	Installed   *Installed      `json:"installed,omitempty"`
+	sortTitle   string
+	search      string
+}
+
+// Installed is a catalog game the store installed.
+type Installed struct {
+	Download string `json:"download"` // the download (job) that installed it
+	Version  string `json:"version"`
+	Dir      string `json:"dir"`
+	Update   bool   `json:"update"` // the catalog has a newer version
 }
 
 // Identify finds the game behind a feed item's title (and Steam AppID,

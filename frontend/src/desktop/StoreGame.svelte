@@ -21,8 +21,10 @@
       entry.languages.length && ["Languages", entry.languages.join(", ")],
     ].filter((f): f is [string, string] => !!f),
   );
-  const onWay = $derived(shop.downloads.find((d) => d.gameKey === entry.key && d.state !== "failed"));
+  const onWay = $derived(shop.downloads.find((d) => d.gameKey === entry.key && d.state !== "failed" && d.state !== "installed"));
+  const rec = $derived(entry.recommended?.offer ?? 0);
   let getting = $state<number | null>(null);
+  let updating = $state(false);
 </script>
 
 <div class="page">
@@ -39,11 +41,19 @@
       <div class="cta">
         {#if onWay}
           <span class="on-way"><Icon name="download" size={18} />{onWay.state === "downloaded" ? "Downloaded" : "In Downloads"}</span>
+        {:else if entry.installed?.update}
+          <button type="button" class="get" onclick={() => ((updating = true), (getting = rec))}><Icon name="sparkle" size={18} />Update to {entry.offers[rec]?.version}</button>
+          <span class="sub">{entry.installed.version} is installed</span>
+        {:else if entry.installed}
+          <span class="on-way"><Icon name="check" size={18} />Installed {entry.installed.version}</span>
         {:else}
-          <button type="button" class="get" onclick={() => (getting = 0)}><Icon name="download" size={18} />Get {entry.version}</button>
+          <button type="button" class="get" onclick={() => ((updating = false), (getting = rec))}><Icon name="download" size={18} />Get {entry.offers[rec]?.version}</button>
         {/if}
         <span class="sub">{entry.offers.length} {entry.offers.length === 1 ? "version" : "versions"}{entry.updated ? ` · updated ${entry.updated}` : ""}</span>
       </div>
+      {#if entry.recommended && entry.offers.length > 1 && !onWay}
+        <p class="why">Recommended: {entry.recommended.why.join(" · ")}</p>
+      {/if}
       {#if m?.description}<p class="desc">{m.description}</p>{/if}
       {#if facts.length}
         <dl class="facts">
@@ -56,12 +66,14 @@
         {#each entry.offers as o, i (i)}
           <li>
             <div class="text">
-              <span class="v">{o.version || "Version not given"}{#if i === 0 && entry.offers.length > 1}<span class="newest">Newest</span>{/if}</span>
+              <span class="v"
+                >{o.version || "Version not given"}{#if i === rec && entry.offers.length > 1}<span class="newest" title={entry.recommended?.why.join("\n")}>Recommended</span>{:else if i === 0 && entry.offers.length > 1}<span class="newest plain">Newest</span>{/if}</span
+              >
               <span class="line">{offerLine(o)}</span>
               {#if o.languages?.length}<span class="line">{o.languages.join(", ")}</span>{/if}
               {#if o.notes}<span class="line">{o.notes}</span>{/if}
             </div>
-            <button type="button" class="btn" disabled={!!onWay} onclick={() => (getting = i)}>Download</button>
+            <button type="button" class="btn" disabled={!!onWay} onclick={() => ((updating = !!entry.installed), (getting = i))}>{entry.installed ? "Install over it" : "Download"}</button>
           </li>
         {/each}
       </ul>
@@ -70,7 +82,7 @@
 </div>
 
 {#if getting !== null}
-  <InstallDialog {entry} offer={getting} onclose={() => (getting = null)} />
+  <InstallDialog {entry} offer={getting} update={updating} onclose={() => (getting = null)} />
 {/if}
 
 <style>
@@ -240,6 +252,15 @@
     align-items: center;
     gap: 8px;
     font-weight: 700;
+  }
+  .newest.plain {
+    background: var(--surface-3);
+    color: var(--text-2);
+  }
+  .why {
+    margin: -4px 0 0;
+    font-size: 13.5px;
+    color: var(--muted);
   }
   .newest {
     padding: 1px 7px;

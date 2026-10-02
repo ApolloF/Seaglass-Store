@@ -95,6 +95,11 @@ export interface Job {
     "sha256"?: string;
 
     /**
+     * the installed download this one updates, in its folder
+     */
+    "replaces"?: string;
+
+    /**
      * After downloading.
      */
     "safety"?: safety$0.Report | null;

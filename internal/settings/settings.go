@@ -77,6 +77,7 @@ type StoreSettings struct {
 	KeepDownloads     bool            `json:"keepDownloads"`     // keep a download (and seed it) after its game is installed
 	PauseWhilePlaying bool            `json:"pauseWhilePlaying"` // downloads wait while a game runs
 	BlockDetections   bool            `json:"blockDetections"`   // a download Defender or VirusTotal flags isn't installed unless the person insists
+	Language          string          `json:"language"`          // the language games are recommended in; "" for any
 	Network           torrent.Network `json:"network"`
 	Feeds             []FeedSource    `json:"feeds"` // catalogs, in the order they were added
 }
@@ -85,6 +86,7 @@ type StoreSettings struct {
 type FeedSource struct {
 	URL     string `json:"url"`
 	Enabled bool   `json:"enabled"`
+	Trust   int    `json:"trust"` // -2 (less) … 2 (more): weighs in when versions are recommended
 }
 
 // Sources are the libraries that can be hidden, as the interface groups
@@ -313,6 +315,11 @@ func normalizeStore(s StoreSettings) StoreSettings {
 		s.Games = ""
 	}
 	s.Network = s.Network.Normalize()
+	if r := []rune(strings.TrimSpace(s.Language)); len(r) > 40 {
+		s.Language = string(r[:40])
+	} else {
+		s.Language = string(r)
+	}
 	feeds := []FeedSource{}
 	seen := map[string]bool{}
 	for _, f := range s.Feeds {
@@ -321,6 +328,7 @@ func normalizeStore(s StoreSettings) StoreSettings {
 			continue
 		}
 		seen[f.URL] = true
+		f.Trust = min(max(f.Trust, -2), 2)
 		feeds = append(feeds, f)
 	}
 	s.Feeds = feeds

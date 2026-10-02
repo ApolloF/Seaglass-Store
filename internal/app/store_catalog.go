@@ -11,10 +11,12 @@ import (
 
 	"github.com/ApolloF/Seaglass/internal/logx"
 	"github.com/ApolloF/Seaglass/internal/platform"
+	"github.com/ApolloF/Seaglass/internal/safety"
 	"github.com/ApolloF/Seaglass/internal/scan"
 	"github.com/ApolloF/Seaglass/internal/settings"
 	"github.com/ApolloF/Seaglass/internal/store/catalog"
 	"github.com/ApolloF/Seaglass/internal/store/feed"
+	"github.com/ApolloF/Seaglass/internal/store/jobs"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -129,8 +131,58 @@ func (cs *catalogState) len() int {
 
 func (cs *catalogState) search(q catalog.Query) catalog.Page {
 	cs.mu.RLock()
-	defer cs.mu.RUnlock()
-	return catalog.Search(cs.entries, q)
+	p := catalog.Search(cs.entries, q)
+	cs.mu.RUnlock()
+	ann := cs.annotator()
+	for i := range p.Entries {
+		ann(&p.Entries[i])
+	}
+	return p
+}
+
+// annotator adds what's known about this PC to entries: the version to
+// recommend, and whether the store installed the game.
+func (cs *catalogState) annotator() func(*catalog.Entry) {
+	cfg := cs.c.Settings.Get().Store
+	p := catalog.Prefs{Language: cfg.Language, Trust: map[string]int{}, Blocked: map[string]int{}}
+	for _, f := range cfg.Feeds {
+		p.Trust[f.URL] = f.Trust
+	}
+	installed := map[string]catalog.Installed{}
+	for _, j := range cs.c.store.jobs.All() {
+		if j.Safety != nil && j.Safety.Verdict == safety.Blocked && j.FeedName != "" {
+			p.Blocked[j.FeedName]++
+		}
+		if j.State == jobs.Installed && j.GameKey != "" {
+			if old, ok := installed[j.GameKey]; !ok || catalog.CompareVersions(j.Version, old.Version) > 0 {
+				installed[j.GameKey] = catalog.Installed{Download: j.ID, Version: j.Version, Dir: j.InstallDir}
+			}
+		}
+	}
+	return func(e *catalog.Entry) {
+		r := catalog.Recommend(*e, p)
+		e.Recommended = &r
+		if in, ok := installed[e.Key]; ok {
+			in.Update = catalog.CompareVersions(e.Version, in.Version) > 0
+			e.Installed = &in
+		}
+	}
+}
+
+// updates are the installed catalog games with a newer version.
+func (cs *catalogState) updates() []catalog.Entry {
+	cs.mu.RLock()
+	all := slices.Clone(cs.entries)
+	cs.mu.RUnlock()
+	ann := cs.annotator()
+	out := []catalog.Entry{}
+	for i := range all {
+		ann(&all[i])
+		if all[i].Installed != nil && all[i].Installed.Update {
+			out = append(out, all[i])
+		}
+	}
+	return out
 }
 
 func (cs *catalogState) languages() []string {
@@ -146,7 +198,9 @@ func (cs *catalogState) entry(key string) (catalog.Entry, bool) {
 	if i < 0 {
 		return catalog.Entry{}, false
 	}
-	return cs.entries[i], true
+	e := cs.entries[i]
+	cs.annotator()(&e)
+	return e, true
 }
 
 func (cs *catalogState) feeds() []FeedInfo {

@@ -34,6 +34,9 @@ func (s *StoreService) on() error {
 	return nil
 }
 
+// HoldDownloads pauses every download until resumed (the tray does the same).
+func (s *StoreService) HoldDownloads(on bool) { s.c.store.setHold(on) }
+
 // Engine returns the download engine's status.
 func (s *StoreService) Engine() EngineStatus { return s.c.store.getStatus() }
 
@@ -388,6 +391,17 @@ type InstallOptions struct {
 	Dir      string `json:"dir"`      // the game's own folder; "" uses one in the games folder
 	Language string `json:"language"` // one of the offer's languages; "" for the installer's default
 	Install  bool   `json:"install"`  // install once downloaded and checked; false only downloads
+	// Update installs over the version the store installed before, in its
+	// folder (Dir is ignored).
+	Update bool `json:"update"`
+}
+
+// Updates lists the games the store installed that have a newer version.
+func (s *StoreService) Updates() []catalog.Entry {
+	if s.on() != nil {
+		return []catalog.Entry{}
+	}
+	return s.c.catalog.updates()
 }
 
 // InstallFolder suggests a folder for a game.
@@ -453,11 +467,20 @@ func (s *StoreService) DownloadOffer(key string, offer int, opts InstallOptions)
 	if opts.Language != "" && !slices.Contains(o.Languages, opts.Language) {
 		return jobs.Job{}, fmt.Errorf("this version doesn't offer %s", opts.Language)
 	}
-	if opts.Dir == "" {
+	replaces := ""
+	switch {
+	case opts.Update:
+		if e.Installed == nil || e.Installed.Dir == "" {
+			return jobs.Job{}, errors.New("the store didn't install this game, so there's nothing to update")
+		}
+		opts.Dir, opts.Install, replaces = e.Installed.Dir, true, e.Installed.Download
+	case opts.Dir == "":
 		opts.Dir = s.InstallFolder(e.Title)
 	}
-	if err := checkInstallDir(opts.Dir); err != nil {
-		return jobs.Job{}, err
+	if replaces == "" {
+		if err := checkInstallDir(opts.Dir); err != nil {
+			return jobs.Job{}, err
+		}
 	}
 	dir := downloadsDir(s.c.Settings.Get().Store)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -476,7 +499,7 @@ func (s *StoreService) DownloadOffer(key string, offer int, opts InstallOptions)
 		title += " " + o.Version
 	}
 	j, err := s.c.store.jobs.Add(jobs.Job{Title: title, Source: o.Source(), SavePath: dir, GameKey: e.Key, Version: o.Version, FeedName: o.FeedName,
-		InstallDir: filepath.Clean(opts.Dir), Language: opts.Language, AutoInstall: opts.Install, SHA256: o.SHA256, Installer: o.InstallerType}, time.Now())
+		InstallDir: filepath.Clean(opts.Dir), Language: opts.Language, AutoInstall: opts.Install, SHA256: o.SHA256, Installer: o.InstallerType, Replaces: replaces}, time.Now())
 	if err == nil {
 		s.c.store.wake()
 	}

@@ -11,6 +11,11 @@ import * as torrent$0 from "../torrent/models.js";
 export interface FeedSource {
     "url": string;
     "enabled": boolean;
+
+    /**
+     * -2 (less) … 2 (more): weighs in when versions are recommended
+     */
+    "trust": number;
 }
 
 /**
@@ -200,6 +205,11 @@ export interface StoreSettings {
      * a download Defender or VirusTotal flags isn't installed unless the person insists
      */
     "blockDetections": boolean;
+
+    /**
+     * the language games are recommended in; "" for any
+     */
+    "language": string;
     "network": torrent$0.Network;
 
     /**

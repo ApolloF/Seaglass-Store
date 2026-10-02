@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ApolloF/Seaglass/internal/logx"
@@ -48,6 +49,7 @@ type EngineStatus struct {
 	// (a VPN that disconnected), so nothing is sent or received.
 	InterfaceMissing bool `json:"interfaceMissing"`
 	GameRunning      bool `json:"gameRunning"` // downloads wait for the game to close
+	Held             bool `json:"held"`        // paused from the tray until resumed
 }
 
 // storeState runs the experimental store's downloads: it starts the
@@ -62,6 +64,7 @@ type storeState struct {
 	mu       sync.Mutex
 	side     *qbit.Sidecar
 	status   EngineStatus
+	hold     atomic.Bool          // every download waits (the tray's "Pause downloads")
 	idle     time.Time            // since when nothing needed the engine
 	added    map[string]time.Time // when a download was handed to the engine, which lists it a moment later
 	ticks    int
@@ -164,19 +167,20 @@ func (st *storeState) tick(ctx context.Context) {
 	for i := range ts {
 		byTag[ts[i].Tag] = &ts[i]
 	}
+	held := st.hold.Load()
 	playing := cfg.Store.PauseWhilePlaying && st.c.Launch.Active()
 	st.ticks++
 	checkSpace := st.ticks%10 == 1
 	now := time.Now()
 	for _, j := range all {
 		t := byTag[j.ID]
-		st.steer(ctx, eng, j, t, playing, checkSpace)
+		st.steer(ctx, eng, j, t, playing || held, checkSpace)
 		_, _ = st.jobs.Update(j.ID, func(j *jobs.Job) bool { return j.Sync(t, now) })
 	}
 	if st.ticks%10 == 1 {
 		st.checkInterface(ctx, eng, cfg.Store.Network)
 	}
-	st.setStatus(func(s *EngineStatus) { s.Running, s.Error, s.GameRunning = true, "", playing })
+	st.setStatus(func(s *EngineStatus) { s.Running, s.Error, s.GameRunning, s.Held = true, "", playing, held })
 	if time.Since(st.lastSave) > 30*time.Second {
 		st.lastSave = now
 		if err := st.jobs.Save(); err != nil {
@@ -326,8 +330,23 @@ func (st *storeState) stopEngine() {
 	}
 }
 
+// setHold pauses every download until resumed (or Seaglass restarts).
+func (st *storeState) setHold(on bool) {
+	st.hold.Store(on)
+	if st.c.shell != nil {
+		st.c.shell.syncTrayDownloads(st.c.Settings.Get().ExperimentalStore, on)
+	}
+	st.setStatus(func(s *EngineStatus) { s.Held = on })
+	st.wake()
+}
+
+func (st *storeState) held() bool { return st.hold.Load() }
+
 // settingsChanged applies changed store settings.
 func (st *storeState) settingsChanged(old, saved settings.Settings) {
+	if st.c.shell != nil && old.ExperimentalStore != saved.ExperimentalStore {
+		st.c.shell.syncTrayDownloads(saved.ExperimentalStore, st.held())
+	}
 	if !saved.ExperimentalStore {
 		go st.stopEngine()
 		return

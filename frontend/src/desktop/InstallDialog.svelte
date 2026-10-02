@@ -10,7 +10,13 @@
   import { lib } from "../lib/store.svelte";
   import type { CatalogEntry } from "../lib/types";
 
-  let { entry, offer = 0, onclose, ondone }: { entry: CatalogEntry; offer?: number; onclose: () => void; ondone?: () => void } = $props();
+  let {
+    entry,
+    offer = 0,
+    update = false,
+    onclose,
+    ondone,
+  }: { entry: CatalogEntry; offer?: number; update?: boolean; onclose: () => void; ondone?: () => void } = $props();
 
   // Starts on the version picked on the page; changed here after that.
   let pick = $state(untrack(() => offer));
@@ -21,7 +27,8 @@
   let busy = $state(false);
 
   $effect(() => {
-    api.store.installFolder(entry.title).then((d) => (dir = d));
+    if (update && entry.installed) dir = entry.installed.dir;
+    else api.store.installFolder(entry.title).then((d) => (dir = d));
   });
   // A language the newly picked version doesn't have goes back to the default.
   $effect(() => {
@@ -34,7 +41,7 @@
   }
   async function start() {
     busy = true;
-    const d = await lib.run(() => api.store.downloadOffer(entry.key, pick, { dir, language, install }));
+    const d = await lib.run(() => api.store.downloadOffer(entry.key, pick, { dir, language, install, update }));
     busy = false;
     if (d) {
       lib.toast(`${d.title} is downloading. Follow it in Downloads.`);
@@ -50,9 +57,9 @@
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onclose()}>
-  <div class="dialog" role="dialog" aria-modal="true" aria-label={`Get ${entry.title}`} tabindex="-1" bind:this={box} onkeydown={(e) => e.key === "Escape" && onclose()}>
+  <div class="dialog" role="dialog" aria-modal="true" aria-label={`${update ? "Update" : "Get"} ${entry.title}`} tabindex="-1" bind:this={box} onkeydown={(e) => e.key === "Escape" && onclose()}>
     <div class="top">
-      <h2>Get {entry.title}</h2>
+      <h2>{update ? "Update" : "Get"} {entry.title}</h2>
       <button type="button" class="close" aria-label="Close" onclick={onclose}><Icon name="close" size={18} stroke={2.2} /></button>
     </div>
 
@@ -60,7 +67,9 @@
       <label class="field">
         <span class="label">Version</span>
         <select bind:value={pick}>
-          {#each entry.offers as x, i (i)}<option value={i}>{x.version || "Version not given"} · {x.feedName}{i === 0 ? " (newest)" : ""}</option>{/each}
+          {#each entry.offers as x, i (i)}<option value={i}
+              >{x.version || "Version not given"} · {x.feedName}{i === (entry.recommended?.offer ?? 0) ? " (recommended)" : i === 0 ? " (newest)" : ""}</option
+            >{/each}
         </select>
       </label>
     {/if}
@@ -77,15 +86,18 @@
     <div class="field">
       <span class="label">Folder</span>
       <span class="path" title={dir}>{dir}</span>
-      <button type="button" class="btn" onclick={choose}>Change</button>
+      {#if !update}<button type="button" class="btn" onclick={choose}>Change</button>{/if}
     </div>
-
+    {#if update}
+      <p class="sub">Installs over {entry.installed?.version} once downloaded and checked. Your saves usually stay; back them up first if the game keeps them in its folder.</p>
+    {:else}
     <Toggle
       checked={install}
       title="Install when it's downloaded"
       detail="After the safety check, without the installer's questions, and the game is added to your library. Off: it only downloads; install it from Downloads."
       onchange={(v) => (install = v)}
     />
+    {/if}
 
     <p class="sub">
       {[o.sizeBytes && `Download ${bytes(o.sizeBytes)}`, o.installedSizeBytes && `${bytes(o.installedSizeBytes)} once installed`].filter(Boolean).join(" · ")}

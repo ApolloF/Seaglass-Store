@@ -5,11 +5,18 @@
   import { api } from "../lib/api";
   import { feedback, input, pad, useInput } from "../lib/input.svelte";
   import { hasAccounts, playing } from "../lib/profile";
+  import { shop } from "../lib/shop.svelte";
   import { lib } from "../lib/store.svelte";
   import type { Settings } from "../lib/types";
   import Hints from "./Hints.svelte";
 
-  let { light, onclose, onsettings, ondesktop }: { light: string; onclose: () => void; onsettings: () => void; ondesktop: () => void } = $props();
+  let {
+    light,
+    onclose,
+    onsettings,
+    ondesktop,
+    ondownloads,
+  }: { light: string; onclose: () => void; onsettings: () => void; ondesktop: () => void; ondownloads: () => void } = $props();
 
   type Item = { id: string; title: string; detail: string; toggle?: keyof Settings; run?: () => void; current?: boolean };
   // Choosing who's playing lists the accounts in place of the items.
@@ -54,6 +61,9 @@
     { id: "haptics", title: "Haptics", detail: "A tick as you move, a bump at the end", toggle: "haptics" },
     { id: "lightbar", title: "Lightbar follows the game", detail: "Tints the DualSense to the selected game", toggle: "lightbar" },
     { id: "sounds", title: "Navigation sounds", detail: "Soft clicks as you move", toggle: "sounds" },
+    ...(lib.settings?.experimentalStore
+      ? [{ id: "downloads", title: "Downloads", detail: shop.active ? `${shop.active} on their way` : "Nothing on its way", run: ondownloads }]
+      : []),
     { id: "settings", title: "Settings", detail: "Layout, controller and more", run: onsettings },
     { id: "desktop", title: "Switch to desktop mode", detail: input.source === "keyboard" ? "Mouse and keyboard layout · F11 from anywhere" : "Mouse and keyboard layout", run: ondesktop },
   ]);

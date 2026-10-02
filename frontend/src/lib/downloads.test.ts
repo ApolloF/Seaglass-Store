@@ -6,7 +6,7 @@ const d = (p: Partial<Download>): Download => ({
   id: "sg-1", title: "T", source: "magnet:?", savePath: "C:\D", state: "downloading",
   size: 2e9, done: 5e8, downSpeed: 0, upSpeed: 0, seeds: 0, peers: 0, eta: 0, seeding: false, created: 0, ...p,
 });
-const running: EngineStatus = { installed: true, exe: "q.exe", running: true, interfaceMissing: false, gameRunning: false };
+const running: EngineStatus = { installed: true, exe: "q.exe", running: true, interfaceMissing: false, gameRunning: false, held: false };
 
 describe("downloads", () => {
   it("counts what's still on its way", () => {
@@ -44,6 +44,7 @@ describe("downloads", () => {
     expect(statusLine(d({ downSpeed: 4e6, eta: 600 }), running)).toBe("500 MB of 2.0 GB · 4.0 MB/s · 10 min left");
     expect(statusLine(d({}), { ...running, interfaceMissing: true })).toMatch(/interface/);
     expect(statusLine(d({}), { ...running, gameRunning: true })).toBe("Waiting for your game to close");
+    expect(statusLine(d({}), { ...running, held: true })).toBe("Paused until you resume all downloads · 500 MB of 2.0 GB");
     expect(statusLine(d({}), { ...running, running: false, error: "qBittorrent isn't installed" })).toBe("Waiting: qBittorrent isn't installed");
     expect(statusLine(d({ engine: "metadata", size: 0, done: 0 }), running)).toBe("Asking peers for the file list…");
     expect(statusLine(d({ seeds: 2 }), running)).toBe("500 MB of 2.0 GB · 2 peers, no data yet");

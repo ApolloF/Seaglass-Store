@@ -143,9 +143,11 @@ func (p *pipeline) install(id string) {
 	if j.InstallDir == "" {
 		j.InstallDir = filepath.Join(gamesDir(p.st.c.Settings.Get().Store), folderName(j.Title))
 	}
-	if err := checkInstallDir(j.InstallDir); err != nil {
-		p.fail(id, err)
-		return
+	if j.Replaces == "" { // an update goes over the version before it
+		if err := checkInstallDir(j.InstallDir); err != nil {
+			p.fail(id, err)
+			return
+		}
 	}
 	rt := root(j)
 	main := ""
@@ -195,6 +197,13 @@ func (p *pipeline) install(id string) {
 		j.State, j.InstalledAt, j.Uninstaller, j.InstallDir, j.Stalled = jobs.Installed, time.Now().Unix(), un, dir, false
 	})
 	logx.Printf("store: %s installed", j.Title)
+	if old, ok := p.st.jobs.Get(j.Replaces); ok && old.State == jobs.Installed {
+		// The newer version took its place: forget the older download (and its files).
+		if old.Hash != "" {
+			_ = p.st.removeTorrent(old, true)
+		}
+		_ = p.st.jobs.Delete(old.ID)
+	}
 	p.addToLibrary(dir)
 	if j.Hash != "" && !p.st.c.Settings.Get().Store.KeepDownloads {
 		if err := p.st.removeTorrent(j, true); err != nil {

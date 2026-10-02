@@ -46,6 +46,11 @@
     <h1>Downloads</h1>
     <span class="badge">Experimental</span>
     <div class="grow"></div>
+    {#if shop.engine}
+      <button type="button" class="btn" onclick={() => lib.run(() => api.store.holdDownloads(!shop.engine?.held))}
+        ><Icon name={shop.engine.held ? "play" : "stop"} size={14} />{shop.engine.held ? "Resume all" : "Pause all"}</button
+      >
+    {/if}
     <button type="button" class="tool" aria-label="Settings" title="Settings (Ctrl+,)" onclick={onsettings}><Icon name="gear" size={20} /></button>
   </div>
 

@@ -122,6 +122,9 @@ func (c *Core) Start() {
 		c.external = newExternalWatch(c)
 		c.external.set(c.Settings.Get().NoticeExternal)
 		c.setState(func(s *ScanState) { s.LastScan, s.Games = time.Now().Unix(), len(c.Lib.Games()) })
+		// The store only does what the person (or a test) asks: it runs.
+		go c.store.loop(c.ctx)
+		go c.catalog.loop(c.ctx)
 		return
 	}
 	go c.scanLoop()

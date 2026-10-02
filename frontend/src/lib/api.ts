@@ -180,6 +180,10 @@ export interface Api {
     /** "" removes it. Only file hashes are looked up. */
     setVirusTotalKey(key: string): Promise<void>;
     sandboxAvailable(): Promise<boolean>;
+    /** Installed catalog games with a newer version. */
+    updates(): Promise<CatalogEntry[]>;
+    /** Pauses every download until resumed (as the tray does). */
+    holdDownloads(on: boolean): Promise<void>;
     /** Opens Windows Sandbox with the download on its desktop (read-only, no network). */
     openInSandbox(id: string): Promise<void>;
     onArt(cb: (a: StoreArt) => void): () => void;
