@@ -1,11 +1,22 @@
+<script lang="ts" module>
+  /** What desktop mode's main area shows. */
+  export type Page = "library" | "store";
+</script>
+
 <script lang="ts">
   import Icon, { type IconName } from "../components/Icon.svelte";
   import WhoPlays from "../components/WhoPlays.svelte";
   import { api } from "../lib/api";
   import { scanned } from "../lib/format";
-  import { lib, type FilterKind } from "../lib/store.svelte";
+  import { lib, type Filter, type FilterKind } from "../lib/store.svelte";
 
-  let { onbigpicture }: { onbigpicture?: () => void } = $props();
+  let { page = "library", onpage, onbigpicture }: { page?: Page; onpage?: (p: Page) => void; onbigpicture?: () => void } = $props();
+
+  // A library view also leaves the store.
+  function show(f: Filter) {
+    lib.filter = f;
+    onpage?.("library");
+  }
 
   const views = $derived.by(() => {
     const c = lib.counts;
@@ -34,6 +45,7 @@
   };
 
   const isActive = (kind: string, source?: string) =>
+    page === "library" &&
     lib.filter.kind === kind && (kind !== "source" || ("source" in lib.filter && lib.filter.source === source));
 
   // Keep the "scanned … ago" text current.
@@ -48,7 +60,7 @@
   <nav aria-label="Library">
     <span class="label">Library</span>
     {#each views as v (v.kind)}
-      <button type="button" class="nav" class:active={isActive(v.kind)} onclick={() => (lib.filter = { kind: v.kind })}>
+      <button type="button" class="nav" class:active={isActive(v.kind)} onclick={() => show({ kind: v.kind })}>
         <Icon name={v.icon} size={18} stroke={2} />
         <span class="grow">{v.label}</span>
         <span class="count" class:accent={v.accent}>{v.count}</span>
@@ -61,8 +73,8 @@
         <button
           type="button"
           class="nav small"
-          class:active={lib.filter.kind === "collection" && lib.filter.name.toLowerCase() === c.name.toLowerCase()}
-          onclick={() => (lib.filter = { kind: "collection", name: c.name })}
+          class:active={page === "library" && lib.filter.kind === "collection" && lib.filter.name.toLowerCase() === c.name.toLowerCase()}
+          onclick={() => show({ kind: "collection", name: c.name })}
         >
           <span class="dot-wrap"><Icon name="layers" size={16} stroke={2} /></span>
           <span class="grow">{c.name}</span>
@@ -74,12 +86,20 @@
     {#if lib.sources.length}
       <span class="label">Sources</span>
       {#each lib.sources as s (s.id)}
-        <button type="button" class="nav small" class:active={isActive("source", s.id)} onclick={() => (lib.filter = { kind: "source", source: s.id })}>
+        <button type="button" class="nav small" class:active={isActive("source", s.id)} onclick={() => show({ kind: "source", source: s.id })}>
           <span class="dot-wrap"><span class="dot" style:background={dots[s.id]}></span></span>
           <span class="grow">{s.label}</span>
           <span class="count">{s.count}</span>
         </button>
       {/each}
+    {/if}
+
+    {#if lib.settings?.experimentalStore}
+      <span class="label">Experimental</span>
+      <button type="button" class="nav" class:active={page === "store"} aria-current={page === "store" ? "page" : undefined} onclick={() => onpage?.("store")}>
+        <Icon name="cloudDown" size={18} stroke={2} />
+        <span class="grow">Store</span>
+      </button>
     {/if}
   </nav>
 

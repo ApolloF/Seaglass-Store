@@ -99,6 +99,8 @@ let settings: Settings = {
   autoUpdate: true,
   achievements: true,
   showHiddenAchievements: false,
+  // ?store=1 turns the experimental store on.
+  experimentalStore: mockParams.get("store") === "1",
   // ?welcome=1 shows the first-start welcome.
   welcomed: mockParams.get("welcome") !== "1",
 };

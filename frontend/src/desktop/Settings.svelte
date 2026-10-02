@@ -10,13 +10,14 @@
 
   let { onclose }: { onclose: () => void } = $props();
 
-  type Tab = "general" | "library" | "bigpicture" | "saves" | "about";
+  type Tab = "general" | "library" | "bigpicture" | "saves" | "experimental" | "about";
   let tab = $state<Tab>("library");
   const tabs: { id: Tab; label: string }[] = [
     { id: "general", label: "General" },
     { id: "library", label: "Library" },
     { id: "bigpicture", label: "Big picture" },
     { id: "saves", label: "Saves" },
+    { id: "experimental", label: "Experimental" },
     { id: "about", label: "About" },
   ];
   const layouts: { id: Settings["bigPictureLayout"]; label: string; note: string }[] = [
@@ -226,6 +227,16 @@
           </div>
         {:else if tab === "saves"}
           <SyncerSettings />
+        {:else if tab === "experimental"}
+          <p class="hint warn"><Icon name="warn" size={14} stroke={2} />Unfinished features. They can change or go away in any update.</p>
+          <div class="group">
+            <Toggle
+              checked={s.experimentalStore}
+              title="Store"
+              detail="Browse catalogs from feeds you add, download in the background and install. You choose the feeds; make sure you're allowed to download and play what they offer. Only on this PC."
+              onchange={(v) => set({ experimentalStore: v })}
+            />
+          </div>
         {:else}
           <dl class="kv">
             <dt>Version</dt>

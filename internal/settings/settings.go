@@ -59,6 +59,9 @@ type Settings struct {
 	// Updates
 	AutoUpdate bool `json:"autoUpdate"` // check GitHub for new versions and install them on the next start or while idle in the tray
 
+	// Experimental. Not portable: what this PC downloads, and how, is its own.
+	ExperimentalStore bool `json:"experimentalStore"` // the store: catalogs from feeds the user adds, downloads and installs
+
 	// Welcomed: the first-start welcome was seen (or skipped).
 	Welcomed bool `json:"welcomed"`
 }

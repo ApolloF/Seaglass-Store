@@ -47,6 +47,26 @@ func TestHiddenSources(t *testing.T) {
 	}
 }
 
+// The experimental store is off until this PC turns it on; another PC's
+// settings never turn it on.
+func TestExperimentalStore(t *testing.T) {
+	s := Open(filepath.Join(t.TempDir(), "settings.json"))
+	if s.Get().ExperimentalStore {
+		t.Fatal("the experimental store is on by default")
+	}
+	v, err := s.Get().WithPortable([]byte(`{"theme":"dark","experimentalStore":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.ExperimentalStore {
+		t.Error("another PC's settings turned the experimental store on")
+	}
+	v.ExperimentalStore = true
+	if got, err := s.Set(v); err != nil || !got.ExperimentalStore {
+		t.Errorf("turning it on: %v, %v", got.ExperimentalStore, err)
+	}
+}
+
 // Achievements are on for everyone, updaters included; hidden ones stay hidden.
 func TestAchievementDefaults(t *testing.T) {
 	old := filepath.Join(t.TempDir(), "old.json")

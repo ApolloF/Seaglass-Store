@@ -7,11 +7,15 @@
   import Details from "./Details.svelte";
   import LaunchPanel from "./LaunchPanel.svelte";
   import Settings from "./Settings.svelte";
-  import Sidebar from "./Sidebar.svelte";
+  import Sidebar, { type Page } from "./Sidebar.svelte";
+  import Store from "./Store.svelte";
 
   let { onbigpicture }: { onbigpicture?: () => void } = $props();
 
   let settingsOpen = $state(false);
+  let page = $state<Page>("library");
+  // Turning the store off in settings goes back to the library.
+  const inStore = $derived(page === "store" && !!lib.settings?.experimentalStore);
   let search: HTMLInputElement | undefined = $state();
 
   const titles: Record<string, string> = {
@@ -84,67 +88,71 @@
 <div class="shell">
   <Titlebar />
   <div class="body">
-    <Sidebar {onbigpicture} />
+    <Sidebar page={inStore ? "store" : "library"} onpage={(p) => (page = p)} {onbigpicture} />
 
-    <main>
-      <div class="toolbar">
-        <label class="search">
-          <Icon name="search" size={18} stroke={2} />
-          <span class="sr-only">Search games</span>
-          <input bind:this={search} type="search" placeholder={`Search ${lib.counts.all} games`} bind:value={lib.query} onkeydown={(e) => e.key === "Escape" && (lib.query = "")} />
-        </label>
-        <label class="sort">
-          <span class="sr-only">Sort by</span>
-          <select bind:value={lib.sort} disabled={lib.filter.kind === "recent"}>
-            {#each sorts as s (s.id)}<option value={s.id}>{s.label}</option>{/each}
-          </select>
-          <Icon name="chevronDown" size={14} stroke={2.2} />
-        </label>
-        <div class="grow"></div>
-        <button type="button" class="tool" aria-label="Settings" title="Settings (Ctrl+,)" onclick={() => (settingsOpen = true)}><Icon name="gear" size={20} /></button>
-      </div>
+    {#if inStore}
+      <main><Store onsettings={() => (settingsOpen = true)} /></main>
+    {:else}
+      <main>
+        <div class="toolbar">
+          <label class="search">
+            <Icon name="search" size={18} stroke={2} />
+            <span class="sr-only">Search games</span>
+            <input bind:this={search} type="search" placeholder={`Search ${lib.counts.all} games`} bind:value={lib.query} onkeydown={(e) => e.key === "Escape" && (lib.query = "")} />
+          </label>
+          <label class="sort">
+            <span class="sr-only">Sort by</span>
+            <select bind:value={lib.sort} disabled={lib.filter.kind === "recent"}>
+              {#each sorts as s (s.id)}<option value={s.id}>{s.label}</option>{/each}
+            </select>
+            <Icon name="chevronDown" size={14} stroke={2.2} />
+          </label>
+          <div class="grow"></div>
+          <button type="button" class="tool" aria-label="Settings" title="Settings (Ctrl+,)" onclick={() => (settingsOpen = true)}><Icon name="gear" size={20} /></button>
+        </div>
 
-      <div class="heading">
-        {#if renaming}
-          <!-- svelte-ignore a11y_autofocus -->
-          <input class="rename" bind:value={newName} autofocus onkeydown={(e) => (e.key === "Enter" ? renameCollection() : e.key === "Escape" && (renaming = false))} onblur={renameCollection} maxlength="40" aria-label="Collection name" />
+        <div class="heading">
+          {#if renaming}
+            <!-- svelte-ignore a11y_autofocus -->
+            <input class="rename" bind:value={newName} autofocus onkeydown={(e) => (e.key === "Enter" ? renameCollection() : e.key === "Escape" && (renaming = false))} onblur={renameCollection} maxlength="40" aria-label="Collection name" />
+          {:else}
+            <h1>{heading}</h1>
+          {/if}
+          <span>{lib.visible.length} {lib.visible.length === 1 ? "game" : "games"}</span>
+          {#if lib.filter.kind === "collection" && !renaming}
+            <button type="button" class="coll-act" onclick={() => ((newName = heading), (renaming = true))}><Icon name="pencil" size={16} />Rename</button>
+            <button type="button" class="coll-act" onclick={deleteCollection}><Icon name="trash" size={16} />Delete</button>
+          {/if}
+        </div>
+
+        {#if !lib.loaded || (lib.scan.running && lib.games.length === 0)}
+          <div class="empty">
+            <span class="pulse"><Icon name="scan" size={40} stroke={1.6} /></span>
+            <h2>Looking for games on this PC…</h2>
+            <p>Steam, Epic, GOG, EA, Ubisoft, Xbox, repacks and game folders.</p>
+          </div>
+        {:else if lib.counts.all === 0 && lib.filter.kind === "all"}
+          <div class="empty">
+            <Icon name="folder" size={40} stroke={1.6} />
+            <h2>No games found yet</h2>
+            <p>If your games live in a folder of their own, add it and Seaglass will look inside.</p>
+            <button type="button" class="primary" onclick={() => (settingsOpen = true)}>Add a game folder</button>
+          </div>
+        {:else if lib.visible.length === 0}
+          <div class="empty">
+            <Icon name={lib.query ? "search" : "grid"} size={40} stroke={1.6} />
+            <h2>{lib.query ? `Nothing matches “${lib.query}”` : "Nothing here yet"}</h2>
+            {#if lib.filter.kind === "found"}<p>New games and games that need a check show up here.</p>{/if}
+            {#if lib.filter.kind === "favorites"}<p>Use the star on a game to add it here.</p>{/if}
+          </div>
         {:else}
-          <h1>{heading}</h1>
+          <CoverGrid games={lib.visible} resetKey={`${JSON.stringify(lib.filter)}|${lib.query}|${lib.sort}`} selectedId={lib.selected?.id ?? null} onselect={(id) => (lib.selectedId = id)} onplay={play} />
         {/if}
-        <span>{lib.visible.length} {lib.visible.length === 1 ? "game" : "games"}</span>
-        {#if lib.filter.kind === "collection" && !renaming}
-          <button type="button" class="coll-act" onclick={() => ((newName = heading), (renaming = true))}><Icon name="pencil" size={16} />Rename</button>
-          <button type="button" class="coll-act" onclick={deleteCollection}><Icon name="trash" size={16} />Delete</button>
-        {/if}
-      </div>
+      </main>
 
-      {#if !lib.loaded || (lib.scan.running && lib.games.length === 0)}
-        <div class="empty">
-          <span class="pulse"><Icon name="scan" size={40} stroke={1.6} /></span>
-          <h2>Looking for games on this PC…</h2>
-          <p>Steam, Epic, GOG, EA, Ubisoft, Xbox, repacks and game folders.</p>
-        </div>
-      {:else if lib.counts.all === 0 && lib.filter.kind === "all"}
-        <div class="empty">
-          <Icon name="folder" size={40} stroke={1.6} />
-          <h2>No games found yet</h2>
-          <p>If your games live in a folder of their own, add it and Seaglass will look inside.</p>
-          <button type="button" class="primary" onclick={() => (settingsOpen = true)}>Add a game folder</button>
-        </div>
-      {:else if lib.visible.length === 0}
-        <div class="empty">
-          <Icon name={lib.query ? "search" : "grid"} size={40} stroke={1.6} />
-          <h2>{lib.query ? `Nothing matches “${lib.query}”` : "Nothing here yet"}</h2>
-          {#if lib.filter.kind === "found"}<p>New games and games that need a check show up here.</p>{/if}
-          {#if lib.filter.kind === "favorites"}<p>Use the star on a game to add it here.</p>{/if}
-        </div>
-      {:else}
-        <CoverGrid games={lib.visible} resetKey={`${JSON.stringify(lib.filter)}|${lib.query}|${lib.sort}`} selectedId={lib.selected?.id ?? null} onselect={(id) => (lib.selectedId = id)} onplay={play} />
+      {#if lib.selected}
+        <Details game={lib.selected} />
       {/if}
-    </main>
-
-    {#if lib.selected}
-      <Details game={lib.selected} />
     {/if}
   </div>
 </div>

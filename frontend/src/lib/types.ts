@@ -112,6 +112,8 @@ export interface Settings {
   achievements: boolean;
   /** Show hidden achievements before they're unlocked (spoilers). */
   showHiddenAchievements: boolean;
+  /** Experimental: the store, with catalogs from feeds the user adds. This PC only. */
+  experimentalStore: boolean;
   /** The first-start welcome was seen (or skipped). */
   welcomed: boolean;
 }

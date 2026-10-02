@@ -143,6 +143,12 @@ export interface Settings {
     "autoUpdate": boolean;
 
     /**
+     * Experimental. Not portable: what this PC downloads, and how, is its own.
+     * the store: catalogs from feeds the user adds, downloads and installs
+     */
+    "experimentalStore": boolean;
+
+    /**
      * Welcomed: the first-start welcome was seen (or skipped).
      */
     "welcomed": boolean;
