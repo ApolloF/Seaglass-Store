@@ -1,13 +1,14 @@
 <script lang="ts">
   // Settings → Experimental, with the store on: where downloads go, the
   // download engine and how it connects.
-  import SourceBrowser from "./SourceBrowser.svelte";
   import Icon from "../components/Icon.svelte";
   import Toggle from "../components/Toggle.svelte";
   import { api } from "../lib/api";
   import { feedLine } from "../lib/catalog";
   import { shop } from "../lib/shop.svelte";
   import { lib } from "../lib/store.svelte";
+  import { sourceLabel, sourceLine } from "../lib/storefront";
+  import { storefront } from "../lib/storefront.svelte";
   import type { FeedInfo, Settings, StoreSettings, TorrentInterface, TorrentNetwork } from "../lib/types";
 
   const s = $derived(lib.settings);
@@ -79,6 +80,25 @@
     if (f) feeds = f;
     refreshing = false;
   }
+
+  // Source discovery: which sources are indexed, and how that is going.
+  $effect(() => storefront.start());
+  let sourcesBusy = $state(false);
+  let checking = $state(false);
+  async function setSources(list: string[]) {
+    sourcesBusy = true;
+    await apply(() => api.store.discovery.setupSources(list));
+    sourcesBusy = false;
+    void storefront.load();
+  }
+  const toggleSource = (id: string, on: boolean) => st && setSources(on ? [...new Set([...st.sources, id])] : st.sources.filter((x) => x !== id));
+  async function checkNow() {
+    checking = true;
+    const status = await lib.run(() => api.store.discovery.refresh());
+    if (status) storefront.status = status;
+    checking = false;
+  }
+  const sourceStatus = (id: string) => storefront.status?.sources.find((x) => x.id === id);
 
   // Interfaces come from qBittorrent, so listing them starts it.
   let interfaces = $state<TorrentInterface[] | null>(null);
@@ -187,8 +207,20 @@
 
   <div class="group">
     <span class="glabel">Source discovery</span>
-    <Toggle checked={st.privateSources} title="Browse repack sources" detail="Search FitGirl and DODI metadata on demand. Review a resolved torrent before adding it to the catalog. No payload is downloaded by searching." onchange={(v) => setStore({ privateSources: v })} />
-    {#if st.privateSources}<SourceBrowser />{/if}
+    <Toggle checked={st.privateSources} title="Browse repack sources" detail="Show FitGirl and DODI releases in the Store. Seaglass reads public release details only, such as titles, versions and sizes. It never downloads games by itself." onchange={(v) => setStore({ privateSources: v })} />
+    {#if st.privateSources}
+      {#each ["fitgirl", "dodi"] as id (id)}
+        {@const src = sourceStatus(id)}
+        <Toggle checked={st.sources.includes(id)} disabled={sourcesBusy} title={sourceLabel(id)} detail={src ? sourceLine(src) : "Not indexed yet"} onchange={(v) => toggleSource(id, v)} />
+        {#if src?.enabled && src.error}<p class="hint err">{src.error}</p>{/if}
+      {/each}
+      {#if !st.sources.length}<p class="hint">Choose at least one source to see its releases in the Store.</p>{/if}
+      {#if storefront.status?.enabled}
+        <div class="row">
+          <button type="button" class="btn" disabled={checking || storefront.status.refreshing} onclick={checkNow}><Icon name="refresh" size={16} />{checking || storefront.status.refreshing ? "Checking…" : "Check for new releases"}</button>
+        </div>
+      {/if}
+    {/if}
   </div>
 
   <div class="group">
@@ -468,6 +500,7 @@
     flex: none;
     width: auto;
   }
+  .hint.err,
   .d.err {
     color: var(--warn);
   }
