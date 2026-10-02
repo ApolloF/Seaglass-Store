@@ -44,6 +44,7 @@ type catalogState struct {
 	fetchMu  sync.Mutex // one round of fetching at a time
 	mu       sync.RWMutex
 	entries  []catalog.Entry
+	version  int // bumped by every rebuild, so discovery knows to regroup
 	previews map[string]sources.Snapshot
 }
 
@@ -114,15 +115,34 @@ func (cs *catalogState) rebuild() {
 	})
 	cs.mu.Lock()
 	cs.entries = entries
+	cs.version++
 	cs.mu.Unlock()
 	if len(entries) > 0 && cs.c.art != nil {
 		keys := make(map[string]bool, len(entries))
 		for _, e := range entries {
 			keys[e.Key] = true
 		}
+		// Discovered and saved games keep their art too.
+		if cs.c.discovery != nil {
+			for _, g := range cs.c.discovery.currentView().Games {
+				keys[g.Key] = true
+			}
+		}
+		if cs.c.wishlist != nil {
+			for _, k := range cs.c.wishlist.keys() {
+				keys[k] = true
+			}
+		}
 		cs.c.art.forget(keys)
 	}
 	cs.c.emit(EventStoreCatalog, len(entries))
+}
+
+// snapshot returns the catalog's entries and its version.
+func (cs *catalogState) snapshot() ([]catalog.Entry, int) {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return slices.Clone(cs.entries), cs.version
 }
 
 func (cs *catalogState) len() int {

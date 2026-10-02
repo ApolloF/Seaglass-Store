@@ -103,7 +103,8 @@ try {
     fake: false,
     settings: {
       experimentalStore: true,
-      store: { feeds: [{ url: `${base}/feed.json`, enabled: true, trust: 0 }], downloads, games, keepDownloads: false, pauseWhilePlaying: false, blockDetections: true },
+      // Feed only: source setup answered with no sources, so nothing is indexed.
+      store: { feeds: [{ url: `${base}/feed.json`, enabled: true, trust: 0 }], sources: [], sourceSetup: "done", downloads, games, keepDownloads: false, pauseWhilePlaying: false, blockDetections: true },
     },
   });
   app = await startApp({ data, pad: null });
@@ -112,7 +113,10 @@ try {
   const shot = (name) => app.shot(path.join(out, `${name}.png`));
 
   await page.locator("aside button", { hasText: /^\s*Store\s*$/ }).click();
-  const card = page.locator("main .card", { hasText: NAME });
+  // Home's shelves go by source publication dates, which feed offers don't
+  // have, so the feed game is found on Browse.
+  await page.getByRole("tab", { name: /Browse/ }).click();
+  const card = page.locator("#sf-panel-browse .card", { hasText: NAME });
   await card.waitFor({ timeout: 30000 });
   await shot("1-store");
   await card.click();

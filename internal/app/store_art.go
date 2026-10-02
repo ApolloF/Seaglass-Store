@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -100,6 +101,19 @@ func (a *artState) get(keys []string) []StoreArt {
 	return out
 }
 
+// genres are a game's genres from its fetched metadata (nil: unknown).
+func (a *artState) genres(key string) []string {
+	if a == nil {
+		return nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if m := a.known[key]; m != nil {
+		return slices.Clone(m.Genres)
+	}
+	return nil
+}
+
 func (a *artState) next() (string, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -127,11 +141,11 @@ func (a *artState) loop(ctx context.Context) {
 		if !a.c.waitIdle(ctx) {
 			return
 		}
-		e, ok := a.c.catalog.entry(k)
+		title, appID, ok := a.c.storeGameRef(k)
 		if !ok {
 			continue
 		}
-		m, err := a.c.meta.client.Fetch(ctx, meta.Request{Title: e.Title, SteamAppID: e.SteamAppID})
+		m, err := a.c.meta.client.Fetch(ctx, meta.Request{Title: title, SteamAppID: appID})
 		if errors.Is(err, meta.ErrRateLimited) {
 			logx.Printf("store art: rate limited, pausing a minute")
 			a.get([]string{k})
@@ -204,6 +218,18 @@ func (a *artState) forget(keep map[string]bool) {
 			a.dirty = true
 		}
 	}
+}
+
+// storeGameRef finds a Store game's title and Steam AppID: a catalog
+// game, a discovered game or a Steam-only result.
+func (c *Core) storeGameRef(key string) (string, int, bool) {
+	if e, ok := c.catalog.entry(key); ok {
+		return e.Title, e.SteamAppID, true
+	}
+	if c.discovery != nil {
+		return c.discovery.gameRef(key)
+	}
+	return "", 0, false
 }
 
 func writeFileAtomic(path string, b []byte) error {

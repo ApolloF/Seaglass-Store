@@ -77,12 +77,29 @@ type StoreSettings struct {
 	KeepDownloads          bool            `json:"keepDownloads"`          // keep a download (and seed it) after its game is installed
 	PauseWhilePlaying      bool            `json:"pauseWhilePlaying"`      // downloads wait while a game runs
 	DisablePayloadScanning bool            `json:"disablePayloadScanning"` // per PC; integrity checks still run
-	PrivateSources         bool            `json:"privateSources"`         // opt-in source discovery
+	PrivateSources         bool            `json:"privateSources"`         // browse repack sources (discovery runs only with this on)
+	Sources                []string        `json:"sources"`                // the sources discovery indexes on this PC (DiscoverySources)
+	SourceSetup            string          `json:"sourceSetup"`            // SetupPending, SetupAsk or SetupDone
 	BlockDetections        bool            `json:"blockDetections"`        // a download Defender or VirusTotal flags isn't installed unless the person insists
 	Language               string          `json:"language"`               // the language games are recommended in; "" for any
 	Network                torrent.Network `json:"network"`
 	Feeds                  []FeedSource    `json:"feeds"` // catalogs, in the order they were added
 }
+
+// The repack sources Store discovery can index, in display order.
+var DiscoverySources = []string{"fitgirl", "dodi"}
+
+// Source setup states (StoreSettings.SourceSetup).
+const (
+	// SetupPending: nobody chose yet. Turning the Store on chooses every
+	// source (a new Store user).
+	SetupPending = ""
+	// SetupAsk: the Store was on before discovery existed; the person
+	// chooses the sources once, and nothing is indexed until they do.
+	SetupAsk = "ask"
+	// SetupDone: the sources were chosen.
+	SetupDone = "done"
+)
 
 // FeedSource is a catalog feed the person added.
 type FeedSource struct {
@@ -108,7 +125,7 @@ func Defaults() Settings {
 		SyncSavesBefore: true, BackupSavesAfter: true, SyncWait: 60, StartSyncer: true,
 		SyncProfile: true, SameSettings: true,
 		AutoUpdate: true, Achievements: true,
-		Store: StoreSettings{PauseWhilePlaying: true, BlockDetections: true, Language: "English", Network: torrent.DefaultNetwork(), Feeds: []FeedSource{}},
+		Store: StoreSettings{PauseWhilePlaying: true, BlockDetections: true, Language: "English", Network: torrent.DefaultNetwork(), Feeds: []FeedSource{}, Sources: []string{}},
 	}
 }
 
@@ -196,6 +213,7 @@ func Open(path string) *Store {
 					v.Welcomed = true
 				}
 				legacyExternal(&v.DetectExternal, keys)
+				legacySourceSetup(&v, keys)
 			}
 			s.cur = normalize(v)
 		}
@@ -214,12 +232,16 @@ func (s *Store) Get() Settings {
 	c.Folders = append([]string{}, s.cur.Folders...)
 	c.HiddenSources = append([]string{}, s.cur.HiddenSources...)
 	c.Store.Feeds = append([]FeedSource{}, s.cur.Store.Feeds...)
+	c.Store.Sources = append([]string{}, s.cur.Store.Sources...)
 	return c
 }
 
 // Set validates, stores and saves new settings, returning what was saved.
 func (s *Store) Set(v Settings) (Settings, error) {
-	v = normalize(v)
+	s.mu.Lock()
+	old := s.cur
+	s.mu.Unlock()
+	v = normalize(StoreTurnedOn(old, v))
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return s.Get(), err
@@ -250,6 +272,35 @@ func legacyExternal(detect *bool, keys map[string]json.RawMessage) {
 	if raw, ok := keys["detectUnofficial"]; ok {
 		_ = json.Unmarshal(raw, detect)
 	}
+}
+
+// legacySourceSetup asks a person who used the Store before discovery
+// existed to choose its sources once, instead of turning them on for them.
+func legacySourceSetup(v *Settings, keys map[string]json.RawMessage) {
+	var store map[string]json.RawMessage
+	if json.Unmarshal(keys["store"], &store) != nil {
+		store = nil
+	}
+	if _, ok := store["sourceSetup"]; !ok && v.ExperimentalStore {
+		v.Store.SourceSetup = SetupAsk
+		v.Store.Sources = []string{}
+	}
+}
+
+// StoreTurnedOn chooses every discovery source when a new Store user turns
+// the Store on, so it works without adding a feed or choosing anything.
+func StoreTurnedOn(old, v Settings) Settings {
+	if !old.ExperimentalStore && v.ExperimentalStore && v.Store.SourceSetup == SetupPending {
+		v.Store.PrivateSources = true
+		v.Store.Sources = slices.Clone(DiscoverySources)
+		v.Store.SourceSetup = SetupDone
+	}
+	return v
+}
+
+// DiscoveryOn reports whether discovery may index source on this PC.
+func (s StoreSettings) DiscoveryOn(source string) bool {
+	return s.PrivateSources && s.SourceSetup == SetupDone && slices.Contains(s.Sources, source)
 }
 
 func normalize(v Settings) Settings {
@@ -334,5 +385,17 @@ func normalizeStore(s StoreSettings) StoreSettings {
 		feeds = append(feeds, f)
 	}
 	s.Feeds = feeds
+	chosen := []string{}
+	for _, id := range DiscoverySources {
+		if slices.Contains(s.Sources, id) {
+			chosen = append(chosen, id)
+		}
+	}
+	s.Sources = chosen
+	switch s.SourceSetup {
+	case SetupPending, SetupAsk, SetupDone:
+	default:
+		s.SourceSetup = SetupPending
+	}
 	return s
 }

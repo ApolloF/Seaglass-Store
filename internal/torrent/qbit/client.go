@@ -48,10 +48,15 @@ func (c *Client) Login(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	body, err := c.send(ctx, http.MethodPost, "auth/login", url.Values{"username": {c.user}, "password": {c.pass}})
+	// Up to 5.1 the answer is "Ok." or "Fails."; from 5.2 it is an empty
+	// 204 or a 401.
+	if errors.Is(err, errForbidden) {
+		return ErrAuth
+	}
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(string(body)) != "Ok." {
+	if b := strings.TrimSpace(string(body)); b != "Ok." && b != "" {
 		return ErrAuth
 	}
 	return nil
@@ -97,7 +102,19 @@ func (c *Client) Add(ctx context.Context, source string, opts torrent.AddOptions
 	if err != nil {
 		return err
 	}
-	if s := strings.TrimSpace(string(b)); s != "Ok." && s != "" {
+	s := strings.TrimSpace(string(b))
+	// From 5.2 the answer counts what was added (a .torrent URL is still
+	// pending while qBittorrent fetches it) instead of saying "Ok.".
+	var added struct {
+		Failures int `json:"failure_count"`
+	}
+	if strings.HasPrefix(s, "{") && json.Unmarshal(b, &added) == nil {
+		if added.Failures > 0 {
+			return fmt.Errorf("qBittorrent didn't take the torrent: %s", s)
+		}
+		return nil
+	}
+	if s != "Ok." && s != "" {
 		return fmt.Errorf("qBittorrent didn't take the torrent: %s", s)
 	}
 	return nil

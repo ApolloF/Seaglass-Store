@@ -1,7 +1,7 @@
 // The frontend's one door to the Go side. In mock mode (`npm run dev:mock`)
 // the same interface is served by made-up data, so the interface can be
 // built and checked in a normal browser. Vite drops the unused one.
-import type { SourceSnapshot, SourceRelease, DownloadLanguageOptions, Accounts, Achievements, AppInfo, ArtChoice, ArtKind, CatalogEntry, CatalogPage, CatalogQuery, Download, InstallOptions, StoreArt, DownloadAction, EngineStatus, FeedInfo, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
+import type { BrowseQuery, CompletionCandidate, DiscoveryChange, DiscoveryStatus, Enrichment, GameDetails, PreparedRelease, ReviewPage, ReviewQuery, SearchProgress, SearchResult, StoreHome, WishlistItem, SourceSnapshot, SourceRelease, DownloadLanguageOptions, Accounts, Achievements, AppInfo, ArtChoice, ArtKind, CatalogEntry, CatalogPage, CatalogQuery, Download, InstallOptions, StoreArt, DownloadAction, EngineStatus, FeedInfo, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
 import { realApi } from "./api.real";
 import { mockApi } from "./api.mock";
 
@@ -195,6 +195,60 @@ export interface Api {
     onArt(cb: (a: StoreArt) => void): () => void;
     /** The catalog changed (its number of games). */
     onCatalog(cb: (games: number) => void): () => void;
+
+    /** Automatic discovery of source releases. Indexing reads public metadata only. */
+    discovery: {
+      status(): Promise<DiscoveryStatus>;
+      /** The one-time source choice (or a later change): saves it and starts indexing. */
+      setupSources(sources: string[]): Promise<Settings>;
+      /** Fetches the newest listings of every chosen source now. */
+      refresh(): Promise<DiscoveryStatus>;
+      home(): Promise<StoreHome>;
+      /** Answers from the local index at once. */
+      browse(q: BrowseQuery): Promise<SearchResult>;
+      /** Searches the source sites and Steam to fill gaps; a newer call cancels an older one. */
+      search(q: BrowseQuery): Promise<SearchResult>;
+      /** A game's page; missing release details arrive through onGames. */
+      game(key: string): Promise<GameDetails>;
+      /** appId 0: not on Steam. The key may change: use the returned one. */
+      setSteamMatch(key: string, appId: number, name: string): Promise<GameDetails>;
+      /** Fetches the article and resolves torrent metadata when it can; never downloads a game. */
+      prepareRelease(key: string, releaseId: string): Promise<PreparedRelease>;
+      /** Asks for a .torrent file got in the browser and validates it. */
+      attachTorrent(key: string, releaseId: string): Promise<PreparedRelease>;
+      /** Opens the release's article in the browser. */
+      openRelease(key: string, releaseId: string): Promise<void>;
+      /** Queues a prepared release's transport after the person confirmed it. */
+      downloadRelease(key: string, releaseId: string, transport: number, opts: InstallOptions): Promise<Download>;
+      onStatus(cb: (s: DiscoveryStatus) => void): () => void;
+      onGames(cb: (c: DiscoveryChange) => void): () => void;
+      onSearch(cb: (p: SearchProgress) => void): () => void;
+    };
+
+    /** Steam reviews, popularity, Metacritic and HowLongToBeat, cached; failures say so. */
+    enrich: {
+      /** Cached enrichment for cards on screen; the rest arrives through onEnrichment. */
+      games(keys: string[]): Promise<Enrichment[]>;
+      /** Everything for a game's page, fetched first when missing or old. */
+      game(key: string): Promise<Enrichment>;
+      reviews(q: ReviewQuery): Promise<ReviewPage>;
+      completionCandidates(key: string, title: string): Promise<CompletionCandidate[]>;
+      /** 0 goes back to the automatic match. */
+      setCompletionMatch(key: string, hltbId: number): Promise<Enrichment>;
+      /** Opens an attribution link (Steam, Metacritic, HowLongToBeat) in the browser. */
+      openLink(url: string): Promise<void>;
+      onEnrichment(cb: (e: Enrichment) => void): () => void;
+    };
+
+    /** Saved games, on this PC. */
+    wishlist: {
+      list(): Promise<WishlistItem[]>;
+      add(key: string, title: string, steamAppId: number): Promise<WishlistItem[]>;
+      remove(key: string): Promise<WishlistItem[]>;
+      /** Marks a game's activity read; "" marks all. */
+      acknowledge(key: string): Promise<WishlistItem[]>;
+      onChange(cb: (items: WishlistItem[]) => void): () => void;
+    };
   };
 
   window: {

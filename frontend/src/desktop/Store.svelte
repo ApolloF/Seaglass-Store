@@ -1,129 +1,174 @@
 <script lang="ts">
-  import GameArt from "../components/GameArt.svelte";
+  // The Store: Home, Browse and Wishlist over the automatically discovered
+  // releases, with one search box and the status of discovery.
+  import { tick } from "svelte";
   import Icon from "../components/Icon.svelte";
   import { api } from "../lib/api";
-  import { bytes } from "../lib/format";
   import { shop } from "../lib/shop.svelte";
   import { lib } from "../lib/store.svelte";
-  import type { CatalogEntry, CatalogQuery } from "../lib/types";
+  import { emptyQuery, storeMode } from "../lib/storefront";
+  import { storefront } from "../lib/storefront.svelte";
+  import type { GameSummary } from "../lib/types";
+  import "./store/store.css";
+  import Browse from "./store/Browse.svelte";
+  import Home from "./store/Home.svelte";
+  import SourceSetup from "./store/SourceSetup.svelte";
+  import StatusBar from "./store/StatusBar.svelte";
+  import Wishlist from "./store/Wishlist.svelte";
   import StoreGame from "./StoreGame.svelte";
 
   let { onsettings }: { onsettings: () => void } = $props();
 
-  const pageSize = 60;
+  type Tab = "home" | "browse" | "wishlist";
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "home", label: "Home" },
+    { id: "browse", label: "Browse" },
+    { id: "wishlist", label: "Wishlist" },
+  ];
+  let tab = $state<Tab>("home");
+  let browsed = $state(false); // Browse keeps its filters once it has been opened
   let text = $state("");
-  let language = $state("");
-  let sort = $state<CatalogQuery["sort"]>("title");
-  let entries = $state<CatalogEntry[]>([]);
-  let total = $state(0);
-  let loaded = $state(false);
-  let languages = $state<string[]>([]);
-  let version = $state(0); // bumped when the catalog changes
+  let version = $state(0); // bumped when games change
+  let shown = $state(0); // games there are to show, from any source
+  let probed = $state(false);
+  let selected = $state<GameSummary | null>(null);
+  let returnKey = "";
+  let root: HTMLDivElement | undefined = $state();
 
   $effect(() => {
     shop.start();
-    return api.store.onCatalog(() => version++);
+    storefront.start();
+    return api.store.discovery.onGames(() => version++);
   });
+
+  // Whether anything is there to show decides the empty states, not the feed list.
   $effect(() => {
     void version;
-    api.store.catalogLanguages().then((l) => (languages = l));
+    void storefront.status?.setupNeeded;
+    void storefront.status?.games;
+    api.store.discovery
+      .browse({ ...emptyQuery(), limit: 1 })
+      .then((r) => (shown = r.page.total))
+      .catch(() => {})
+      .finally(() => (probed = true));
   });
-  // A new search starts from the top, a moment after typing stops.
+
+  const mode = $derived(storeMode({ loaded: probed, status: storefront.status, shown }));
+  const downloading = $derived(new Set(shop.downloads.filter((d) => d.gameKey && d.state !== "failed" && d.state !== "installed").map((d) => d.gameKey as string)));
+  const refreshing = $derived(!!storefront.status?.refreshing);
+
   $effect(() => {
-    const q: CatalogQuery = { text, language, sort, offset: 0, limit: pageSize };
-    void version;
-    const t = setTimeout(async () => {
-      const p = await lib.run(() => api.store.catalog(q));
-      if (p) [entries, total] = [p.entries, p.total];
-      loaded = true;
-    }, 150);
-    return () => clearTimeout(t);
+    if (tab === "browse") browsed = true;
   });
-  async function more() {
-    const p = await lib.run(() => api.store.catalog({ text, language, sort, offset: entries.length, limit: pageSize }));
-    if (p) [entries, total] = [[...entries, ...p.entries], p.total];
+  // Typing searches: it belongs on the Browse tab.
+  function typed() {
+    if (text.trim()) tab = "browse";
+  }
+  function searchKeys(e: KeyboardEvent) {
+    if (e.key === "Escape" && text) {
+      e.stopPropagation();
+      text = "";
+    }
   }
 
-  const hasFeeds = $derived((lib.settings?.store.feeds ?? []).some((f) => f.enabled));
-  let selected = $state<CatalogEntry | null>(null);
+  async function refresh() {
+    const s = await lib.run(() => api.store.discovery.refresh());
+    if (s) storefront.status = s;
+  }
 
-  // Art for what's on screen, first things first.
-  $effect(() => shop.requestArt(entries.map((e) => e.key)));
-  // A game already on its way is marked.
-  const downloading = $derived(new Set(shop.downloads.filter((d) => d.gameKey && d.state !== "failed" && d.state !== "installed").map((d) => d.gameKey)));
+  function open(g: GameSummary) {
+    returnKey = g.key;
+    selected = g;
+  }
+  async function back() {
+    selected = null;
+    await tick();
+    const card = returnKey ? root?.querySelector<HTMLElement>(`[data-key="${CSS.escape(returnKey)}"]`) : null;
+    (card ?? root?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]'))?.focus();
+  }
+
+  function tabKeys(e: KeyboardEvent) {
+    const i = tabs.findIndex((t) => t.id === tab);
+    const to = e.key === "ArrowRight" ? (i + 1) % tabs.length : e.key === "ArrowLeft" ? (i + tabs.length - 1) % tabs.length : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : -1;
+    if (to < 0) return;
+    e.preventDefault();
+    tab = tabs[to].id;
+    void tick().then(() => root?.querySelector<HTMLElement>(`#sf-tab-${tab}`)?.focus());
+  }
 </script>
 
 {#if selected}
-  <StoreGame entry={selected} onback={() => (selected = null)} />
-{:else}
-<div class="store">
+  <StoreGame gameKey={selected.key} initial={selected} onback={back} onkey={(k) => selected && (selected = { ...selected, key: k })} />
+{/if}
+
+<div class="store" bind:this={root} style:display={selected ? "none" : undefined}>
   <div class="toolbar">
     <h1>Store</h1>
     <span class="badge">Experimental</span>
-    <label class="search">
-      <Icon name="search" size={18} stroke={2} />
-      <span class="sr-only">Search the catalog</span>
-      <input type="search" placeholder={total ? `Search ${total} games` : "Search"} bind:value={text} onkeydown={(e) => e.key === "Escape" && (text = "")} />
-    </label>
-    <label class="pick">
-      <span class="sr-only">Language</span>
-      <select bind:value={language}>
-        <option value="">Any language</option>
-        {#each languages as l (l)}<option value={l}>{l}</option>{/each}
-      </select>
-      <Icon name="chevronDown" size={14} stroke={2.2} />
-    </label>
-    <label class="pick">
-      <span class="sr-only">Sort by</span>
-      <select bind:value={sort}>
-        <option value="title">Title</option>
-        <option value="updated">Recently updated</option>
-        <option value="size">Size</option>
-      </select>
-      <Icon name="chevronDown" size={14} stroke={2.2} />
-    </label>
+    {#if mode === "ready"}
+      <label class="search">
+        <Icon name="search" size={18} stroke={2} />
+        <span class="sr-only">Search games</span>
+        <input type="search" placeholder="Search games" autocomplete="off" bind:value={text} oninput={typed} onkeydown={searchKeys} />
+      </label>
+    {/if}
     <div class="grow"></div>
+    {#if mode === "ready" || mode === "finding" || mode === "unreachable"}
+      <button type="button" class="tool" aria-label={refreshing ? "Checking for new releases" : "Check for new releases"} title="Check for new releases" disabled={refreshing || !storefront.status?.enabled} onclick={refresh}>
+        <span class:spin={refreshing}><Icon name="refresh" size={20} /></span>
+      </button>
+    {/if}
     <button type="button" class="tool" aria-label="Settings" title="Settings (Ctrl+,)" onclick={onsettings}><Icon name="gear" size={20} /></button>
   </div>
 
-  {#if !hasFeeds}
-    <div class="empty">
+  {#if mode === "loading"}
+    <p class="loading sf-muted" aria-busy="true">Loading the Store…</p>
+  {:else if mode === "setup"}
+    <SourceSetup />
+  {:else if mode === "off"}
+    <div class="sf-empty fill">
       <Icon name="cloudDown" size={40} stroke={1.6} />
-      <h2>No catalogs yet</h2>
-      <p>The store shows the games in feeds you add. Seaglass comes with none: add the address of a feed you trust, for games you're allowed to download.</p>
-      <button type="button" class="primary" onclick={onsettings}>Add a feed</button>
+      <h2>No games to show</h2>
+      <p>Source discovery is off and no feed has games. Turn on FitGirl or DODI, or add a feed, in Settings → Experimental.</p>
+      <button type="button" class="sf-primary" onclick={onsettings}>Open settings</button>
     </div>
-  {:else if loaded && entries.length === 0}
-    <div class="empty">
-      <Icon name="search" size={40} stroke={1.6} />
-      <h2>{text || language ? "Nothing matches" : "The feeds have no games yet"}</h2>
-      {#if !text && !language}<p>Settings → Experimental shows how each feed's last fetch went.</p>{/if}
+  {:else if mode === "finding"}
+    <StatusBar />
+    <div class="sf-empty fill" aria-live="polite">
+      <Icon name="refresh" size={40} stroke={1.6} />
+      <h2>Finding releases…</h2>
+      <p>Seaglass is reading the newest release lists. This takes a minute the first time. Games appear here as they are found.</p>
+    </div>
+  {:else if mode === "unreachable"}
+    <StatusBar />
+    <div class="sf-empty fill">
+      <Icon name="warn" size={40} stroke={1.6} />
+      <h2>Couldn't reach the sources</h2>
+      <p>Nothing is saved from an earlier visit yet. Check your connection, then try again.</p>
+      <button type="button" class="sf-primary" disabled={refreshing} onclick={refresh}>Try again</button>
     </div>
   {:else}
+    <StatusBar />
+    <div class="tabs" role="tablist" aria-label="Store sections" tabindex="-1" onkeydown={tabKeys}>
+      {#each tabs as t (t.id)}
+        <button type="button" role="tab" id={`sf-tab-${t.id}`} aria-selected={tab === t.id} aria-controls={`sf-panel-${t.id}`} tabindex={tab === t.id ? 0 : -1} class:on={tab === t.id} onclick={() => (tab = t.id)}>
+          {t.label}{#if t.id === "wishlist" && storefront.unread}<span class="count" aria-label={`${storefront.unread} new`}>{storefront.unread}</span>{/if}
+        </button>
+      {/each}
+    </div>
     <div class="body">
-      <ul class="grid">
-        {#each entries as e (e.key)}
-          <li>
-            <button type="button" class="card" onclick={() => (selected = e)}>
-              <span class="cover">
-                <GameArt game={{ key: e.key, meta: shop.art[e.key] }} />
-                {#if downloading.has(e.key)}<span class="flag"><Icon name="download" size={14} stroke={2.4} />In Downloads</span>
-                {:else if e.installed?.update}<span class="flag"><Icon name="sparkle" size={14} stroke={2.4} />Update</span>
-                {:else if e.installed}<span class="flag quiet"><Icon name="check" size={14} stroke={2.4} />Installed</span>{/if}
-              </span>
-              <span class="title">{e.title}</span>
-              <span class="line">{[e.version, bytes(e.size)].filter(Boolean).join(" · ")}</span>
-            </button>
-          </li>
-        {/each}
-      </ul>
-      {#if entries.length < total}
-        <button type="button" class="btn more" onclick={more}>Show more ({total - entries.length})</button>
-      {/if}
+      <div role="tabpanel" id="sf-panel-home" aria-labelledby="sf-tab-home" hidden={tab !== "home"}>
+        {#if tab === "home"}<Home {version} {downloading} onopen={open} />{/if}
+      </div>
+      <div role="tabpanel" id="sf-panel-browse" aria-labelledby="sf-tab-browse" hidden={tab !== "browse"}>
+        {#if browsed}<Browse {text} {version} {downloading} onopen={open} />{/if}
+      </div>
+      <div role="tabpanel" id="sf-panel-wishlist" aria-labelledby="sf-tab-wishlist" hidden={tab !== "wishlist"}>
+        {#if tab === "wishlist"}<Wishlist onopen={open} onbrowse={() => (tab = "browse")} />{/if}
+      </div>
     </div>
   {/if}
 </div>
-{/if}
 
 <style>
   .store {
@@ -156,7 +201,7 @@
     font-weight: 700;
   }
   .search {
-    width: min(300px, 100%);
+    width: min(340px, 100%);
     height: 40px;
     display: flex;
     align-items: center;
@@ -178,27 +223,6 @@
   .search:focus-within {
     border-color: var(--accent);
   }
-  .pick {
-    position: relative;
-    display: flex;
-    align-items: center;
-    color: var(--muted);
-  }
-  .pick select {
-    appearance: none;
-    height: 40px;
-    padding: 0 32px 0 12px;
-    border-radius: 10px;
-    border: 1px solid var(--line);
-    background: var(--surface-2);
-    color: var(--text-2);
-    font-size: 14px;
-  }
-  .pick :global(svg) {
-    position: absolute;
-    right: 10px;
-    pointer-events: none;
-  }
   .grow {
     flex: 1;
   }
@@ -213,134 +237,82 @@
     align-items: center;
     justify-content: center;
   }
-  .tool:hover {
+  .tool:hover:not(:disabled) {
     background: var(--surface-3);
+  }
+  .spin {
+    display: flex;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  .tabs {
+    flex-shrink: 0;
+    display: flex;
+    gap: 4px;
+    padding: 0 28px 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .tabs button {
+    min-height: 38px;
+    padding: 0 16px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15.5px;
+    font-weight: 700;
+  }
+  .tabs button:hover {
+    background: var(--surface-2);
+  }
+  .tabs button.on {
+    background: var(--surface-3);
+    color: var(--text);
+  }
+  .count {
+    min-width: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-size: 12px;
+    line-height: 20px;
+    text-align: center;
   }
   .body {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 4px 28px 28px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+    overflow-x: hidden;
+    padding: 16px 28px 28px;
   }
-  .grid {
-    list-style: none;
+  .loading {
+    padding: 20px 28px;
     margin: 0;
-    padding: 0;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 18px 16px;
   }
-  .card {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 0;
-    border: 0;
-    background: none;
-    text-align: left;
-  }
-  .cover {
-    position: relative;
-    aspect-ratio: 2 / 3;
-    border-radius: var(--radius);
-    overflow: hidden;
-    background: var(--surface-2);
-    margin-bottom: 4px;
-    transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease);
-  }
-  .cover :global(img),
-  .cover :global(.art) {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  .card:hover .cover,
-  .card:focus-visible .cover {
-    transform: translateY(-3px);
-    box-shadow: var(--shadow);
-  }
-  .flag {
-    position: absolute;
-    left: 8px;
-    bottom: 8px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 3px 8px;
-    border-radius: 999px;
-    background: var(--accent);
-    color: var(--accent-ink);
-    font-size: 12px;
-    font-weight: 700;
-  }
-  .flag.quiet {
-    background: var(--surface);
-    color: var(--text-2);
-  }
-  .title {
-    font-weight: 700;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .line {
-    font-size: 13px;
-    color: var(--muted);
-  }
-  .btn,
-  .primary {
-    flex-shrink: 0;
-    height: 38px;
-    padding: 0 14px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 14.5px;
-    font-weight: 700;
-  }
-  .primary {
-    border: 0;
-    background: var(--accent);
-    color: var(--accent-ink);
-    margin-top: 12px;
-  }
-  .primary:hover {
-    filter: brightness(1.08);
-  }
-  .btn {
-    border: 1px solid var(--line-strong);
-    background: transparent;
-  }
-  .btn:hover {
-    background: var(--surface-3);
-  }
-  .more {
-    align-self: center;
-  }
-  .empty {
+  .fill {
     flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 40px;
-    text-align: center;
-    color: var(--muted);
   }
-  .empty h2 {
-    margin: 8px 0 0;
-    color: var(--text);
-    font-family: var(--font-display);
-    font-size: 26px;
-  }
-  .empty p {
-    margin: 0;
-    max-width: 460px;
+  @media (max-width: 700px) {
+    .toolbar {
+      padding: 10px 16px;
+    }
+    .search {
+      order: 5;
+      width: 100%;
+    }
+    .tabs {
+      padding: 0 16px 8px;
+    }
+    .body {
+      padding: 12px 16px 24px;
+    }
   }
 </style>

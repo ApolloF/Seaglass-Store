@@ -23,6 +23,7 @@ type fake struct {
 	calls  []string // paths called with a valid session
 	form   map[string]map[string]string
 	noStop bool // 4.x: no torrents/stop
+	v52    bool // 5.2: login answers 204 or 401 instead of "Ok." or "Fails."
 }
 
 func newFake(t *testing.T) *fake {
@@ -45,7 +46,13 @@ func (f *fake) serve(w http.ResponseWriter, r *http.Request) {
 		if r.FormValue("username") == "sg" && r.FormValue("password") == "pw" {
 			f.sid = "s" + string(rune('0'+f.logins))
 			http.SetCookie(w, &http.Cookie{Name: "SID", Value: f.sid, Path: "/"})
-			w.Write([]byte("Ok."))
+			if f.v52 {
+				w.WriteHeader(http.StatusNoContent)
+			} else {
+				w.Write([]byte("Ok."))
+			}
+		} else if f.v52 {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		} else {
 			w.Write([]byte("Fails."))
 		}
@@ -81,7 +88,14 @@ func (f *fake) serve(w http.ResponseWriter, r *http.Request) {
 	case "app/networkInterfaceList":
 		w.Write([]byte(`[{"name":"Ethernet","value":"ethernet_32769"},{"name":"Loopback Pseudo-Interface 1","value":"loopback_0"},{"name":"wt0","value":"iftype53_32768"}]`))
 	case "torrents/add":
-		w.Write([]byte("Ok."))
+		switch {
+		case f.v52 && vals["urls"] == "magnet:bad":
+			w.Write([]byte(`{"added_torrent_ids":[],"failure_count":1,"pending_count":0,"success_count":0}`))
+		case f.v52:
+			w.Write([]byte(`{"added_torrent_ids":[],"failure_count":0,"pending_count":1,"success_count":0}`))
+		default:
+			w.Write([]byte("Ok."))
+		}
 	}
 }
 
@@ -103,6 +117,29 @@ func TestClientLogsInAgainWhenTheSessionExpires(t *testing.T) {
 	}
 	if err := NewClient(f.srv.URL, "sg", "wrong").Login(ctx); err != ErrAuth {
 		t.Errorf("wrong password: %v, want ErrAuth", err)
+	}
+}
+
+func TestClientLogsInToQBittorrent52(t *testing.T) {
+	f := newFake(t)
+	f.v52 = true
+	ctx := context.Background()
+	c := NewClient(f.srv.URL, "sg", "pw")
+	if err := c.Login(ctx); err != nil {
+		t.Fatalf("login with an empty 204: %v", err)
+	}
+	if _, err := c.List(ctx); err != nil {
+		t.Fatalf("list after logging in: %v", err)
+	}
+	if err := NewClient(f.srv.URL, "sg", "wrong").Login(ctx); err != ErrAuth {
+		t.Errorf("wrong password (401): %v, want ErrAuth", err)
+	}
+	// Adds answer with counts: a pending .torrent URL is taken, a failure isn't.
+	if err := c.Add(ctx, "http://127.0.0.1/a.torrent", torrent.AddOptions{}); err != nil {
+		t.Errorf("a pending add was refused: %v", err)
+	}
+	if err := c.Add(ctx, "magnet:bad", torrent.AddOptions{}); err == nil {
+		t.Error("a failed add was taken")
 	}
 }
 

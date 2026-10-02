@@ -1,6 +1,8 @@
 <script lang="ts">
   // Before a catalog game downloads: which version, which language, where
-  // it goes, and whether to install it straight away.
+  // it goes, and whether to install it straight away. Opens for a feed's
+  // CatalogEntry, or for a source release that was prepared (validated
+  // torrent metadata) by discovery.
   import { untrack } from "svelte";
   import Icon from "../components/Icon.svelte";
   import Toggle from "../components/Toggle.svelte";
@@ -8,31 +10,71 @@
   import { offerLine } from "../lib/catalog";
   import { bytes } from "../lib/format";
   import { lib } from "../lib/store.svelte";
-  import type { CatalogEntry } from "../lib/types";
+  import { languagesLine, publishedText } from "../lib/storefront";
+  import type { CatalogEntry, PreparedRelease } from "../lib/types";
 
   let {
     entry,
+    prepared,
     offer = 0,
     update = false,
     onclose,
     ondone,
-  }: { entry: CatalogEntry; offer?: number; update?: boolean; onclose: () => void; ondone?: () => void } = $props();
+  }: { entry?: CatalogEntry; prepared?: PreparedRelease; offer?: number; update?: boolean; onclose: () => void; ondone?: () => void } = $props();
+
+  // One thing to choose from, whichever way the dialog was opened.
+  interface Choice {
+    label: string;
+    languages: string[];
+    sizeBytes: number;
+    installedSizeBytes?: number;
+    line: string;
+  }
+  const gameTitle = $derived(entry?.title ?? prepared?.release.title ?? "");
+  const choices = $derived<Choice[]>(
+    entry
+      ? entry.offers.map((x, i) => ({
+          label: `${x.version || "Version not given"} · ${x.feedName}${i === (entry.recommended?.offer ?? 0) ? " (recommended)" : ""}`,
+          languages: x.languages ?? [],
+          sizeBytes: x.sizeBytes ?? 0,
+          installedSizeBytes: x.installedSizeBytes,
+          line: offerLine(x),
+        }))
+      : (prepared?.offers ?? []).map((x) => ({
+          label: `${x.version || prepared?.release.version || "Version not given"} · ${x.sourceName}${x.torrentName ? ` · ${x.torrentName}` : ""}`,
+          languages: x.languages.length ? x.languages : (prepared?.release.languages ?? []),
+          sizeBytes: x.sizeBytes,
+          installedSizeBytes: x.installedSizeBytes,
+          line: [x.sourceName, x.version, bytes(x.sizeBytes)].filter(Boolean).join(" · "),
+        })),
+  );
 
   // Starts on the version picked on the page; changed here after that.
   let pick = $state(untrack(() => offer));
-  const o = $derived(entry.offers[pick] ?? entry.offers[0]);
+  const o = $derived(choices[pick] ?? choices[0]);
   let language = $state("English");
   let dir = $state("");
   let install = $state(true);
   let busy = $state(false);
+  // A prepared release says where the Store installed the game, if it did.
+  const installedDir = $derived(prepared?.installed?.dir ?? "");
 
   $effect(() => {
-    if (update && entry.installed) dir = entry.installed.dir;
-    else api.store.installFolder(entry.title).then((d) => (dir = d));
+    if (entry) {
+      if (update && entry.installed) dir = entry.installed.dir;
+      else api.store.installFolder(entry.title).then((d) => (dir = d));
+    } else if (update && untrack(() => installedDir)) {
+      dir = untrack(() => installedDir);
+    } else {
+      api.store.installFolder(gameTitle).then((d) => (dir = d));
+    }
   });
+  // Without a known folder an update can only be a new install.
+  const updating = $derived(update && (entry ? !!entry.installed : !!installedDir));
+  const installedVersion = $derived(entry?.installed?.version ?? prepared?.installed?.version ?? "the installed version");
   // A language the newly picked version doesn't have goes back to the default.
   $effect(() => {
-    if (o.languages?.length && !o.languages.some((l) => l.toLowerCase() === language.toLowerCase())) language = o.languages.find((l) => l.toLowerCase() === "english") ?? o.languages[0];
+    if (o?.languages?.length && !o.languages.some((l) => l.toLowerCase() === language.toLowerCase())) language = o.languages.find((l) => l.toLowerCase() === "english") ?? o.languages[0];
   });
 
   async function choose() {
@@ -41,7 +83,8 @@
   }
   async function start() {
     busy = true;
-    const d = await lib.run(() => api.store.downloadOffer(entry.key, pick, { dir, language, install, update }));
+    const opts = { dir, language, install, update: updating };
+    const d = await lib.run(() => (entry ? api.store.downloadOffer(entry.key, pick, opts) : api.store.discovery.downloadRelease(prepared!.gameKey, prepared!.release.id, prepared!.offers[pick].transport, opts)));
     busy = false;
     if (d) {
       lib.toast(`${d.title} is downloading. Follow it in Downloads.`);
@@ -52,28 +95,45 @@
 
   let box: HTMLDivElement | undefined = $state();
   $effect(() => {
+    const before = document.activeElement as HTMLElement | null;
     box?.focus();
+    return () => before?.isConnected && before.focus();
   });
+
+  const notes = $derived(prepared ? [...new Set([...(prepared.release.unresolved ?? []), ...prepared.warnings])] : []);
 </script>
 
+{#if o}
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onclose()}>
-  <div class="dialog" role="dialog" aria-modal="true" aria-label={`${update ? "Update" : "Get"} ${entry.title}`} tabindex="-1" bind:this={box} onkeydown={(e) => e.key === "Escape" && onclose()}>
+  <div class="dialog" role="dialog" aria-modal="true" aria-label={`${updating ? "Update" : "Get"} ${gameTitle}`} tabindex="-1" bind:this={box} onkeydown={(e) => e.key === "Escape" && (e.stopPropagation(), onclose())}>
     <div class="top">
-      <h2>{update ? "Update" : "Get"} {entry.title}</h2>
+      <h2>{updating ? "Update" : "Get"} {gameTitle}</h2>
       <button type="button" class="close" aria-label="Close" onclick={onclose}><Icon name="close" size={18} stroke={2.2} /></button>
     </div>
 
-    {#if entry.offers.length > 1}
+    {#if choices.length > 1}
       <label class="field">
         <span class="label">Version</span>
         <select bind:value={pick}>
-          {#each entry.offers as x, i (i)}<option value={i}
-              >{x.version || "Version not given"} · {x.feedName}{i === (entry.recommended?.offer ?? 0) ? " (recommended)" : ""}</option
-            >{/each}
+          {#each choices as x, i (i)}<option value={i}>{x.label}</option>{/each}
         </select>
       </label>
     {/if}
-    <p class="sub">{offerLine(o)}</p>
+    <p class="sub">{o.line}</p>
+
+    {#if prepared}
+      <dl class="facts">
+        <dt>Source</dt><dd>{prepared.release.sourceName}</dd>
+        <dt>Version</dt><dd>{prepared.release.version || "Not stated"}</dd>
+        <dt>Languages</dt><dd>{languagesLine(prepared.release)}</dd>
+        {#if prepared.release.publishedAt}<dt>Published</dt><dd>{publishedText(prepared.release.publishedAt).replace("Published ", "")}</dd>{/if}
+      </dl>
+      {#if notes.length}
+        <ul class="notes">
+          {#each notes as n, i (i)}<li><Icon name="warn" size={14} stroke={2.2} /><span>{n}</span></li>{/each}
+        </ul>
+      {/if}
+    {/if}
 
     <label class="field">
       <span class="label">Language</span>
@@ -86,11 +146,14 @@
     <div class="field">
       <span class="label">Folder</span>
       <span class="path" title={dir}>{dir}</span>
-      {#if !update}<button type="button" class="btn" onclick={choose}>Change</button>{/if}
+      {#if !updating}<button type="button" class="btn" onclick={choose}>Change</button>{/if}
     </div>
-    {#if update}
-      <p class="sub">Installs over {entry.installed?.version} once downloaded and checked. Your saves usually stay; back them up first if the game keeps them in its folder.</p>
+    {#if updating}
+      <p class="sub">Installs over {installedVersion} once downloaded and checked. Your saves usually stay; back them up first if the game keeps them in its folder.</p>
     {:else}
+    {#if update && prepared}
+      <p class="sub">Seaglass can't tell where the installed copy is, so this is installed as a separate copy.</p>
+    {/if}
     <Toggle
       checked={install}
       title="Install when it's downloaded"
@@ -109,6 +172,7 @@
     </div>
   </div>
 </div>
+{/if}
 
 <style>
   .scrim {
@@ -141,9 +205,11 @@
   }
   h2 {
     flex: 1;
+    min-width: 0;
     margin: 0;
     font-family: var(--font-display);
     font-size: 24px;
+    overflow-wrap: anywhere;
   }
   .close {
     width: 36px;
@@ -199,6 +265,43 @@
     font-size: 13.5px;
     color: var(--muted);
   }
+  .facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 4px 16px;
+    margin: 0;
+    font-size: 14px;
+  }
+  .facts dt {
+    color: var(--muted);
+  }
+  .facts dd {
+    margin: 0;
+    color: var(--text-2);
+    overflow-wrap: anywhere;
+  }
+  .notes {
+    list-style: none;
+    margin: 0;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    font-size: 13.5px;
+    color: var(--text-2);
+  }
+  .notes li {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .notes :global(svg) {
+    flex-shrink: 0;
+    margin-top: 3px;
+    color: var(--warn);
+  }
   .actions {
     display: flex;
     justify-content: flex-end;
@@ -231,5 +334,13 @@
   }
   .btn:disabled {
     opacity: 0.6;
+  }
+  @media (max-width: 520px) {
+    .dialog {
+      padding: 18px 16px;
+    }
+    .label {
+      width: 70px;
+    }
   }
 </style>

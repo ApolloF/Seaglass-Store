@@ -17,6 +17,10 @@ import (
 func TestPrivateSourceIntegrationRequiresOptInAndReview(t *testing.T) {
 	c := testStoreCore(t)
 	svc := NewStoreService(c)
+	// Turning the Store on chose the sources; the person can turn them off.
+	if _, err := c.updateSettings(func(v *settings.Settings) { v.Store.PrivateSources = false }); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := svc.DiscoverReleases("fitgirl", "test", false); !errors.Is(err, sources.ErrDisabled) {
 		t.Fatalf("disabled source: %v", err)
 	}
@@ -103,7 +107,8 @@ func TestMixedReleaseVersionsDoNotOfferAnUnconfirmedUpdate(t *testing.T) {
 func TestEnglishAndScanningDefaultsSurviveOldSettings(t *testing.T) {
 	c := testStoreCore(t)
 	v := c.Settings.Get()
-	if v.Store.Language != "English" || v.Store.DisablePayloadScanning || v.Store.PrivateSources {
+	// A new Store user gets both sources when the Store is turned on.
+	if v.Store.Language != "English" || v.Store.DisablePayloadScanning || !v.Store.PrivateSources || len(v.Store.Sources) != 2 {
 		t.Fatalf("defaults: %+v", v.Store)
 	}
 	if _, err := c.updateSettings(func(v *settings.Settings) { v.Store.DisablePayloadScanning = true }); err != nil {

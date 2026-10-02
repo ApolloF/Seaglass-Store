@@ -91,3 +91,7 @@ func entryID(source, page string) string {
 	sum := sha256.Sum256([]byte(source + "\x00" + page))
 	return hex.EncodeToString(sum[:16])
 }
+
+// EntryID is the stable ID of a source article, derived from the source and
+// its URL; the discovery index keys records by it.
+func EntryID(source, page string) string { return entryID(source, page) }

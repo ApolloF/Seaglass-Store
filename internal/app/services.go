@@ -345,6 +345,7 @@ func (c *Core) saveSettings(v settings.Settings) (settings.Settings, error) {
 	}
 	if saved.ExperimentalStore != old.ExperimentalStore || !reflect.DeepEqual(saved.Store, old.Store) {
 		c.store.settingsChanged(old, saved)
+		c.discovery.settingsChanged(old, saved)
 	}
 	if saved.AutoUpdate && !old.AutoUpdate {
 		NewUpdateService(c).Check()

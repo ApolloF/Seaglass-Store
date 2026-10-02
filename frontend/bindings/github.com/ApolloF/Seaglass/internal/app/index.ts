@@ -41,5 +41,6 @@ export type {
     StoreAccount,
     StoreArt,
     SyncerStatus,
-    UpdateState
+    UpdateState,
+    WishlistItem
 } from "./models.js";
