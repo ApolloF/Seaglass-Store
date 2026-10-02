@@ -58,9 +58,11 @@ func Open(path string) *Store {
 func (s *Store) List() []Entry {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Entries are kept in the order they were saved; walking them backwards
+	// keeps games saved at the same instant newest first too.
 	out := make([]Entry, 0, len(s.f.Entries))
-	for _, e := range s.f.Entries {
-		out = append(out, clone(e))
+	for i := len(s.f.Entries) - 1; i >= 0; i-- {
+		out = append(out, clone(s.f.Entries[i]))
 	}
 	slices.SortStableFunc(out, func(a, b Entry) int { return b.AddedAt.Compare(a.AddedAt) })
 	return out

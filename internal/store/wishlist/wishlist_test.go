@@ -35,6 +35,19 @@ func TestSavedGamesSurviveARestart(t *testing.T) {
 	}
 }
 
+func TestGamesSavedAtTheSameInstantListNewestFirst(t *testing.T) {
+	s := Open(filepath.Join(t.TempDir(), "w.json"))
+	for _, key := range []string{"title:a", "title:b", "title:c"} {
+		if err := s.Add(key, key, 0, nil, t0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := s.List()
+	if len(got) != 3 || got[0].Key != "title:c" || got[1].Key != "title:b" || got[2].Key != "title:a" {
+		t.Fatalf("order: %+v", got)
+	}
+}
+
 func TestSavingSetsABaselineAndOnlyLaterReleasesBecomeActivity(t *testing.T) {
 	s := Open(filepath.Join(t.TempDir(), "w.json"))
 	known := []Observation{obs("a", "v1.0", false, time.Hour), obs("b", "v1.1", false, 0)}
