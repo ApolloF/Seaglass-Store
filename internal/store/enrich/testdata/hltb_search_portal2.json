@@ -1,0 +1,48 @@
+{
+ "count": 3,
+ "pageCurrent": 1,
+ "pageTotal": 1,
+ "pageSize": 20,
+ "data": [
+  {
+   "game_id": 7231,
+   "game_name": "Portal 2",
+   "game_alias": "",
+   "game_type": "game",
+   "comp_main": 30883,
+   "comp_plus": 49552,
+   "comp_100": 82580,
+   "release_world": 2011
+  },
+  {
+   "game_id": 27601,
+   "game_name": "Portal 2: Sixense Perceptual Pack",
+   "game_alias": "",
+   "game_type": "game",
+   "comp_main": 0,
+   "comp_plus": 0,
+   "comp_100": 0,
+   "release_world": 2013
+  },
+  {
+   "game_id": 7232,
+   "game_name": "Portal 2: Peer Review",
+   "game_alias": "",
+   "game_type": "dlc",
+   "comp_main": 11784,
+   "comp_plus": 11966,
+   "comp_100": 11990,
+   "release_world": 2011
+  },
+  {
+   "game_id": 150928,
+   "game_name": "Portal 2: Confinement",
+   "game_alias": "",
+   "game_type": "mod",
+   "comp_main": 0,
+   "comp_plus": 0,
+   "comp_100": 0,
+   "release_world": 2024
+  }
+ ]
+}

@@ -1,0 +1,85 @@
+{
+ "success": 1,
+ "query_summary": {
+  "num_reviews": 3,
+  "review_score": 9,
+  "review_score_desc": "Overwhelmingly Positive",
+  "total_positive": 461376,
+  "total_negative": 6050,
+  "total_reviews": 467426
+ },
+ "cursor": "AoIFQFYqVMAAAAB/page2==",
+ "reviews": [
+  {
+   "recommendationid": "5001",
+   "author": {
+    "steamid": "76561199000000001",
+    "num_games_owned": 10,
+    "num_reviews": 3,
+    "playtime_forever": 1500,
+    "playtime_last_two_weeks": 0,
+    "playtime_at_review": 1155,
+    "last_played": 1788884619,
+    "personaname": "Test Tester"
+   },
+   "language": "english",
+   "review": "[h1]Great[/h1]\n[b]Really[/b] good. [i]Very[/i] good.\n[list]\n[*]puzzles\n[*]story\n[/list]\nSee [url=https://example.com/guide]the guide[/url] and [spoiler]GLaDOS is the bad guy[/spoiler].",
+   "timestamp_created": 1788893804,
+   "timestamp_updated": 1788893804,
+   "voted_up": true,
+   "votes_up": 21,
+   "votes_funny": 2,
+   "weighted_vote_score": 0.7,
+   "comment_count": 0,
+   "steam_purchase": true,
+   "received_for_free": false
+  },
+  {
+   "recommendationid": "5002",
+   "author": {
+    "steamid": "76561199000000002",
+    "num_games_owned": 10,
+    "num_reviews": 3,
+    "playtime_forever": 60,
+    "playtime_last_two_weeks": 0,
+    "playtime_at_review": 60,
+    "last_played": 1788884619
+   },
+   "language": "english",
+   "review": "No persona name here.",
+   "timestamp_created": 1788893805,
+   "timestamp_updated": 1788893805,
+   "voted_up": false,
+   "votes_up": 3,
+   "votes_funny": 0,
+   "weighted_vote_score": 0.7,
+   "comment_count": 0,
+   "steam_purchase": true,
+   "received_for_free": false
+  },
+  {
+   "recommendationid": "5003",
+   "author": {
+    "steamid": "76561199000000003",
+    "num_games_owned": 10,
+    "num_reviews": 3,
+    "playtime_forever": 0,
+    "playtime_last_two_weeks": 0,
+    "playtime_at_review": 0,
+    "last_played": 1788884619,
+    "personaname": "Third"
+   },
+   "language": "english",
+   "review": "Third review",
+   "timestamp_created": 1788893806,
+   "timestamp_updated": 1788893806,
+   "voted_up": true,
+   "votes_up": 0,
+   "votes_funny": 0,
+   "weighted_vote_score": 0.7,
+   "comment_count": 0,
+   "steam_purchase": true,
+   "received_for_free": false
+  }
+ ]
+}
