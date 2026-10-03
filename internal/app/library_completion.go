@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ApolloF/Seaglass/internal/library"
@@ -32,6 +33,35 @@ var completionHosts = []string{"howlongtobeat.com", "www.howlongtobeat.com"}
 
 // completionFetchTimeout bounds one lookup: a search, a token and a page.
 const completionFetchTimeout = 30 * time.Second
+
+const (
+	// maxCompletionQuery bounds a typed search: it is cached, kept on disk
+	// and sent to HowLongToBeat.
+	maxCompletionQuery = 200
+	// maxHLTBID is far above any real HowLongToBeat game number.
+	maxHLTBID = 1_000_000_000
+)
+
+// latestLookup lets a new lookup cancel the one before it. The person looks
+// at one game at a time, so an earlier game's lookup would only keep the
+// one on screen waiting in HowLongToBeat's queue.
+type latestLookup struct {
+	mu     sync.Mutex
+	cancel context.CancelFunc
+}
+
+// begin cancels the previous lookup and returns the context for the next,
+// with its release function.
+func (l *latestLookup) begin(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.cancel != nil {
+		l.cancel()
+	}
+	l.cancel = cancel
+	return ctx, cancel
+}
 
 // trustedSteamApp is the game's Steam app when its identity can be relied
 // on, as the Store relies on it: Steam's own record, the person's
@@ -88,7 +118,7 @@ func (s *LibraryService) Completion(id int64, fetch bool) (LibraryCompletion, er
 	q := s.completionQuery(g, key, title)
 	out := LibraryCompletion{GameID: id, Key: key}
 	if fetch {
-		ctx, cancel := context.WithTimeout(s.c.ctx, completionFetchTimeout)
+		ctx, cancel := s.lookup.begin(s.c.ctx, completionFetchTimeout)
 		defer cancel()
 		out.Completion = s.c.enrich.client.Completion(ctx, q)
 		return out, nil
@@ -108,7 +138,10 @@ func (s *LibraryService) CompletionCandidates(id int64, query string) ([]enrich.
 	if err != nil {
 		return []enrich.Candidate{}, err
 	}
-	if strings.TrimSpace(query) != "" {
+	if query = strings.TrimSpace(query); query != "" {
+		if len(query) > maxCompletionQuery {
+			return []enrich.Candidate{}, errors.New("that search is too long")
+		}
 		title = query
 	}
 	ctx, cancel := context.WithTimeout(s.c.ctx, completionFetchTimeout)
@@ -123,7 +156,7 @@ func (s *LibraryService) CompletionCandidates(id int64, query string) ([]enrich.
 // SetCompletionMatch makes hltbID the game's match, shared with the
 // Store's page for the same game (0 goes back to the automatic match).
 func (s *LibraryService) SetCompletionMatch(id int64, hltbID int) (LibraryCompletion, error) {
-	if hltbID < 0 {
+	if hltbID < 0 || hltbID > maxHLTBID {
 		return LibraryCompletion{GameID: id, Completion: enrich.Completion{State: enrich.StateUnavailable}}, errors.New("that isn't a HowLongToBeat game")
 	}
 	_, key, _, err := s.completionGame(id)

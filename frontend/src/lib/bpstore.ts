@@ -4,7 +4,7 @@
 // Labels the desktop Store already has come from storefront.ts.
 import { offerLine } from "./catalog";
 import { bytes } from "./format";
-import { countText, emptyQuery, hoursText, notReadyText, reviewText, sourceLabel, type SearchView } from "./storefront";
+import { countText, emptyQuery, hoursText, notInstallableText, notReadyText, reviewText, sourceLabel, type SearchView } from "./storefront";
 import type { BrowseQuery, CatalogEntry, DiscoveryStatus, Enrichment, GameSummary, PreparedRelease, Recommendation, RecommendationBasis, ReviewScore, StoreHome } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -95,7 +95,7 @@ export function availabilityText(g: GameSummary): string {
   if (!g.sourceBacked) return "No known source release";
   if (g.installed?.update) return "Update available";
   if (g.installed) return `Installed${g.installed.version ? ` ${g.installed.version}` : ""}`;
-  return g.installable ? "Installable" : "Needs checking";
+  return g.installable ? "Installable" : (notInstallableText(g) ?? "Needs checking");
 }
 
 /** Review and completion time, where known: "Very Positive · 92% · 59 h main story". */

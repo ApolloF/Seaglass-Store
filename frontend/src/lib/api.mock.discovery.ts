@@ -41,6 +41,13 @@ const flags = new Set(
     .filter(Boolean),
 );
 /** Turns a scenario on or off (tests use it; the URL sets it in the browser). */
+const STEAM_ID_ERROR = "That isn't a SteamID64. It is the 17-digit number of a Steam profile, for example 76561198000000042.";
+
+/** Mirrors enrich.ValidSteamID64: an individual account, 76561197960265729 to 76561202255233023. */
+export function validSteamID64(s: string): boolean {
+  return /^\d{5,20}$/.test(s) && BigInt(s) >= 76561197960265729n && BigInt(s) <= 76561202255233023n;
+}
+
 export function mockDiscoveryFlag(name: string, on: boolean) {
   if (on) flags.add(name);
   else flags.delete(name);
@@ -296,6 +303,13 @@ function visible(settings: Settings): Game[] {
   return games.filter((g) => g.recs.some((r) => r.release.origin === "feed" || (st.privateSources && st.sources.includes(r.release.source))));
 }
 
+/** Why no release of a game installs from its card, as the backend words it: every real release opens in a browser, or only announcements exist. */
+function notInstallable(releases: Release[]): Pick<GameSummary, "browserOnly" | "announced"> {
+  const real = releases.filter((r) => r.kind !== "preview");
+  const feed = releases.some((r) => r.origin === "feed");
+  return { browserOnly: !feed && real.length > 0 && real.every((r) => r.browserOnly), announced: !feed && releases.length > 0 && real.length === 0 };
+}
+
 function summary(game: Game, settings: Settings): GameSummary {
   const recs = game.recs.filter((r) => r.release.origin === "feed" || settings.store.sources.includes(r.release.source));
   const newest = [...recs].sort((a, b) => b.release.publishedAt - a.release.publishedAt)[0]?.release;
@@ -317,6 +331,7 @@ function summary(game: Game, settings: Settings): GameSummary {
     languages: [...new Set(recs.flatMap((r) => r.release.languages))],
     genres: g.genres ?? [],
     installable: recs.some((r) => r.release.availability === "installable"),
+    ...notInstallable(recs.map((r) => r.release)),
     popularRank: flags.has("nochart") ? 0 : (g.rank ?? 0),
     reviewPercent: enriched && g.review ? g.review[0] : 0,
     reviewTotal: enriched && g.review ? g.review[1] : 0,
@@ -403,7 +418,7 @@ function steamOnlySummary(s: (typeof steamOnly)[number]): GameSummary {
   const wish = wishes.find((w) => w.key === `steam:${s.appId}`);
   return {
     key: `steam:${s.appId}`, title: s.title, steamAppId: s.appId, sourceBacked: false, sources: [], releases: 0, publishedAt: 0, updatedAt: 0, sizeBytes: 0,
-    languages: [], genres: s.genres, installable: false, popularRank: 0, reviewPercent: s.review[0], reviewTotal: s.review[1], reviewLabel: s.review[2],
+    languages: [], genres: s.genres, installable: false, browserOnly: false, announced: false, popularRank: 0, reviewPercent: s.review[0], reviewTotal: s.review[1], reviewLabel: s.review[2],
     completionMain: 0, wishlisted: !!wish, activity: false,
   };
 }
@@ -854,7 +869,7 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
       async importSteam(steamId) {
         const s = getSettings();
         if (!s.experimentalStore) throw new Error("the store is turned off (Settings, Experimental)");
-        if (!/^7656119\d{10}$/.test(steamId.trim())) throw new Error("That isn't a SteamID64. It has 17 digits and starts with 7656119.");
+        if (!validSteamID64(steamId.trim())) throw new Error(STEAM_ID_ERROR);
         await wait(900);
         if (flags.has("private")) throw new Error("Steam didn't share a wishlist for that account. In Steam, set the profile and its game details to Public, then try again.");
         if (flags.has("offline")) throw new Error("Couldn't reach Steam: no such host");
@@ -881,7 +896,7 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
         const items = wishItems();
         const available = items.filter((i) => steamWish.some((w) => i.steamAppId === w.appId) && i.game.sourceBacked).length;
         const canSearch = s.store.privateSources && s.store.sources.some(searchable);
-        return { steamId: steamId.trim(), fetched: steamWish.length, added, existing, available, searching: canSearch ? steamWish.length - available : 0, items };
+        return { steamId: steamId.trim(), fetched: steamWish.length, added, existing, skipped: 0, available, searching: canSearch ? steamWish.length - available : 0, items };
       },
       onChange: (cb) => on(wishListeners, cb),
     },

@@ -120,11 +120,14 @@ type Imported struct {
 
 // Import saves the games that aren't saved yet, as Add does, and counts
 // those already saved under the same key or Steam AppID, which it leaves
-// as they are. It never removes a game. Games past MaxEntries are left
-// out. One write for the whole import.
+// as they are. It never removes a game. games come in priority order, most
+// wanted first: when not all fit under MaxEntries, the first ones are kept
+// and the rest left out. They are saved last to first, so games saved at
+// the same instant list in the given order. One write for the whole import.
 func (s *Store) Import(games []Imported, now time.Time) (added, existing int, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	var fresh []Entry
 	for _, g := range games {
 		if g.Key == "" {
 			continue
@@ -133,7 +136,7 @@ func (s *Store) Import(games []Imported, now time.Time) (added, existing int, er
 			existing++
 			continue
 		}
-		if len(s.f.Entries) >= MaxEntries {
+		if len(s.f.Entries)+len(fresh) >= MaxEntries {
 			continue
 		}
 		e := Entry{Key: g.Key, Title: g.Title, SteamAppID: g.AppID, AddedAt: now, Baseline: []string{}, Activity: []Activity{}, Origin: OriginSteam}
@@ -141,13 +144,15 @@ func (s *Store) Import(games []Imported, now time.Time) (added, existing int, er
 			e.Baseline = append(e.Baseline, o.ReleaseID)
 			e.Version = newest(e.Version, o.Version)
 		}
-		s.f.Entries = append(s.f.Entries, e)
-		added++
+		fresh = append(fresh, e)
 	}
-	if added == 0 {
+	if len(fresh) == 0 {
 		return 0, existing, nil
 	}
-	return added, existing, s.save()
+	for i := len(fresh) - 1; i >= 0; i-- {
+		s.f.Entries = append(s.f.Entries, fresh[i])
+	}
+	return len(fresh), existing, s.save()
 }
 
 // Placeholder is the title of an imported game whose name isn't known

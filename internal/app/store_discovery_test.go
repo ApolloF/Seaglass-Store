@@ -116,6 +116,9 @@ func TestPrepareExplainsAnnouncementsAndBrowserOnlySources(t *testing.T) {
 	browser := base.Entry
 	browser.SourceID, browser.PageURL = "elamigos", "https://elamigos.site/data/Ember_Crown_MULTi9_-_ElAmigos.html"
 	browser.References = []sources.Reference{{Kind: "download", URL: "https://ddownload.com/abc", State: "manual-required"}}
+	// A valid magnet that reached a browser-only record must still be refused.
+	magnet, _ := sources.Magnet("magnet:?xt=urn:btih:" + discoveryMagnet)
+	browser.Transports = []sources.Transport{magnet}
 	now := time.Now()
 	c.discovery.index().Merge("dodi", []sources.Entry{preview}, discovery.OriginListing, false, now)
 	c.discovery.index().Merge("elamigos", []sources.Entry{browser}, discovery.OriginListing, false, now)
@@ -135,15 +138,15 @@ func TestPrepareExplainsAnnouncementsAndBrowserOnlySources(t *testing.T) {
 	} {
 		id := sources.EntryID(want.src, discovery.CanonicalPage(want.page))
 		p, err := s.PrepareRelease("title:embercrown", id)
-		if err != nil || p.Ready || p.State != want.state || len(p.Offers) != 0 || p.Reason == "" {
+		if err != nil || p.Ready || p.State != want.state || p.Reason == "" {
 			t.Errorf("%s: %+v %v", want.state, p, err)
 		}
 		r, _ := c.discovery.index().Record(want.src, id)
 		if err := attachable(r); err == nil {
 			t.Errorf("%s: a .torrent could be attached", want.state)
 		}
-		if _, err := s.DownloadRelease("title:embercrown", id, 0, InstallOptions{}); err == nil {
-			t.Errorf("%s: queued a download", want.state)
+		if _, err := s.DownloadRelease("title:embercrown", id, 0, InstallOptions{}); err == nil || err.Error() != attachable(r).Error() {
+			t.Errorf("%s: queued a download or refused it for another reason: %v", want.state, err)
 		}
 	}
 	if err := attachable(base); err != nil {

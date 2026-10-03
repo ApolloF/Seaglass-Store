@@ -1,9 +1,9 @@
 <script lang="ts">
-  // A game's HowLongToBeat times, fetched when the game is shown. A late
-  // answer for a game that is no longer shown is dropped. In big picture
+  // A game's HowLongToBeat times: cached ones at once, fetched when the game
+  // stays shown. An answer for a game that is no longer shown is dropped. In big picture
   // (`big`) it is plain text: no links or buttons a controller can't reach.
   import { api } from "../lib/api";
-  import { completionLink, completionView } from "../lib/completion";
+  import { completionLink, completionView, isFor, watchCompletion } from "../lib/completion";
   import { lib } from "../lib/store.svelte";
   import { title, type Game, type LibraryCompletion } from "../lib/types";
   import CompletionPicker from "./CompletionPicker.svelte";
@@ -16,16 +16,10 @@
   let picking = $state(false);
 
   $effect(() => {
-    const id = gid;
-    let live = true;
     answer = null;
     failed = false;
     picking = false;
-    api.completion
-      .get(id, true)
-      .then((a) => live && (answer = a))
-      .catch(() => live && (failed = true));
-    return () => (live = false);
+    return watchCompletion(gid, api.completion.get, { answer: (a) => (answer = a), failed: () => (failed = true) });
   });
 
   const view = $derived(completionView(failed ? { hltbId: 0, main: 0, mainExtras: 0, completionist: 0, url: "", corrected: false, fetchedAt: 0, state: "unavailable" } : (answer?.completion ?? null)));
@@ -69,7 +63,7 @@
   <CompletionPicker
     {game}
     corrected={!!answer?.completion.corrected}
-    ondone={(a) => (answer = a)}
+    ondone={(a) => isFor(game.id, a) && (answer = a)}
     onclose={() => (picking = false)}
   />
 {/if}

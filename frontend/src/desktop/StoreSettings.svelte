@@ -96,7 +96,7 @@
   async function checkNow() {
     checking = true;
     const status = await lib.run(() => api.store.discovery.refresh());
-    if (status) storefront.status = status;
+    if (status) storefront.setStatus(status);
     checking = false;
   }
 

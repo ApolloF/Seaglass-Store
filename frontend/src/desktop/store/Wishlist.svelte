@@ -13,6 +13,8 @@
 
   let { onopen, onbrowse }: { onopen: (g: GameSummary) => void; onbrowse: () => void } = $props();
 
+  const empty = $derived(storefront.wishlist.length === 0);
+
   $effect(() => shop.requestArt(storefront.wishlist.map((w) => w.key)));
 
   async function acknowledge(key: string) {
@@ -25,17 +27,18 @@
   }
 </script>
 
-{#if storefront.wishlist.length === 0}
+{#if empty}
   <div class="sf-empty">
     <Icon name="star" size={40} stroke={1.6} />
     <h2>Your wishlist is empty</h2>
     <p>Save a game from its page, or import your Steam wishlist. Seaglass tells you here when a release shows up or a newer version is confirmed.</p>
     <button type="button" class="sf-primary" onclick={onbrowse}>Browse games</button>
   </div>
-  <div class="solo"><WishlistImport /></div>
-{:else}
-  <div class="wish">
-    <WishlistImport />
+{/if}
+<!-- One import form for both states: it keeps its result and focus when the first import fills the list. -->
+<div class="wish" class:solo={empty}>
+  <WishlistImport />
+  {#if !empty}
     <div class="top">
       <p class="sf-muted">{storefront.wishlist.length} saved · {storefront.unread ? `${storefront.unread} new` : "nothing new"}</p>
       {#if storefront.unread}<button type="button" class="sf-btn" onclick={() => acknowledge("")}>Mark all read</button>{/if}
@@ -73,8 +76,8 @@
         </li>
       {/each}
     </ul>
-  </div>
-{/if}
+  {/if}
+</div>
 
 <style>
   .wish {

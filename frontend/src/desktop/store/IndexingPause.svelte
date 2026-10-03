@@ -18,7 +18,7 @@
     const st = await lib.run(() => api.store.discovery.pauseIndexing(!paused));
     busy = false;
     if (!st) return;
-    storefront.status = st;
+    storefront.setStatus(st);
     // The setting is saved by the backend; keep the copy here in step so a
     // later settings change doesn't undo it.
     if (lib.settings) lib.settings = { ...lib.settings, store: { ...lib.settings.store, indexingPaused: st.paused } };

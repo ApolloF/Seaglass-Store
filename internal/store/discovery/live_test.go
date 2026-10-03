@@ -49,7 +49,7 @@ func TestLiveDiscovery(t *testing.T) {
 			unresolved++
 		}
 	}
-	h := v.Home(nil, StateUnavailable, Status{})
+	h := v.Home(nil, StateUnavailable, Status{}, nil)
 	t.Logf("games %d (installable %d, unresolved %d); newest: %v", len(v.Games), installable, unresolved, titles(h.New, 5))
 	if err := ix.Save(); err != nil {
 		t.Fatal(err)

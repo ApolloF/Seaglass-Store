@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mockBrowse, mockDiscovery, mockDiscoveryFlag } from "./api.mock.discovery";
+import { mockBrowse, mockDiscovery, mockDiscoveryFlag, validSteamID64 } from "./api.mock.discovery";
 import { mockStoreSettings } from "./api.mock.store";
 import type { BrowseQuery, Settings } from "./types";
 
@@ -74,6 +74,17 @@ describe("mock indexing and Steam import", () => {
     const elamigos = (await api.discovery.status()).sources.find((x) => x.id === "elamigos");
     expect(elamigos).toMatchObject({ name: "ElAmigos", enabled: false, defaultOn: false, search: false, paged: false, torrents: false });
     expect(elamigos?.notes.length).toBeGreaterThan(0);
+  });
+
+  it("accepts exactly the individual SteamID64 range", () => {
+    expect(validSteamID64("76561197960265729")).toBe(true);
+    expect(validSteamID64("76561202255233023")).toBe(true);
+    expect(validSteamID64("76561202000000000")).toBe(true);
+    expect(validSteamID64("76561197960265728")).toBe(false);
+    expect(validSteamID64("76561202255233024")).toBe(false);
+    expect(validSteamID64("76561190000000000")).toBe(false);
+    expect(validSteamID64("7656119800000004x")).toBe(false);
+    expect(validSteamID64("")).toBe(false);
   });
 
   it("imports by AppID, keeps saved games and reports private profiles", async () => {

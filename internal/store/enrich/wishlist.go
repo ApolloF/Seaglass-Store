@@ -6,7 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
+
+	"github.com/ApolloF/Seaglass/internal/store/wishlist"
 )
 
 // Steam wishlists. IWishlistService/GetWishlist answers without a key for
@@ -14,18 +15,30 @@ import (
 // profile gets an answer without its items. Names come from what Seaglass
 // knows, or from the store's appdetails one game at a time.
 
-// MaxWishlist bounds the games accepted from one wishlist.
-const MaxWishlist = 5000
+// MaxWishlist bounds the games accepted from one wishlist: no more than the
+// saved wishlist can hold.
+const MaxWishlist = wishlist.MaxEntries
+
+// An individual account's SteamID64 is 76561197960265728 plus its account
+// number, which runs from 1 to 2^32-1.
+const (
+	firstSteamID64 uint64 = 76561197960265729
+	lastSteamID64  uint64 = 76561202255233023
+)
 
 // ErrSteamID means the text isn't a SteamID64.
-var ErrSteamID = errors.New("That isn't a SteamID64. It has 17 digits and starts with 7656119.")
+var ErrSteamID = errors.New("That isn't a SteamID64. It is the 17-digit number of a Steam profile, for example 76561198000000042.")
 
 // ErrWishlistPrivate means Steam answered but shared no wishlist.
 var ErrWishlistPrivate = errors.New("Steam didn't share a wishlist for that account. In Steam, set the profile and its game details to Public, then try again.")
 
 // ValidSteamID64 reports whether s is an individual account's SteamID64.
 func ValidSteamID64(s string) bool {
-	return len(s) == 17 && strings.HasPrefix(s, "7656119") && validSteamID(s)
+	if !validSteamID(s) {
+		return false
+	}
+	id, err := strconv.ParseUint(s, 10, 64)
+	return err == nil && id >= firstSteamID64 && id <= lastSteamID64
 }
 
 // SteamWishlist reads a public Steam wishlist: its games' AppIDs in

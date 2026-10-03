@@ -210,8 +210,9 @@ func facet(cs []card, field func(GameSummary) []string) []string {
 
 // Home builds the front page's shelves. popularState is the chart's state:
 // without a chart the Popular shelf stays empty rather than showing
-// another ranking.
-func (v *View) Home(annotate Annotate, popularState string, status Status) Home {
+// another ranking. exclude (may be nil) leaves games out of Featured, such
+// as those installed outside the Store.
+func (v *View) Home(annotate Annotate, popularState string, status Status, exclude func(GameSummary) bool) Home {
 	all := v.cards(annotate)
 	h := Home{New: []GameSummary{}, Popular: []GameSummary{}, Updated: []GameSummary{}, Wishlist: []GameSummary{}, Featured: []GameSummary{},
 		Recommended: []Recommendation{}, PopularState: popularState, Status: status}
@@ -241,7 +242,7 @@ func (v *View) Home(annotate Annotate, popularState string, status Status) Home 
 		}
 	}
 	slices.SortStableFunc(h.Wishlist, func(a, b GameSummary) int { return cmp.Compare(b.PublishedAt, a.PublishedAt) })
-	h.Featured = featured(all)
+	h.Featured = featured(all, exclude)
 	return h
 }
 
@@ -261,10 +262,10 @@ const featuredSize = 5
 
 // featured picks games that can be installed first, then by chart place and
 // recency; installed games are left out.
-func featured(all []card) []GameSummary {
-	var open []GameSummary
+func featured(all []card, exclude func(GameSummary) bool) []GameSummary {
+	open := []GameSummary{}
 	for _, c := range all {
-		if c.s.Installed == nil {
+		if c.s.Installed == nil && (exclude == nil || !exclude(c.s)) {
 			open = append(open, c.s)
 		}
 	}

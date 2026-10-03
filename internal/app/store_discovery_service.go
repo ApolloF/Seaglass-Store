@@ -138,7 +138,7 @@ func (s *StoreService) StoreHome() (discovery.Home, error) {
 	}
 	d := s.c.discovery
 	view, annotate := d.currentView(), d.annotator()
-	h := view.Home(annotate, s.c.popularState(), d.status())
+	h := view.Home(annotate, s.c.popularState(), d.status(), installedInLibrary(s.c.libraryGames()))
 	h.Recommended, h.RecommendedBasis = s.c.recommendations(view, annotate)
 	return h, nil
 }
@@ -318,6 +318,9 @@ func (s *StoreService) DownloadRelease(key, releaseID string, transport int, opt
 	}
 	if r.Gone {
 		return jobs.Job{}, errors.New("the source no longer lists this release")
+	}
+	if err := attachable(r); err != nil {
+		return jobs.Job{}, err
 	}
 	if !slices.Contains(validTransports(r.Entry), transport) {
 		return jobs.Job{}, errors.New("this release has no validated torrent: prepare it again")

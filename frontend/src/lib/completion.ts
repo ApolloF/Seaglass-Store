@@ -1,6 +1,6 @@
 // How a game's HowLongToBeat times are written and which state to show.
 // Pure, so the rules are tested apart from the components.
-import type { Completion, CompletionCandidate } from "./types";
+import type { Completion, CompletionCandidate, LibraryCompletion } from "./types";
 
 /** Minutes as the hours people say: "45 min", "8 h", "12½ h". "" when unknown. */
 export function hoursLabel(minutes: number): string {
@@ -67,4 +67,52 @@ export function candidateTimes(c: Pick<CompletionCandidate, "main" | "mainExtras
     c.completionist > 0 ? `Full ${hoursLabel(c.completionist)}` : "",
   ].filter(Boolean);
   return parts.join(" · ") || "No times given";
+}
+
+/** How long a game stays selected before its times are fetched. */
+export const FETCH_DELAY_MS = 500;
+
+/** Whether an answer is for the game on screen; late answers for another one aren't. */
+export function isFor(gameId: number, a: LibraryCompletion): boolean {
+  return a.gameId === gameId;
+}
+
+export interface CompletionWatch {
+  answer(a: LibraryCompletion): void;
+  failed(): void;
+}
+
+/**
+ * Shows a game's times as fast as they are known: the cached answer at once,
+ * then a fetch only if the game stays selected for `delayMs`, so arrowing
+ * through a list doesn't queue a lookup per game. Returns the stop function;
+ * after it runs nothing is delivered.
+ */
+export function watchCompletion(
+  id: number,
+  get: (id: number, fetch: boolean) => Promise<LibraryCompletion>,
+  on: CompletionWatch,
+  delayMs = FETCH_DELAY_MS,
+): () => void {
+  let live = true;
+  let shown = false;
+  let fresh = false;
+  const deliver = (a: LibraryCompletion, isFresh: boolean) => {
+    if (!live || !isFor(id, a) || (fresh && !isFresh)) return;
+    fresh = fresh || isFresh;
+    shown = true;
+    on.answer(a);
+  };
+  get(id, false)
+    .then((a) => deliver(a, false))
+    .catch(() => {});
+  const timer = setTimeout(() => {
+    get(id, true)
+      .then((a) => deliver(a, true))
+      .catch(() => live && !shown && on.failed());
+  }, delayMs);
+  return () => {
+    live = false;
+    clearTimeout(timer);
+  };
 }

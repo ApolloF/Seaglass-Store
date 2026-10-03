@@ -722,6 +722,10 @@ export interface GameSummary {
   /** Empty: unknown. */
   genres: string[];
   installable: boolean;
+  /** Every source release opens in a browser (the source offers no torrents). */
+  browserOnly: boolean;
+  /** The sources only announce the game. */
+  announced: boolean;
   /** Place on Steam's most-played chart; 0 off the chart or unknown. */
   popularRank: number;
   reviewPercent: number;
@@ -1057,6 +1061,8 @@ export interface WishlistImport {
   added: number;
   /** Already saved, matched by Steam AppID. */
   existing: number;
+  /** Left out because the wishlist is full. */
+  skipped: number;
   /** With a known source release now. */
   available: number;
   /** Queued for a source search while idle. */

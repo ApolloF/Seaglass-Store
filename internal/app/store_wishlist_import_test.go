@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -103,6 +104,48 @@ func TestImportingASteamWishlistMergesByAppID(t *testing.T) {
 	}
 	if _, err := s.RemoveFromWishlist("steam:4200000"); err != nil || len(s.Wishlist()) != 2 {
 		t.Errorf("removing an imported game: %v", err)
+	}
+}
+
+func TestAFullWishlistKeepsSteamsFirstGamesAndSaysHowManyWereLeftOut(t *testing.T) {
+	c, _ := wishlistCore(t, &steamNet{})
+	fill := make([]wishlist.Imported, wishlist.MaxEntries-2)
+	for i := range fill {
+		fill[i] = wishlist.Imported{Key: "title:filler" + strconv.Itoa(i), Title: "Filler " + strconv.Itoa(i)}
+	}
+	if _, _, err := c.wishlist.store.Import(fill, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	res, err := c.wishlist.importSteam([]int{9001, 9002, 9003, 9004, 9005})
+	if err != nil || res.Added != 2 || res.Skipped != 3 || res.Fetched != 5 {
+		t.Fatalf("counts: %+v %v", res, err)
+	}
+	for _, key := range []string{"steam:9001", "steam:9002"} {
+		if _, ok := c.wishlist.store.Get(key); !ok {
+			t.Errorf("%s, high on Steam's wishlist, wasn't kept", key)
+		}
+	}
+	if _, ok := c.wishlist.store.Get("steam:9005"); ok {
+		t.Error("the last game on Steam's wishlist was kept over earlier ones")
+	}
+}
+
+func TestAnAnnouncementAloneIsNotAReleaseForAnImportedGame(t *testing.T) {
+	released := sources.Entry{ReleaseKind: "release"}
+	preview := sources.Entry{ReleaseKind: "preview"}
+	rec := func(e sources.Entry) discovery.Record { return discovery.Record{Entry: e} }
+	for name, c := range map[string]struct {
+		records []discovery.Record
+		want    bool
+	}{
+		"none":              {nil, false},
+		"only a preview":    {[]discovery.Record{rec(preview)}, false},
+		"a release":         {[]discovery.Record{rec(released)}, true},
+		"preview and a real":{[]discovery.Record{rec(preview), rec(released)}, true},
+	} {
+		if got := hasRelease(&discovery.Game{Records: c.records}); got != c.want {
+			t.Errorf("%s: %v", name, got)
+		}
 	}
 }
 

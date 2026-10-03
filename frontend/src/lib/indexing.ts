@@ -15,6 +15,13 @@ export function indexingSummary(status: DiscoveryStatus | null): { text: string;
   return statusSummary(status);
 }
 
+/** The empty Store's wording while no game is found yet: says when indexing is held back, not just that it is slow. */
+export function findingText(status: Pick<DiscoveryStatus, "enabled" | "paused" | "playing"> | null): { title: string; text: string } {
+  if (status?.enabled && status.paused) return { title: "Indexing is paused", text: "Games show here once indexing is resumed. Resume it in desktop mode, on the Store page." };
+  if (status?.enabled && status.playing) return { title: "Waiting for your game to end", text: "Seaglass reads your sources when the game closes. Games show here after that." };
+  return { title: "Finding games", text: "Seaglass is reading your sources. Games show here as they're found." };
+}
+
 /** What a chosen provider is doing now. */
 export function providerState(s: DiscoverySourceStatus, status: Pick<DiscoveryStatus, "paused" | "playing">, now = Date.now() / 1000): string {
   if (!s.enabled) return "Off";
@@ -43,10 +50,12 @@ export function providerTraits(s: Pick<DiscoverySourceStatus, "search" | "torren
   return [...(s.search ? [] : ["No site search"]), ...(s.torrents ? [] : ["Releases open in your browser"]), ...s.notes];
 }
 
-/** "Imported 12 games: 9 new, 3 already saved. 4 have releases now; 5 are being searched." */
+/** "Imported 12 games: 9 new, 3 already saved. 4 have releases now; 5 are being searched. 2 were left out because the wishlist is full." */
 export function importLine(r: WishlistImport): string {
   if (!r.fetched) return "The Steam wishlist is empty.";
   const head = `Imported ${countText(r.fetched, "game")}: ${r.added} new, ${r.existing} already saved.`;
+  const left = r.skipped ? `${r.skipped} ${r.skipped === 1 ? "was" : "were"} left out because the wishlist is full.` : "";
   const tail = [r.available ? `${r.available} ${r.available === 1 ? "has" : "have"} releases now` : "", r.searching ? `${r.searching} ${r.searching === 1 ? "is" : "are"} being searched` : ""].filter(Boolean);
-  return tail.length ? `${head} ${tail.join("; ")}.` : head;
+  const line = tail.length ? `${head} ${tail.join("; ")}.` : head;
+  return left ? `${line} ${left}` : line;
 }

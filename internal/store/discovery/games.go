@@ -188,7 +188,28 @@ func (g *Game) Summary() GameSummary {
 		}
 	}
 	s.SourceBacked = s.Releases > 0
+	s.BrowserOnly, s.Announced = browserOnlyOrAnnounced(g)
 	return s
+}
+
+// browserOnlyOrAnnounced says why a game with source releases can't be
+// installed from its card: every real release opens in a browser, or the
+// sources only announce it. A feed offer is always installable.
+func browserOnlyOrAnnounced(g *Game) (browserOnly, announced bool) {
+	if len(g.Records) == 0 || (g.Feed != nil && len(g.Feed.Offers) > 0) {
+		return false, false
+	}
+	released, browser := 0, 0
+	for _, r := range g.Records {
+		if r.Entry.ReleaseKind == "preview" {
+			continue
+		}
+		released++
+		if p, ok := sources.Lookup(r.Entry.SourceID); ok && !p.Torrents {
+			browser++
+		}
+	}
+	return released > 0 && browser == released, released == 0
 }
 
 // Releases are the game's release choices, newest publication first, feed
@@ -236,8 +257,12 @@ func ReleaseOf(r Record, sourceName string) Release {
 }
 
 // validTransports are the torrent identities a download can use: magnets
-// with a v1 info hash that still parse.
+// with a v1 info hash that still parse. A source without torrents has none,
+// whatever its entry carries.
 func validTransports(e sources.Entry) []int {
+	if p, ok := sources.Lookup(e.SourceID); ok && !p.Torrents {
+		return nil
+	}
 	var out []int
 	for i, t := range e.Transports {
 		if t.Kind != "magnet" || t.InfoHash == "" {

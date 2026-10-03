@@ -1,8 +1,11 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -110,18 +113,78 @@ func TestAnnotatorReadsCompletionAndReleaseDateWithoutFetching(t *testing.T) {
 	if err := c.discovery.refresh(); err != nil {
 		t.Fatal(err)
 	}
+	dir := t.TempDir()
 	wire := &countingTransport{}
-	c.enrich.client = enrich.New(enrich.Options{Dir: t.TempDir(), Transport: wire})
+	c.enrich.client = enrich.New(enrich.Options{Dir: dir, Transport: wire})
+	c.art = &artState{known: map[string]*library.Meta{}}
 	home, err := s.StoreHome()
 	if err != nil || len(home.New) == 0 {
 		t.Fatalf("home: %d games, %v", len(home.New), err)
 	}
 	for _, g := range home.New {
+		if g.CompletionMain != 0 || g.ReleaseDate != "" || len(g.Genres) != 0 {
+			t.Errorf("%s: completion %d, release %q, genres %v while nothing is cached", g.Title, g.CompletionMain, g.ReleaseDate, g.Genres)
+		}
+	}
+
+	// Seed what a card may read: HowLongToBeat times in the disk cache and
+	// the game's own metadata from Steam.
+	hltb := &hltbFake{search: `{"data":[{"game_id":9,"game_name":"Ember Crown","game_type":"game","comp_main":36000,"comp_plus":72000,"comp_100":108000,"release_world":2024}]}`}
+	seed := enrich.New(enrich.Options{Dir: dir, Transport: hltb})
+	if got := seed.Completion(context.Background(), enrich.CompletionQuery{Title: "Ember Crown", Year: 2024}); got.Main != 600 {
+		t.Fatalf("seeding the times: %+v", got)
+	}
+	if err := seed.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	c.enrich.client = enrich.New(enrich.Options{Dir: dir, Transport: wire})
+	c.art.known["title:embercrown"] = &library.Meta{ReleaseYear: 2024, ReleaseDate: "12 Mar, 2024", Genres: []string{"Adventure"}}
+	home, err = s.StoreHome()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range home.New {
+		if g.Key == "title:embercrown" {
+			if g.CompletionMain != 600 || g.ReleaseDate != "12 Mar, 2024" || !slices.Equal(g.Genres, []string{"Adventure"}) {
+				t.Errorf("a seeded game: completion %d, release %q, genres %v", g.CompletionMain, g.ReleaseDate, g.Genres)
+			}
+			continue
+		}
 		if g.CompletionMain != 0 || g.ReleaseDate != "" {
-			t.Errorf("%s: completion %d, release %q while nothing is cached", g.Title, g.CompletionMain, g.ReleaseDate)
+			t.Errorf("%s: completion %d, release %q, though a source date is all that is known", g.Title, g.CompletionMain, g.ReleaseDate)
 		}
 	}
 	if n := wire.requests.Load(); n != 0 {
 		t.Errorf("%d requests while annotating cards", n)
+	}
+}
+
+func TestFeaturedLeavesOutGamesInstalledInTheLibrary(t *testing.T) {
+	c, s := discoveryCore(t)
+	if err := c.discovery.refresh(); err != nil {
+		t.Fatal(err)
+	}
+	lib, err := library.Open(filepath.Join(t.TempDir(), "library.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Lib = lib
+	featured := func() []string {
+		home, err := s.StoreHome()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var titles []string
+		for _, g := range home.Featured {
+			titles = append(titles, g.Title)
+		}
+		return titles
+	}
+	if !slices.Contains(featured(), "Ember Crown") {
+		t.Fatalf("Ember Crown isn't featured to begin with: %v", featured())
+	}
+	addGame(t, c, library.Found{Title: "Ember Crown", Source: "steam"})
+	if got := featured(); slices.Contains(got, "Ember Crown") {
+		t.Errorf("a game installed through another launcher is still featured: %v", got)
 	}
 }
