@@ -17,12 +17,12 @@ The release (expected `v1.9.1-store.2`; recheck upstream versions and tags first
 |---|---|---|---|
 | 0 | Source contract (`b972f4a`) | coordinator (Opus 5.5 high) | done |
 | 1 | Product contracts: types, service stubs, gateway, mocks | coordinator | done |
-| A | Additional sources: ElAmigos (required), KaOs (conditional) | Codex (GPT-6.1-sol high), `codex/source-expansion` | waiting for handoff |
-| 2 | Continuous indexing, pause/resume, Steam wishlist import, idle wishlist searches | worker, Opus 5.5 high | |
-| 3 | Library completion times (desktop details, Big Picture sheet) | worker, Sonnet 5.5 medium | |
-| 4 | Steam-style desktop Store, recommendations | worker, Sonnet 5.5 medium | |
-| 5 | Big Picture Store, download error visibility | worker, Opus 5.5 high | |
-| 6 | Integration of Part A, review (Opus 5.5 high), verification, release | coordinator | |
+| A | Additional sources: ElAmigos (required), KaOs (conditional) | Codex (GPT-6.1-sol could not be selected; reported in the handoff), `codex/source-expansion` | done: ElAmigos (`4bf8bb8`, `dae2713`, handoff `e253089`); KaOs excluded (HTTP 403, no verified mirror) |
+| 2 | Continuous indexing, pause/resume, Steam wishlist import, idle wishlist searches | worker, Opus 5.5 high | done |
+| 3 | Library completion times (desktop details, Big Picture sheet) | worker, Sonnet 5.5 medium | done |
+| 4 | Steam-style desktop Store, recommendations | worker, Sonnet 5.5 medium | done |
+| 5 | Big Picture Store, download error visibility | worker, Opus 5.5 high | done |
+| 6 | Integration of Part A (`04e9c26`), review (Opus 5.5 high), fixes (`claude/store-fix-indexing` Opus 5.5 high, `claude/store-fix-ui` Sonnet 5.5 medium), verification, release | coordinator | in progress |
 
 ## Product contracts (work package 1)
 
@@ -47,14 +47,14 @@ Owned by the coordinator; workers propose changes and don't make them.
 
 Each maps to tests named for the behaviour, or to a recorded manual check.
 
-- [ ] **Part A (required):** ElAmigos parsing; previews and announcements apart from releases; inline patch claims don't make a base installer a "latest version"; hostile URLs; unsupported hosts open in the browser; missing fields; changed layouts; finite catalog; `.html` detail URLs; live check. KaOs decided with evidence.
-- [ ] Part A in setup, filters, indexing status, wishlist matching, game pages, release notes.
-- [ ] Indexing: continuous idle backfill in five-page batches, two seconds between requests per source, `Retry-After`, progress saved after each page, resume after restart, finite catalogs, pause/resume, paused while playing, stops when a provider or the Store is turned off, partial failures keep cached results.
-- [ ] Completion times: library games from every source, Store off, shared corrections, ambiguous identities, unavailable and stale answers, no remaining-time arithmetic from playtime.
-- [ ] Wishlist import: SteamID64 validation, detected account, AppID deduplication, manual entries kept, private profile and provider errors, games without releases kept, immediate index match, bounded idle source searches, baselines and backfill suppression kept, unread activity kept.
-- [ ] Desktop Store: featured area, artwork shelves, tabs (new, popular, updated), compact rows with a selected-game preview, source, availability, version, reviews, completion time, source dates apart from the game's release date, recommendations with their basis and the popular fallback, installed games excluded; both themes, keyboard, 390 px.
-- [ ] Big Picture Store: Home, Browse/search, Wishlist, game details, source choice, install confirmation; controller layers, button prompts, on-screen keyboard; focus kept when returning; 720p and 1080p.
-- [ ] Downloads: queued jobs and the engine's error show when qBittorrent can't start (desktop and Big Picture).
+- [x] **Part A (required):** ElAmigos parsing; previews and announcements apart from releases; inline patch claims don't make a base installer a "latest version"; hostile URLs; unsupported hosts open in the browser; missing fields; changed layouts; finite catalog; `.html` detail URLs; live check (`WL_ELAMIGOS_LIVE=1`, see Verification). KaOs excluded: HTTP 403 at planning and at integration, no verified mirror.
+- [x] Part A in setup, filters, indexing status, wishlist matching, game pages, release notes. ElAmigos is opt-in (off by default), browser-only (no download, attach or install; "Opens in your browser"), announcements are "Announced" and never activity or availability, the first catalog pass is history.
+- [x] Indexing: continuous idle backfill in five-page batches, two seconds between requests per source, `Retry-After`, progress saved after each page, resume after restart, finite catalogs, pause/resume, paused while playing, stops when a provider or the Store is turned off, partial failures keep cached results.
+- [x] Completion times: library games from every source, Store off, shared corrections, ambiguous identities, unavailable and stale answers, no remaining-time arithmetic from playtime.
+- [x] Wishlist import: SteamID64 validation, detected account, AppID deduplication, manual entries kept, private profile and provider errors, games without releases kept, immediate index match, bounded idle source searches, baselines and backfill suppression kept, unread activity kept.
+- [x] Desktop Store: featured area, artwork shelves, tabs (new, popular, updated), compact rows with a selected-game preview, source, availability, version, reviews, completion time, source dates apart from the game's release date, recommendations with their basis and the popular fallback, installed games excluded; both themes, keyboard, 390 px (Store content width; the app window's minimum is 980 px with a fixed sidebar, so the whole window can't be 390 px wide).
+- [x] Big Picture Store: Home, Browse/search, Wishlist, game details, source choice, install confirmation; controller layers, button prompts, on-screen keyboard; focus kept when returning; 720p and 1080p.
+- [x] Downloads: queued jobs and the engine's error show when qBittorrent can't start (desktop and Big Picture).
 
 ## Verification
 
