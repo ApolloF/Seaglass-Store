@@ -22,7 +22,7 @@ func main() {
 func run(args []string, output io.Writer) error {
 	flags := flag.NewFlagSet("cataloglab", flag.ContinueOnError)
 	enabled := flags.Bool("private-sources", false, "enable private source adapters for this invocation")
-	id := flags.String("source", "", "fitgirl, dodi or 1337x")
+	id := flags.String("source", "", "registered provider ID (see docs/store-providers.md)")
 	input := flags.String("input", "", "parse a saved document without network requests")
 	page := flags.String("url", "", "source URL or base URL for a saved document")
 	search := flags.String("search", "", "find releases through the source's own site search")

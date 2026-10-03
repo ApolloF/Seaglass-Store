@@ -2,6 +2,8 @@ package sources
 
 import (
 	"context"
+	"crypto/tls"
+	"net/http/httptrace"
 	"os"
 	"testing"
 	"time"
@@ -12,12 +14,19 @@ func TestLiveElAmigos(t *testing.T) {
 	if os.Getenv("WL_STORE_LIVE") != "1" && os.Getenv("WL_ELAMIGOS_LIVE") != "1" {
 		t.Skip("set WL_ELAMIGOS_LIVE=1 for four bounded public metadata requests")
 	}
-	s := elAmigosFixtureSource()
-	c := newClient(s.ValidateURL)
-	c.source = s
+	s := elAmigosFixtureSource(t)
+	c, err := NewClient(s.ID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer c.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		ConnectStart:     func(network, addr string) { t.Logf("connect %s %s", network, addr) },
+		ConnectDone:      func(network, addr string, err error) { t.Logf("connected %s %s: %v", network, addr, err) },
+		TLSHandshakeDone: func(_ tls.ConnectionState, err error) { t.Logf("TLS handshake: %v", err) },
+	})
 	pages := []string{
 		s.StartURL,
 		"https://elamigos.site/data/Control_Resonant_Deluxe_Edition_MULTi15_-_ElAmigos.html",

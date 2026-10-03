@@ -66,6 +66,9 @@ func Parse(source Source, page string, data []byte) (out []Entry, err error) {
 	if source.ID == "1337x" {
 		return parse1337x(source, page, root)
 	}
+	if source.ID == "elamigos" {
+		return parseElAmigos(source, page, root)
+	}
 	var entries []Entry
 	for _, article := range find(root, func(n *html.Node) bool { return n.Type == html.ElementNode && n.Data == "article" }) {
 		titles := find(article, func(n *html.Node) bool { return class(n, "entry-title") })

@@ -27,6 +27,9 @@ func NextPage(source Source, page string, data []byte) (string, error) {
 	if _, err := source.ValidateURL(page); err != nil {
 		return "", err
 	}
+	if p, ok := Lookup(source.ID); ok && !p.Paged() {
+		return "", nil
+	}
 	if strings.Contains(strings.SplitN(page, "?", 2)[0], "/feed/") {
 		// RSS pagination is a WordPress endpoint, not an HTML navigation link.
 		u, _ := url.Parse(page)

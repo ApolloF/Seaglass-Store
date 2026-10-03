@@ -58,6 +58,16 @@ var providers = []Provider{
 		Search:      "https://dodi-repacks.site/?s={q}",
 	},
 	{
+		Source:    Source{ID: "elamigos", Name: "ElAmigos", Host: "elamigos.site", StartURL: "https://elamigos.site/"},
+		Discovery: true,
+		Listing:   "https://elamigos.site/",
+		Notes: []string{
+			"One finite catalog; search uses indexed titles. Detail pages retain their .html URLs.",
+			"File-host containers open in the browser. Automated downloads are unsupported.",
+			"The installer version excludes separately listed patches. Source claims do not establish payload safety.",
+		},
+	},
+	{
 		Source:   Source{ID: "1337x", Name: "1337x", Host: "1337x.to", StartURL: "https://1337x.to/cat/Games/1/"},
 		Torrents: true,
 		Listing:  "https://1337x.to/cat/Games/1/",

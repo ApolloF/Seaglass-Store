@@ -11,9 +11,9 @@ import (
 	"time"
 )
 
-// Registry-independent fixtures can be developed before the shared contract lands.
-func elAmigosFixtureSource() Source {
-	return Source{ID: "elamigos", Name: "ElAmigos", Host: "elamigos.site", StartURL: "https://elamigos.site/"}
+func elAmigosFixtureSource(t *testing.T) Source {
+	t.Helper()
+	return sourceFor(t, "elamigos")
 }
 
 func elAmigosFixture(t *testing.T, name string) []byte {
@@ -27,18 +27,7 @@ func elAmigosFixture(t *testing.T, name string) []byte {
 
 func parseElAmigosFixture(t *testing.T, page string, data []byte) ([]Entry, error) {
 	t.Helper()
-	s := elAmigosFixtureSource()
-	if _, err := s.ValidateURL(page); err != nil {
-		return nil, err
-	}
-	root, err := document(data)
-	if err != nil {
-		return nil, err
-	}
-	if challenge(root) {
-		return nil, &ResolutionError{State: "captcha-required", Reason: "source page requires an interactive browser challenge"}
-	}
-	return parseElAmigos(s, page, root)
+	return Parse(elAmigosFixtureSource(t), page, data)
 }
 
 func TestElAmigosCatalogDeduplicatesAndPreservesDetailURLs(t *testing.T) {
@@ -172,9 +161,11 @@ func TestElAmigosCatalogSupportsThousandsOfEntriesWithABound(t *testing.T) {
 }
 
 func TestElAmigosUsesBoundedHTTPAndETagWithoutFollowingFileHosts(t *testing.T) {
-	s := elAmigosFixtureSource()
-	c := newClient(s.ValidateURL)
-	c.source = s
+	s := elAmigosFixtureSource(t)
+	c, err := NewClient(s.ID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer c.Close()
 	calls := 0
 	c.http.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -206,4 +197,90 @@ func TestElAmigosUsesBoundedHTTPAndETagWithoutFollowingFileHosts(t *testing.T) {
 	if calls != 2 {
 		t.Fatalf("unexpected network requests: %d", calls)
 	}
+}
+
+func TestElAmigosRegistryDeclaresFiniteBrowserOnlyOptInProvider(t *testing.T) {
+	p, ok := Lookup("elamigos")
+	if !ok || !p.Discovery || p.DefaultOn || p.Torrents || p.Paged() || p.Feed != "" || p.Search != "" || len(p.Notes) == 0 {
+		t.Fatalf("provider=%+v", p)
+	}
+	if raw, ok := p.ListingURL(1); !ok || raw != p.StartURL {
+		t.Fatal("catalog URL differs from entry point")
+	}
+	if _, ok := p.ListingURL(2); ok {
+		t.Fatal("finite catalog has a second page")
+	}
+	if _, err := p.SearchURL("Example"); err == nil {
+		t.Fatal("invented server-side search")
+	}
+	if _, err := NewClient("elamigos", false); err != ErrDisabled {
+		t.Fatalf("opt-in bypassed: %v", err)
+	}
+	for _, id := range DefaultIDs() {
+		if id == "elamigos" {
+			t.Fatal("new source enabled by default")
+		}
+	}
+}
+
+func TestElAmigosCollectorStopsAfterFiniteCatalogAndEnrichesMatchingDetail(t *testing.T) {
+	c, err := NewClient("elamigos", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	calls := 0
+	c.http.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls++
+		c.last = time.Time{}
+		name := "catalog.html"
+		if calls == 2 && strings.HasSuffix(req.URL.Path, ".html") {
+			name = "base-with-patches.html"
+		} else if calls != 1 {
+			t.Fatalf("unexpected page or file-host request: %s", req.URL)
+		}
+		resp := testResponse(200, string(elAmigosFixture(t, name)))
+		resp.Request = req
+		return resp, nil
+	})
+	snapshot, err := Collect(context.Background(), c, c.source.StartURL, CollectOptions{Pages: 5, Details: 1, Query: "Control Resonant", Resolve: 3})
+	if err != nil || calls != 2 || len(snapshot.Entries) != 1 || len(snapshot.Documents) != 2 || snapshot.Entries[0].SummaryOnly || snapshot.Entries[0].Version != "1.3.3" || len(snapshot.Entries[0].Transports) != 0 {
+		t.Fatalf("calls=%d snapshot=%+v err=%v", calls, snapshot, err)
+	}
+	if snapshot.Entries[0].DocumentSHA256 != snapshot.Documents[1].SHA256 {
+		t.Fatal("detail provenance lost")
+	}
+	if next, err := NextPage(c.source, c.source.StartURL, []byte(`<a rel="next" href="/page/2/">Next</a>`)); err != nil || next != "" {
+		t.Fatalf("finite catalog followed pagination: %s %v", next, err)
+	}
+}
+
+func FuzzElAmigosParse(f *testing.F) {
+	for _, name := range []string{"catalog.html", "base-with-patches.html", "preview.html"} {
+		data, err := os.ReadFile(filepath.Join("testdata", "elamigos", name))
+		if err != nil {
+			f.Fatal(err)
+		}
+		f.Add(data, name == "catalog.html")
+	}
+	f.Fuzz(func(t *testing.T, data []byte, catalog bool) {
+		page := "https://elamigos.site/data/Example.html"
+		if catalog {
+			page = "https://elamigos.site/"
+		}
+		entries, err := Parse(elAmigosFixtureSource(t), page, data)
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			if e.TitleKey == "" || !e.NeedsReview || len(e.DocumentSHA256) != 64 || len(e.Transports) != 0 {
+				t.Fatalf("invalid parsed entry: %+v", e)
+			}
+			for _, ref := range e.References {
+				if _, err := referenceURL(ref.URL); err != nil || ref.State != "manual-required" {
+					t.Fatalf("invalid parsed reference: %+v", ref)
+				}
+			}
+		}
+	})
 }
