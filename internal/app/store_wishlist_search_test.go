@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -41,7 +43,7 @@ func TestARateLimitedIdleSearchDefersThatSourceUntilRetryAfter(t *testing.T) {
 	}
 	// Lantern Season wasn't answered by DODI: still queued, now behind
 	// the other game.
-	if key, _ := w.queue().Next(now.Add(wishlist.SearchSpacing)); key != "steam:3100100" || w.queue().Len() != 2 {
+	if key, _ := w.queue().Next(now.Add(wishlist.SearchSpacing), nil); key != "steam:3100100" || w.queue().Len() != 2 {
 		t.Fatalf("next %q, %d queued", key, w.queue().Len())
 	}
 	asked := len(f.asked)
@@ -84,13 +86,47 @@ func TestAGameSteamCannotNameDoesNotBlockTheQueue(t *testing.T) {
 	}
 	w := c.wishlist
 	now := time.Now()
-	if key, _ := w.queue().Next(now); key != "steam:4200000" {
+	if key, _ := w.queue().Next(now, nil); key != "steam:4200000" {
 		t.Fatalf("first in line: %q", key)
 	}
 	if wait := w.searchNext(now); wait != wishlist.SearchSpacing {
 		t.Errorf("waits %v", wait)
 	}
-	if key, _ := w.queue().Next(now.Add(wishlist.SearchSpacing)); key != "steam:3100100" || w.queue().Len() != 1 {
+	if key, _ := w.queue().Next(now.Add(wishlist.SearchSpacing), nil); key != "steam:3100100" || w.queue().Len() != 1 {
 		t.Errorf("after the unreadable answer: next %q, %d queued", key, w.queue().Len())
+	}
+}
+
+// FitGirl can't be reached for days: each game is asked of DODI once, of
+// FitGirl a few times, and the queue empties.
+func TestASourceThatStaysDownNeitherKeepsTheQueueNorRepeatsTheOthers(t *testing.T) {
+	c, _, dodi := searchCore(t)
+	fg, _ := sources.Lookup("fitgirl")
+	fail := map[string]error{}
+	for _, title := range []string{"Lantern Season", "Hollow Tide II"} {
+		u, _ := fg.SearchURL(title)
+		fail[u] = errors.New("connection reset by peer")
+	}
+	f := &failingFetcher{next: c.discovery.fetchers["fitgirl"], fail: fail}
+	c.discovery.fetchers["fitgirl"] = f
+	w := c.wishlist
+	now := time.Now()
+	// Turns half an hour apart outlive the hour searches are cached for.
+	for i := range 20 {
+		w.searchNext(now.Add(time.Duration(i) * 30 * time.Minute))
+	}
+	if n := w.queue().Len(); n != 0 {
+		t.Fatalf("%d games still queued", n)
+	}
+	dp, _ := sources.Lookup("dodi")
+	for _, title := range []string{"Lantern Season", "Hollow Tide II"} {
+		u, _ := dp.SearchURL(title)
+		if n := slices.Index(dodi.asked, u); n < 0 || slices.Contains(dodi.asked[n+1:], u) {
+			t.Errorf("DODI asked for %s other than once: %v", title, dodi.asked)
+		}
+		fu, _ := fg.SearchURL(title)
+		if n := len(slices.DeleteFunc(slices.Clone(f.asked), func(s string) bool { return s != fu })); n == 0 || n > wishlist.SearchMisses {
+			t.Errorf("FitGirl asked %d times for %s", n, title)
+		}
 	}
 }

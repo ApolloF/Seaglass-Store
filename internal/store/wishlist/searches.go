@@ -13,11 +13,15 @@ import (
 // thousands of games from flooding a source: at most SearchesPerImport
 // games are queued per import, one game is searched every SearchSpacing
 // (so at most 30 an hour), and a game isn't searched again within
-// SearchAgain.
+// SearchAgain. A search that didn't reach every source asks only the
+// missing ones on the game's next turn, and a game is given up after
+// SearchMisses such searches: a source that stays down doesn't keep the
+// queue, and the sources that answered, busy.
 const (
 	SearchesPerImport = 200
 	SearchSpacing     = 2 * time.Minute
 	SearchAgain       = 24 * time.Hour
+	SearchMisses      = 3
 )
 
 // Searches is the idle search queue file. Safe for concurrent use.
@@ -32,12 +36,20 @@ type searchesFile struct {
 	Queue    []string             `json:"queue"`    // wishlist keys, next first
 	Searched map[string]time.Time `json:"searched"` // key → when it was last searched
 	Last     time.Time            `json:"last"`     // the last search of any game
+	// Pending is what earlier searches of a queued game left open.
+	Pending map[string]pendingSearch `json:"pending,omitempty"`
+}
+
+// pendingSearch is a queued game whose search missed a source.
+type pendingSearch struct {
+	Answered []string `json:"answered"` // sources that answered its search
+	Misses   int      `json:"misses"`   // searches that missed a source
 }
 
 // OpenSearches reads the queue; a missing or unreadable file is an empty
 // queue.
 func OpenSearches(path string) *Searches {
-	q := &Searches{path: path, f: searchesFile{Schema: Schema, Queue: []string{}, Searched: map[string]time.Time{}}}
+	q := &Searches{path: path, f: searchesFile{Schema: Schema, Queue: []string{}, Searched: map[string]time.Time{}, Pending: map[string]pendingSearch{}}}
 	if b, err := os.ReadFile(path); err == nil {
 		var f searchesFile
 		if json.Unmarshal(b, &f) == nil && f.Schema == Schema {
@@ -46,6 +58,9 @@ func OpenSearches(path string) *Searches {
 			}
 			if f.Searched == nil {
 				f.Searched = map[string]time.Time{}
+			}
+			if f.Pending == nil {
+				f.Pending = map[string]pendingSearch{}
 			}
 			q.f = f
 		}
@@ -82,9 +97,11 @@ func (q *Searches) recent(key string, now time.Time) bool {
 	return ok && now.Sub(t) < SearchAgain
 }
 
-// Next is the next game to search. With none, wait is how long until one
-// may be searched: the rest of SearchSpacing, or 0 when nothing is queued.
-func (q *Searches) Next(now time.Time) (key string, wait time.Duration) {
+// Next is the next game to search: the first queued game for which
+// ready, given the sources that already answered its search, says a
+// search can get further now (nil ready: any game). With none, wait is how long until one may be searched:
+// the rest of SearchSpacing, or 0 when no game is queued or ready.
+func (q *Searches) Next(now time.Time, ready func(answered []string) bool) (key string, wait time.Duration) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.f.Queue = slices.DeleteFunc(q.f.Queue, func(k string) bool { return q.recent(k, now) })
@@ -94,7 +111,19 @@ func (q *Searches) Next(now time.Time) (key string, wait time.Duration) {
 	if w := q.f.Last.Add(SearchSpacing).Sub(now); w > 0 {
 		return "", w
 	}
-	return q.f.Queue[0], 0
+	for _, k := range q.f.Queue {
+		if ready == nil || ready(q.f.Pending[k].Answered) {
+			return k, 0
+		}
+	}
+	return "", 0
+}
+
+// Answered are the sources that already answered a queued game's search.
+func (q *Searches) Answered(key string) []string {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return slices.Clone(q.f.Pending[key].Answered)
 }
 
 // Len is how many games wait for a search.
@@ -108,22 +137,41 @@ func (q *Searches) Len() int {
 func (q *Searches) Done(key string, now time.Time) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	q.f.Queue = slices.DeleteFunc(q.f.Queue, func(k string) bool { return k == key })
-	q.f.Searched[key] = now
-	q.f.Last = now
+	q.done(key, now)
 	return q.save(now)
 }
 
-// Later records a search that didn't reach every source: key goes to the
-// back of the queue, and the spacing applies before the next search.
-func (q *Searches) Later(key string, now time.Time) error {
+func (q *Searches) done(key string, now time.Time) {
+	q.f.Queue = slices.DeleteFunc(q.f.Queue, func(k string) bool { return k == key })
+	delete(q.f.Pending, key)
+	q.f.Searched[key] = now
+	q.f.Last = now
+}
+
+// Later records a search that didn't reach every source: answered are
+// the sources that did, so they aren't asked again. key goes to the back
+// of the queue, and the spacing applies before the next search. After
+// SearchMisses such searches the game counts as searched.
+func (q *Searches) Later(key string, answered []string, now time.Time) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	n := len(q.f.Queue)
-	q.f.Queue = slices.DeleteFunc(q.f.Queue, func(k string) bool { return k == key })
-	if len(q.f.Queue) < n {
-		q.f.Queue = append(q.f.Queue, key)
+	if !slices.Contains(q.f.Queue, key) {
+		q.f.Last = now
+		return q.save(now)
 	}
+	p := q.f.Pending[key]
+	p.Misses++
+	if p.Misses >= SearchMisses {
+		q.done(key, now)
+		return q.save(now)
+	}
+	for _, src := range answered {
+		if !slices.Contains(p.Answered, src) {
+			p.Answered = append(p.Answered, src)
+		}
+	}
+	q.f.Pending[key] = p
+	q.f.Queue = append(slices.DeleteFunc(q.f.Queue, func(k string) bool { return k == key }), key)
 	q.f.Last = now
 	return q.save(now)
 }
@@ -138,6 +186,7 @@ func (q *Searches) Drop(key string, now time.Time) error {
 	if len(q.f.Queue) == n {
 		return nil
 	}
+	delete(q.f.Pending, key)
 	return q.save(now)
 }
 
