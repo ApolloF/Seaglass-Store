@@ -13,7 +13,12 @@ import (
 func TestSteamID64Validation(t *testing.T) {
 	for s, want := range map[string]bool{
 		"76561198000000042":  true,
-		"76561197960265728":  true,
+		"76561197960265729":  true, // the first individual account
+		"76561202255233023":  true, // the last one
+		"76561202255233024":  false,
+		"76561202000000000":  true,  // a newer account the old 7656119 prefix check refused
+		"76561197960265728":  false, // account number 0
+		"76561190000000000":  false, // below account number 1, which the old check allowed
 		"7656119800000004":   false, // 16 digits
 		"765611980000000420": false,
 		"86561198000000042":  false,

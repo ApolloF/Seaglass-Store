@@ -187,21 +187,6 @@ export function storeMode({ loaded, status, shown }: ModeInput): StoreMode {
   return "finding";
 }
 
-const isBusy = (s: DiscoverySourceStatus) => s.enabled && (s.state === "recent" || s.state === "backfill");
-
-/** One line for a source: what it holds and what it is doing. */
-export function sourceLine(s: DiscoverySourceStatus, now = Date.now() / 1000): string {
-  if (!s.enabled) return "Off";
-  const parts = [`${s.releases.toLocaleString("en")} ${s.releases === 1 ? "release" : "releases"}`];
-  if (s.state === "recent") parts.push("Checking new releases");
-  else if (s.state === "backfill") parts.push(s.backfillPage ? `Indexing older releases (page ${s.backfillPage})` : "Indexing older releases");
-  else if (s.state === "paused") parts.push("Paused while you play");
-  else if (s.state === "backoff") parts.push(s.retryAt > now ? `Trying again ${inText(s.retryAt, now)}` : "Trying again soon");
-  else if (s.backfillDone) parts.push("Older releases indexed");
-  if (s.recentAt && !isBusy(s)) parts.push(`checked ${ago(s.recentAt, now).toLowerCase()}`);
-  return parts.join(" · ");
-}
-
 /** "in 10 min" for a time ahead. */
 export function inText(unix: number, now = Date.now() / 1000): string {
   const s = Math.max(0, Math.round(unix - now));
@@ -257,6 +242,9 @@ const providerNames = new Map<string, string>();
 export function learnSources(list: Pick<DiscoverySourceStatus, "id" | "name">[]) {
   for (const s of list) if (s.name) providerNames.set(s.id, s.name);
 }
+
+/** Why a game with source releases can't be installed from its card, when the sources say so; null otherwise. */
+export const notInstallableText = (g: Pick<GameSummary, "browserOnly" | "announced">): string | null => (g.announced ? "Announced" : g.browserOnly ? "Opens in your browser" : null);
 
 export const sourceLabel = (id: string): string => providerNames.get(id) ?? builtinNames[id] ?? id;
 

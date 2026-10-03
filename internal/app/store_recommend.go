@@ -23,16 +23,20 @@ const (
 // recommendations builds the recommender's input from the library and the
 // wishlist, then recommends from the index.
 func (c *Core) recommendations(view *discovery.View, annotate discovery.Annotate) ([]discovery.Recommendation, string) {
-	var games []library.Game
-	if c.Lib != nil {
-		games = c.Lib.Games()
-	}
+	games := c.libraryGames()
 	var wished []wishlist.Entry
 	if c.wishlist != nil {
 		wished = c.wishlist.store.List()
 	}
 	signals := recommendSignals(games, wished, c.art.genres, time.Now())
 	return view.Recommend(annotate, signals, installedInLibrary(games), discovery.ShelfSize)
+}
+
+func (c *Core) libraryGames() []library.Game {
+	if c.Lib == nil {
+		return nil
+	}
+	return c.Lib.Games()
 }
 
 // recommendSignals are the recently played library games (newest first,

@@ -421,6 +421,11 @@ export interface WishlistImport {
     "existing": number;
 
     /**
+     * left out because the wishlist is full
+     */
+    "skipped": number;
+
+    /**
      * with a known source release now
      */
     "available": number;

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ type WishlistImport struct {
 	Fetched   int            `json:"fetched"`   // games on the Steam wishlist
 	Added     int            `json:"added"`     // newly saved
 	Existing  int            `json:"existing"`  // already saved, matched by Steam AppID
+	Skipped   int            `json:"skipped"`   // left out because the wishlist is full
 	Available int            `json:"available"` // with a known source release now
 	Searching int            `json:"searching"` // queued for a source search while idle
 	Items     []WishlistItem `json:"items"`
@@ -90,9 +92,9 @@ func (w *wishlistState) importSteam(ids []int) (WishlistImport, error) {
 	view := d.currentView()
 	out := WishlistImport{Fetched: len(ids), Items: []WishlistItem{}}
 	games := make([]wishlist.Imported, 0, len(ids))
-	// Games saved at the same instant list newest saved first: saving
-	// Steam's first game last keeps Steam's order.
-	for i := len(ids) - 1; i >= 0; i-- {
+	// Steam's order is its priority: when the wishlist is full, the first
+	// games are the ones kept.
+	for i := range ids {
 		key := steamKey(ids[i])
 		title := w.knownName(ids[i])
 		if title == "" {
@@ -101,11 +103,11 @@ func (w *wishlistState) importSteam(ids []int) (WishlistImport, error) {
 		games = append(games, wishlist.Imported{Key: key, Title: title, AppID: ids[i], Known: w.observations(d, key)})
 	}
 	added, existing, err := w.store.Import(games, time.Now())
-	out.Added, out.Existing = added, existing
+	out.Added, out.Existing, out.Skipped = added, existing, len(ids)-added-existing
 	var unresolved []string
 	for _, id := range ids {
 		key := steamKey(id)
-		if g, ok := view.Game(key); ok && len(g.Records) > 0 {
+		if g, ok := view.Game(key); ok && hasRelease(g) {
 			out.Available++
 		} else if _, saved := w.store.Get(key); saved {
 			unresolved = append(unresolved, key)
@@ -125,6 +127,12 @@ func (w *wishlistState) importSteam(ids []int) (WishlistImport, error) {
 	w.changed()
 	out.Items = w.items()
 	return out, err
+}
+
+// hasRelease says whether a game has a source release; an announcement
+// alone is not one.
+func hasRelease(g *discovery.Game) bool {
+	return slices.ContainsFunc(g.Records, func(r discovery.Record) bool { return r.Entry.ReleaseKind != "preview" })
 }
 
 func steamKey(appID int) string { return "steam:" + strconv.Itoa(appID) }

@@ -169,6 +169,13 @@ export interface GameSummary {
     "installable": boolean;
 
     /**
+     * BrowserOnly: every source release opens in a browser (the source
+     * offers no torrents). Announced: the sources only announce the game.
+     */
+    "browserOnly": boolean;
+    "announced": boolean;
+
+    /**
      * PopularRank is the place on Steam's most-played chart (1 = first); 0
      * when it isn't on the chart or the chart is unavailable. Never derived
      * from anything else.

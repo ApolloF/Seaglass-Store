@@ -26,7 +26,7 @@ import type { BrowseQuery, CatalogEntry, DiscoveryStatus, Enrichment, GameSummar
 
 const game = (key: string, p: Partial<GameSummary> = {}): GameSummary => ({
   key, title: key, sourceBacked: true, sources: ["fitgirl"], releases: 1, publishedAt: 0, updatedAt: 0, sizeBytes: 0, languages: [], genres: [],
-  installable: true, popularRank: 0, reviewPercent: 0, reviewTotal: 0, completionMain: 0, wishlisted: false, activity: false, ...p,
+  installable: true, browserOnly: false, announced: false, popularRank: 0, reviewPercent: 0, reviewTotal: 0, completionMain: 0, wishlisted: false, activity: false, ...p,
 });
 const status = (p: Partial<DiscoveryStatus> = {}): DiscoveryStatus => ({ enabled: true, setupNeeded: false, sources: [], games: 0, releases: 0, refreshing: false, paused: false, playing: false, stale: false, ...p });
 const home = (p: Partial<StoreHome> = {}): StoreHome => ({
@@ -113,6 +113,8 @@ describe("cards", () => {
   it("say whether the game can be got, its review and completion time", () => {
     expect(availabilityText(game("a"))).toBe("Installable");
     expect(availabilityText(game("a", { installable: false }))).toBe("Needs checking");
+    expect(availabilityText(game("a", { installable: false, browserOnly: true }))).toBe("Opens in your browser");
+    expect(availabilityText(game("a", { installable: false, announced: true }))).toBe("Announced");
     expect(availabilityText(game("a", { sourceBacked: false }))).toBe("No known source release");
     expect(availabilityText(game("a", { installed: { download: "", version: "v1", update: true } }))).toBe("Update available");
     expect(availabilityText(game("a", { installed: { download: "", version: "v1", update: false } }))).toBe("Installed v1");

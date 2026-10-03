@@ -1,7 +1,7 @@
 // The Store's front page, kept pure so it can be tested: which games a tab
 // lists, which one the preview shows, and the labels around recommendations.
 import { ago } from "./format";
-import { hoursText, publishedText, reviewText, sourceLabel } from "./storefront";
+import { hoursText, notInstallableText, publishedText, reviewText, sourceLabel } from "./storefront";
 import type { GameSummary, Recommendation, RecommendationBasis, StoreHome } from "./types";
 
 export type HomeTab = "new" | "popular" | "updated";
@@ -88,18 +88,15 @@ export function featuredWhy(g: GameSummary, now = Date.now() / 1000): string {
   const parts: string[] = [];
   if (g.popularRank > 0) parts.push(`#${g.popularRank} on Steam's most-played chart`);
   if (g.publishedAt > 0 && now - g.publishedAt < NEW_DAYS * 86400) parts.push(`New: published ${ago(g.publishedAt, now).toLowerCase()}`);
-  if (!parts.length) parts.push(g.installable ? "Ready to install" : "Release found");
+  if (!parts.length) parts.push(g.installable ? "Ready to install" : (notInstallableText(g) ?? "Release found"));
   return parts.join(" · ");
 }
 
-/** How a game can be had: "Installable" or that it is not yet. */
-export const availabilityText = (g: Pick<GameSummary, "installable">) => (g.installable ? "Installable" : "Not installable yet");
+/** How a game can be had: "Installable", or why it is not. */
+export const availabilityText = (g: Pick<GameSummary, "installable" | "browserOnly" | "announced">) => (g.installable ? "Installable" : (notInstallableText(g) ?? "Not installable yet"));
 
 /** "12 h main story", or "" when HowLongToBeat's time is not cached. */
 export const mainStoryText = (g: Pick<GameSummary, "completionMain">) => (g.completionMain > 0 ? `${hoursText(g.completionMain)} main story` : "");
-
-/** "Released 12 Mar, 2026": the game's own date, or "" when Steam's metadata isn't known. */
-export const releasedText = (g: Pick<GameSummary, "releaseDate">) => (g.releaseDate ? `Released ${g.releaseDate}` : "");
 
 export interface RowFacts {
   sources: string;
@@ -121,4 +118,9 @@ export function rowFacts(g: GameSummary): RowFacts {
     mainStory: mainStoryText(g),
     published: publishedText(g.publishedAt),
   };
+}
+
+/** Every shelf is a list, even when the backend had nothing to put in it. */
+export function normalizeHome(h: StoreHome): StoreHome {
+  return { ...h, new: h.new ?? [], popular: h.popular ?? [], updated: h.updated ?? [], wishlist: h.wishlist ?? [], featured: h.featured ?? [], recommended: h.recommended ?? [] };
 }

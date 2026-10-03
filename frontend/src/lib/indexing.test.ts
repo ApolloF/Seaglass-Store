@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clockText, importLine, indexingSummary, providerLine, providerProgress, providerState, providerTraits } from "./indexing";
+import { clockText, findingText, importLine, indexingSummary, providerLine, providerProgress, providerState, providerTraits } from "./indexing";
 import type { DiscoverySourceStatus, DiscoveryStatus } from "./types";
 
 const now = 1_800_000_000;
@@ -34,6 +34,18 @@ const status = (o: Partial<DiscoveryStatus> = {}): DiscoveryStatus => ({
   ...o,
 });
 const idle = { paused: false, playing: false };
+
+describe("findingText", () => {
+  it("says when indexing is paused or waiting for a game", () => {
+    expect(findingText(status({ paused: true })).title).toBe("Indexing is paused");
+    expect(findingText(status({ playing: true })).title).toBe("Waiting for your game to end");
+    expect(findingText(status({ paused: true, playing: true })).title).toBe("Indexing is paused");
+  });
+  it("otherwise says games are being found", () => {
+    expect(findingText(status()).title).toBe("Finding games");
+    expect(findingText(null).title).toBe("Finding games");
+  });
+});
 
 describe("indexingSummary", () => {
   it("says indexing is paused before anything else", () => {
@@ -83,11 +95,15 @@ describe("providerTraits", () => {
 });
 
 describe("importLine", () => {
-  const r = { steamId: "76561198000000042", fetched: 12, added: 9, existing: 3, available: 4, searching: 5, items: [] };
+  const r = { steamId: "76561198000000042", fetched: 12, added: 9, existing: 3, available: 4, searching: 5, skipped: 0, items: [] };
   it("counts what the import did", () => {
     expect(importLine(r)).toBe("Imported 12 games: 9 new, 3 already saved. 4 have releases now; 5 are being searched.");
     expect(importLine({ ...r, fetched: 1, added: 0, existing: 1, available: 1, searching: 0 })).toBe("Imported 1 game: 0 new, 1 already saved. 1 has releases now.");
     expect(importLine({ ...r, available: 0, searching: 0 })).toBe("Imported 12 games: 9 new, 3 already saved.");
+  });
+  it("says how many games were left out of a full wishlist", () => {
+    expect(importLine({ ...r, skipped: 2 })).toBe("Imported 12 games: 9 new, 3 already saved. 4 have releases now; 5 are being searched. 2 were left out because the wishlist is full.");
+    expect(importLine({ ...r, available: 0, searching: 0, skipped: 1 })).toBe("Imported 12 games: 9 new, 3 already saved. 1 was left out because the wishlist is full.");
   });
   it("says when the wishlist is empty", () => {
     expect(importLine({ ...r, fetched: 0 })).toBe("The Steam wishlist is empty.");

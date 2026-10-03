@@ -202,6 +202,44 @@ func TestSettingTheMatchToZeroReturnsToTheAutomaticMatch(t *testing.T) {
 	}
 }
 
+func TestCompletionInputsAreBoundedAtTheBoundary(t *testing.T) {
+	fake := &hltbFake{search: portalSearch}
+	c := completionCore(t, fake)
+	s := NewLibraryService(c)
+	id := addGame(t, c, library.Found{Title: "Portal 2", Source: "gog"})
+	if _, err := s.CompletionCandidates(id, strings.Repeat("a", maxCompletionQuery+1)); err == nil {
+		t.Error("a search over 200 bytes was accepted")
+	}
+	if _, err := s.CompletionCandidates(id, "  "+strings.Repeat("a", maxCompletionQuery)+"  "); err != nil && strings.Contains(err.Error(), "too long") {
+		t.Errorf("padding counted toward the length: %v", err)
+	}
+	for _, bad := range []int{maxHLTBID + 1, -1} {
+		if _, err := s.SetCompletionMatch(id, bad); err == nil {
+			t.Errorf("match %d was accepted", bad)
+		}
+	}
+	if c.discovery.index().CompletionMatch("title:portal2") != 0 {
+		t.Error("a refused match was saved")
+	}
+	if _, err := s.SetCompletionMatch(id, maxHLTBID); err != nil {
+		t.Errorf("the largest match was refused: %v", err)
+	}
+}
+
+func TestANewCompletionLookupCancelsTheOneBeforeIt(t *testing.T) {
+	var l latestLookup
+	first, release := l.begin(context.Background(), time.Minute)
+	defer release()
+	second, release2 := l.begin(context.Background(), time.Minute)
+	defer release2()
+	if first.Err() == nil {
+		t.Error("the earlier game's lookup kept running")
+	}
+	if second.Err() != nil {
+		t.Errorf("the newest lookup was cancelled: %v", second.Err())
+	}
+}
+
 func TestAmbiguousTitleStaysUnmatchedWithASearchLink(t *testing.T) {
 	c := completionCore(t, &hltbFake{search: twoRemakes})
 	id := addGame(t, c, library.Found{Title: "Remake", Source: "folder"})

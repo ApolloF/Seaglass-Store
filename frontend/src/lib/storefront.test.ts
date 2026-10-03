@@ -15,7 +15,6 @@ import {
   sizeLine,
   sourceFilters,
   sourceLabel,
-  sourceLine,
   statusSummary,
   storeMode,
   withEnrichment,
@@ -25,7 +24,7 @@ import type { BrowsePage, DiscoverySourceStatus, DiscoveryStatus, Enrichment, Ga
 
 const game = (key: string, extra: Partial<GameSummary> = {}): GameSummary => ({
   key, title: key, sourceBacked: true, sources: ["fitgirl"], releases: 1, publishedAt: 1, updatedAt: 1, sizeBytes: 0, languages: [], genres: [],
-  installable: true, popularRank: 0, completionMain: 0, reviewPercent: 0, reviewTotal: 0, wishlisted: false, activity: false, ...extra,
+  installable: true, browserOnly: false, announced: false, popularRank: 0, completionMain: 0, reviewPercent: 0, reviewTotal: 0, wishlisted: false, activity: false, ...extra,
 });
 const page = (...keys: string[]): BrowsePage => ({ games: keys.map((k) => game(k)), total: keys.length, unknown: 0, languages: [], genres: [] });
 const result = (p: BrowsePage, extra: Partial<SearchResult> = {}): SearchResult => ({ query: emptyQuery(), page: p, other: [], remote: [], complete: true, ...extra });
@@ -272,14 +271,6 @@ describe("status text", () => {
   });
   it("mentions indexing of older releases", () => {
     expect(statusSummary(status({ sources: [source({ state: "backfill" })] })).text).toBe("Indexing older releases");
-  });
-  it("says when to try again after a failure", () => {
-    const line = sourceLine(source({ state: "backoff", retryAt: 1600, releases: 4 }), 1000);
-    expect(line).toContain("Trying again in 10 min");
-  });
-  it("shows backfill progress and a finished backfill", () => {
-    expect(sourceLine(source({ state: "backfill", backfillPage: 14, releases: 1 }), 1000)).toContain("Indexing older releases (page 14)");
-    expect(sourceLine(source({ backfillDone: true, releases: 2 }), 1000)).toContain("Older releases indexed");
   });
 });
 

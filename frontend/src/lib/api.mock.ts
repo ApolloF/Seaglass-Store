@@ -311,6 +311,9 @@ async function runMockSession(g: Game) {
   }, 1000);
 }
 
+/** The HowLongToBeat match chosen per game, so a later get agrees with setMatch. */
+const chosenMatches = new Map<number, Completion>();
+
 export const mockApi: Api = {
   async games() {
     await wait();
@@ -378,7 +381,7 @@ export const mockApi: Api = {
         : id % 5 === 0
           ? { ...none, url: `https://howlongtobeat.com/?q=${encodeURIComponent(g.title)}`, fetchedAt: 0, state: "unavailable", error: "no confident match on HowLongToBeat" }
           : { ...ok, state: id % 7 === 0 ? "stale" : "ok", error: id % 7 === 0 ? "howlongtobeat.com can't be reached" : undefined };
-      return { gameId: id, key, completion };
+      return { gameId: id, key, completion: chosenMatches.get(id) ?? completion };
     },
     async candidates(id, query) {
       const g = games.find((x) => x.id === id);
@@ -386,10 +389,12 @@ export const mockApi: Api = {
       return [0, 1, 2].map((i) => ({ hltbId: 2000 + id * 10 + i, title: i ? `${t} ${["", "Remastered", "DLC"][i]}`.trim() : t, year: 2020 + i, type: i === 2 ? "dlc" : "game", main: 400 + i * 100, mainExtras: 700 + i * 120, completionist: 1100 + i * 200, url: `https://howlongtobeat.com/game/${2000 + id * 10 + i}` }));
     },
     async setMatch(id, hltbId) {
+      if (!hltbId) chosenMatches.delete(id);
       const c = await mockApi.completion.get(id, true);
       if (!hltbId) return c.completion.state === "ok" ? c : { ...c, completion: { ...c.completion, corrected: false } };
       const t = hltbId % 10;
       const chosen: Completion = { hltbId, title: `Chosen game ${t}`, main: 600 + t * 30, mainExtras: 900 + t * 30, completionist: 1500 + t * 30, url: `https://howlongtobeat.com/game/${hltbId}`, corrected: true, fetchedAt: Math.floor(Date.now() / 1000), state: "ok" };
+      chosenMatches.set(id, chosen);
       return { ...c, completion: chosen };
     },
     async openLink(url) {

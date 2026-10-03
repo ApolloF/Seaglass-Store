@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { availabilityText, featuredWhy, homeTabs, mainStoryText, moveIndex, previewKey, recommendationTitle, recommendationWhy, releasedText, rowFacts, tabEmpty, tabGames, wrapIndex } from "./storefront-home";
+import { normalizeHome, availabilityText, featuredWhy, homeTabs, mainStoryText, moveIndex, previewKey, recommendationTitle, recommendationWhy, rowFacts, tabEmpty, tabGames, wrapIndex } from "./storefront-home";
 import type { GameSummary } from "./types";
 
 const game = (key: string, extra: Partial<GameSummary> = {}): GameSummary => ({
   key, title: key, sourceBacked: true, sources: ["fitgirl"], releases: 1, publishedAt: 0, updatedAt: 0, sizeBytes: 0, languages: [], genres: [],
-  installable: true, popularRank: 0, completionMain: 0, reviewPercent: 0, reviewTotal: 0, wishlisted: false, activity: false, ...extra,
+  installable: true, browserOnly: false, announced: false, popularRank: 0, completionMain: 0, reviewPercent: 0, reviewTotal: 0, wishlisted: false, activity: false, ...extra,
 });
 
 describe("tabs", () => {
@@ -81,11 +81,26 @@ describe("facts", () => {
     const g = game("a", { sources: ["fitgirl", "dodi"], version: "v1.2", reviewTotal: 10, reviewPercent: 90, reviewLabel: "Very Positive", completionMain: 750, publishedAt: 1_700_000_000, releaseDate: "12 Mar, 2026" });
     expect(rowFacts(g)).toMatchObject({ sources: "FitGirl · DODI", version: "v1.2", review: "Very Positive · 90%", mainStory: "12½ h main story" });
     expect(rowFacts(g).published).toMatch(/^Published /);
-    expect(releasedText(g)).toBe("Released 12 Mar, 2026");
-    expect(releasedText(game("b"))).toBe("");
+  });
+  it("says why a browser-only or announced game has no install", () => {
+    expect(availabilityText({ installable: false, browserOnly: true, announced: false })).toBe("Opens in your browser");
+    expect(availabilityText({ installable: false, browserOnly: false, announced: true })).toBe("Announced");
+    expect(featuredWhy(game("a", { installable: false, browserOnly: true }), 1_800_000_000)).toBe("Opens in your browser");
+    expect(featuredWhy(game("a", { installable: false, announced: true }), 1_800_000_000)).toBe("Announced");
   });
   it("calls a game without a validated torrent not installable yet", () => {
-    expect(availabilityText({ installable: false })).toBe("Not installable yet");
+    expect(availabilityText({ installable: false, browserOnly: false, announced: false })).toBe("Not installable yet");
     expect(mainStoryText({ completionMain: 0 })).toBe("");
+  });
+});
+
+describe("normalizeHome", () => {
+  it("turns shelves the backend sent as null into empty lists", () => {
+    const h = normalizeHome({ featured: null, recommended: null, new: null } as never);
+    expect([h.featured, h.recommended, h.new, h.popular, h.updated, h.wishlist]).toEqual([[], [], [], [], [], []]);
+  });
+  it("keeps shelves that have games", () => {
+    const g = game("a");
+    expect(normalizeHome({ featured: [g] } as never).featured).toEqual([g]);
   });
 });

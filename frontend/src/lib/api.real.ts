@@ -1,6 +1,7 @@
 import { Events, Window } from "@wailsio/runtime";
 import { AccountsService, AchievementsService, LaunchService, LibraryService, PadService, ProfileService, SavesService, SettingsService, StoreService, UpdateService } from "../../bindings/github.com/ApolloF/Seaglass/internal/app";
 import type { Api } from "./api";
+import { normalizeHome } from "./storefront-home";
 import type { CompletionCandidate, LibraryCompletion, SteamAccount, WishlistImport, DiscoveryChange, DiscoveryStatus, Enrichment, GameDetails, PreparedRelease, ReviewPage, SearchProgress, SearchResult, StoreHome, WishlistItem, SourceSnapshot, SourceRelease, DownloadLanguageOptions, Accounts, Achievements, AppInfo, ArtChoice, CatalogEntry, CatalogPage, Download, StoreArt, EngineStatus, FeedInfo, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
 
 // The generated bindings return the Go structs; their JSON matches ./types.
@@ -105,7 +106,7 @@ export const realApi: Api = {
       setupSources: (sources) => StoreService.SetupSources(sources) as Promise<unknown> as Promise<Settings>,
       refresh: () => StoreService.RefreshDiscovery() as Promise<unknown> as Promise<DiscoveryStatus>,
       pauseIndexing: (paused) => StoreService.PauseIndexing(paused) as Promise<unknown> as Promise<DiscoveryStatus>,
-      home: () => StoreService.StoreHome() as Promise<unknown> as Promise<StoreHome>,
+      home: () => (StoreService.StoreHome() as Promise<unknown> as Promise<StoreHome>).then(normalizeHome),
       browse: (q) => StoreService.BrowseGames(q as never) as Promise<unknown> as Promise<SearchResult>,
       search: (q) => StoreService.SearchGames(q as never) as Promise<unknown> as Promise<SearchResult>,
       game: (key) => StoreService.GameDetails(key) as Promise<unknown> as Promise<GameDetails>,

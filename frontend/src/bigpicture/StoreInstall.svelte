@@ -9,7 +9,7 @@
   import { api } from "../lib/api";
   import { blockedText, cycle, installChoices, installStep, pickLanguage, sizesText } from "../lib/bpstore";
   import { feedback, useInput } from "../lib/input.svelte";
-  import { lib } from "../lib/store.svelte";
+  import { errText, lib } from "../lib/store.svelte";
   import { languagesLine, publishedText } from "../lib/storefront";
   import type { CatalogEntry, Download, PreparedRelease, Release } from "../lib/types";
   import Hints from "./Hints.svelte";
@@ -50,6 +50,7 @@
   const o = $derived(choices[pick] ?? choices[0]);
   let language = $state("English");
   let dir = $state("");
+  let folderError = $state("");
   let install = $state(true);
   let busy = $state(false);
 
@@ -60,8 +61,18 @@
   const installedVersion = $derived(entry?.installed?.version ?? prepared?.installed?.version ?? "the installed version");
   $effect(() => {
     if (step !== "confirm") return;
-    if (updating) dir = installedDir;
-    else void api.store.installFolder(gameTitle).then((d) => (dir = d));
+    if (updating) {
+      dir = installedDir;
+      return;
+    }
+    // A folder the person already chose is not replaced by a late answer.
+    let live = true;
+    folderError = "";
+    api.store
+      .installFolder(gameTitle)
+      .then((d) => live && !untrack(() => dir) && (dir = d))
+      .catch((e) => live && (folderError = errText(e)));
+    return () => (live = false);
   });
   // A language the picked version doesn't have goes back to the default.
   $effect(() => {
@@ -211,6 +222,7 @@
         <p class="sub">Seaglass can't tell where the installed copy is, so this is installed as a separate copy.</p>
       {/if}
       {#if sizesText(o)}<p class="sub">{sizesText(o)}</p>{/if}
+      {#if folderError}<p class="sub error" role="alert">Seaglass couldn't look up a folder: {folderError} Choose one with Change.</p>{/if}
     {/if}
 
     <div class="rows">
@@ -297,6 +309,9 @@
     font-size: 22px;
     line-height: 1.45;
     overflow-wrap: anywhere;
+  }
+  .sub.error {
+    color: #ff9b8e;
   }
   .sub {
     margin: 0;

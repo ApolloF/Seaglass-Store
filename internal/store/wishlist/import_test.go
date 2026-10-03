@@ -3,6 +3,7 @@ package wishlist
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -88,6 +89,30 @@ func TestOnlyAPlaceholderTitleIsReplacedByTheName(t *testing.T) {
 	}
 	if changed, _ := s.Name("steam:40", "Something Else"); changed || mustGet(t, s, "steam:40").Title != "Dune Lark" {
 		t.Error("a known title was replaced")
+	}
+}
+
+func TestImportKeepsTheFirstGamesInGivenOrderWhenTheWishlistIsFull(t *testing.T) {
+	s := Open(filepath.Join(t.TempDir(), "w.json"))
+	games := make([]Imported, 3)
+	for i := range games {
+		games[i] = Imported{Key: Placeholder(i + 1), Title: Placeholder(i + 1), AppID: i + 1}
+	}
+	fill := make([]Imported, MaxEntries-2)
+	for i := range fill {
+		fill[i] = Imported{Key: "title:f" + strconv.Itoa(i), Title: "F"}
+	}
+	_, _, _ = s.Import(fill, t0)
+	added, _, err := s.Import(games, t0.Add(time.Hour))
+	if err != nil || added != 2 {
+		t.Fatalf("added %d, %v", added, err)
+	}
+	got := s.List()
+	if got[0].Key != Placeholder(1) || got[1].Key != Placeholder(2) {
+		t.Errorf("order: %s, %s", got[0].Key, got[1].Key)
+	}
+	if _, ok := s.Get(Placeholder(3)); ok {
+		t.Error("the lowest priority game was kept")
 	}
 }
 

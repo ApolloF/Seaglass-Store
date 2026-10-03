@@ -5,6 +5,7 @@
   // keep focus on the same game.
   import { api } from "../lib/api";
   import { focusKey, homeNotes, homeShelves, restoreFocus, shelfCol, shelfMove, startFocus, type Shelf } from "../lib/bpstore";
+  import { findingText } from "../lib/indexing";
   import { feedback, useInput } from "../lib/input.svelte";
   import { shop } from "../lib/shop.svelte";
   import { lib } from "../lib/store.svelte";
@@ -49,6 +50,7 @@
 
   const mode = $derived(storeMode({ loaded, status: storefront.status, shown: shelves.reduce((n, s) => n + s.games.length, 0) }));
   const summary = $derived(statusSummary(storefront.status));
+  const finding = $derived(findingText(storefront.status));
 
   // Card sizes in design pixels (1920 wide); featured games are bigger.
   const W = 440;
@@ -151,8 +153,8 @@
         <h2>The sources can't be reached</h2>
         <p>Seaglass tries again on its own. Games show here once a source answers.</p>
       {:else}
-        <h2>Finding games</h2>
-        <p>Seaglass is reading your sources. Games show here as they're found.</p>
+        <h2>{finding.title}</h2>
+        <p>{finding.text}</p>
       {/if}
     </div>
   {/if}
