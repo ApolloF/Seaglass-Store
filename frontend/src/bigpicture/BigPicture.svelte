@@ -1,5 +1,6 @@
 <script lang="ts">
   import { accentOf, newFinds } from "../lib/bp";
+  import { sectionsFor } from "../lib/bpstore";
   import { dispatchFrom, feedback, input, keyIntent, setBase, setLight, toHex } from "../lib/input.svelte";
   import { lib } from "../lib/store.svelte";
   import type { Game } from "../lib/types";
@@ -14,8 +15,9 @@
   import PadTest from "./PadTest.svelte";
   import QuickAccess from "./QuickAccess.svelte";
   import SearchScreen from "./SearchScreen.svelte";
-  import { SECTIONS, type Section } from "./Sections.svelte";
+  import type { Section } from "./Sections.svelte";
   import Stage from "./Stage.svelte";
+  import StoreScreen from "./StoreScreen.svelte";
 
   let { onexit }: { onexit: () => void } = $props();
 
@@ -91,10 +93,16 @@
 
   // L1 / R1 step through the sections from anywhere; settings and New on
   // this PC sit next to Home.
-  const section = $derived<Section | null>(screen === "home" || screen === "library" || screen === "search" ? screen : null);
+  const storeOn = $derived(!!lib.settings?.experimentalStore);
+  const sections = $derived(sectionsFor(storeOn));
+  const section = $derived<Section | null>(sections.find((s) => s.id === screen)?.id ?? null);
+  // Turning the Store off leaves nothing of it on screen.
+  $effect(() => {
+    if (screen === "store" && !storeOn) screen = "home";
+  });
   function stepSection(d: -1 | 1) {
-    const at = SECTIONS.findIndex((s) => s.id === (section ?? "home"));
-    const next = SECTIONS[at + d];
+    const at = sections.findIndex((s) => s.id === (section ?? "home"));
+    const next = sections[at + d];
     if (next) go(next.id);
     else if (section === null) go("home");
     else feedback.edge();
@@ -182,6 +190,8 @@
         <BPDownloads onback={() => go("home")} />
       {:else if screen === "padtest"}
         <PadTest onback={() => go("settings")} />
+      {:else if screen === "store"}
+        <StoreScreen {width} {height} active={!sheet && !qa && !showLaunch} onback={() => go("home")} onsection={(s) => go(s)} />
       {:else if screen === "search"}
         <SearchScreen {width} active={!sheet && !qa && !showLaunch} onplay={play} oninfo={info} {onfocus} onback={() => go("home")} onsection={(s) => go(s)} />
       {:else}

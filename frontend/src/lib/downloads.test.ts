@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeCount, eta, needsYou, progress, statusLine } from "./downloads";
+import { activeCount, engineLabel, engineProblem, engineState, eta, needsYou, pageList, progress, statusLine } from "./downloads";
 import type { Download, EngineStatus } from "./types";
 
 const d = (p: Partial<Download>): Download => ({
@@ -60,5 +60,40 @@ describe("downloads", () => {
     expect(statusLine(d({ state: "paused" }), off)).toBe("Paused · 500 MB of 2.0 GB");
     expect(statusLine(d({ state: "downloaded", done: 2e9, seeding: true, upSpeed: 2e5 }), running)).toBe("Downloaded · 2.0 GB · sharing at 200 KB/s");
     expect(statusLine(d({ state: "failed", error: "Disk full" }), off)).toBe("Disk full");
+  });
+
+  it("lists queued downloads while qBittorrent can't start, with its error and the next step", () => {
+    const down: EngineStatus = { ...running, running: false, error: "qBittorrent exited at once (exit status 1)" };
+    const queued = d({ id: "sg-9", state: "queued", size: 0, done: 0, created: 5 });
+    const list = pageList([d({ id: "sg-8", state: "installed", created: 9 }), queued]);
+    expect(list.map((x) => x.id)).toEqual(["sg-9", "sg-8"]);
+    expect(statusLine(queued, down)).toBe("Waiting: qBittorrent exited at once (exit status 1)");
+    const p = engineProblem(down, list);
+    expect(p).toEqual({
+      title: "qBittorrent couldn't start",
+      error: "qBittorrent exited at once (exit status 1)",
+      next: "Check the qBittorrent path in Settings → Experimental, or install qBittorrent again. The queued download starts once it runs.",
+      fix: "path",
+    });
+    expect(engineProblem(down, list, true)?.next).toMatch(/^In desktop mode, check the qBittorrent path/);
+    expect(engineState(down, list)).toBe("stopped");
+    expect(engineLabel(down, list)).toBe("qBittorrent: Not running");
+  });
+
+  it("asks for qBittorrent when it isn't installed", () => {
+    const p = engineProblem({ ...running, installed: false, running: false }, [d({ state: "queued" }), d({ state: "queued" })]);
+    expect(p?.fix).toBe("install");
+    expect(p?.next).toMatch(/The 2 queued downloads start once it runs\.$/);
+  });
+
+  it("says nothing is wrong while the engine runs, starts or idles", () => {
+    expect(engineProblem(null, [])).toBeNull();
+    expect(engineProblem(running, [d({})])).toBeNull();
+    const idle = { ...running, running: false };
+    expect(engineProblem(idle, [])).toBeNull();
+    expect(engineState(idle, [d({ state: "queued" })])).toBe("starting");
+    expect(engineState(idle, [])).toBe("stopped");
+    expect(engineState({ ...running, held: true }, [])).toBe("held");
+    expect(engineLabel({ ...running, version: "v5.1.4" }, [])).toBe("qBittorrent: Running (v5.1.4)");
   });
 });
