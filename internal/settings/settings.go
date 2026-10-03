@@ -81,6 +81,7 @@ type StoreSettings struct {
 	PrivateSources         bool            `json:"privateSources"`         // browse repack sources (discovery runs only with this on)
 	Sources                []string        `json:"sources"`                // the sources discovery indexes on this PC (DiscoverySources)
 	SourceSetup            string          `json:"sourceSetup"`            // SetupPending, SetupAsk or SetupDone
+	IndexingPaused         bool            `json:"indexingPaused"`         // the person paused discovery's background indexing on this PC
 	BlockDetections        bool            `json:"blockDetections"`        // a download Defender or VirusTotal flags isn't installed unless the person insists
 	Language               string          `json:"language"`               // the language games are recommended in; "" for any
 	Network                torrent.Network `json:"network"`

@@ -49,6 +49,7 @@ type WishlistItem struct {
 	Game       discovery.GameSummary   `json:"game"`
 	Activity   []wishlist.ActivityView `json:"activity"` // newest first
 	Unread     int                     `json:"unread"`
+	Origin     string                  `json:"origin"` // wishlist.Origin*: saved here or imported from Steam
 }
 
 // errNotIndexed is the answer for a game discovery doesn't know (anymore).
@@ -108,6 +109,12 @@ func (s *StoreService) SetupSources(chosen []string) (settings.Settings, error) 
 	return saved, err
 }
 
+// PauseIndexing pauses or resumes background indexing on this PC. Paused,
+// nothing is requested from any source until resumed; the index stays.
+func (s *StoreService) PauseIndexing(paused bool) (discovery.Status, error) {
+	return s.DiscoveryStatus(), errors.New("pausing isn't available yet")
+}
+
 // RefreshDiscovery fetches the newest listings of every chosen source now.
 func (s *StoreService) RefreshDiscovery() (discovery.Status, error) {
 	if err := s.discoveryOn(); err != nil {
@@ -121,7 +128,8 @@ func (s *StoreService) RefreshDiscovery() (discovery.Status, error) {
 func (s *StoreService) StoreHome() (discovery.Home, error) {
 	if err := s.on(); err != nil {
 		return discovery.Home{New: []discovery.GameSummary{}, Popular: []discovery.GameSummary{}, PopularState: discovery.StateUnavailable,
-			Updated: []discovery.GameSummary{}, Wishlist: []discovery.GameSummary{}, Status: s.DiscoveryStatus()}, err
+			Updated: []discovery.GameSummary{}, Wishlist: []discovery.GameSummary{}, Featured: []discovery.GameSummary{},
+			Recommended: []discovery.Recommendation{}, Status: s.DiscoveryStatus()}, err
 	}
 	d := s.c.discovery
 	return d.currentView().Home(d.annotator(), s.c.popularState(), d.status()), nil

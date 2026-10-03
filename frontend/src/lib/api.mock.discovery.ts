@@ -214,7 +214,7 @@ function makeGame(g: G): Game {
 
 let games: Game[] = fixtures.map(makeGame);
 
-type Wish = { key: string; title: string; steamAppId?: number; addedAt: number; activity: WishlistItem["activity"] };
+type Wish = { key: string; title: string; steamAppId?: number; addedAt: number; activity: WishlistItem["activity"]; origin?: "" | "steam" };
 let wishes: Wish[] = [
   { key: "title:ashenlanterns2", title: "Ashen Lanterns 2", addedAt: now() - 20 * day,
     activity: [{ id: "a1", kind: "available", releaseId: "", source: "dodi", sourceName: "DODI", version: "v0.3 Early Access", at: now() - 3 * day, read: false }] },
@@ -262,6 +262,8 @@ function status(settings: Settings): DiscoveryStatus {
     games: empty ? 0 : games.filter((g) => g.recs.length).length,
     releases: sources.reduce((n, s) => n + s.releases, 0),
     refreshing,
+    paused: settings.store.indexingPaused,
+    playing: false,
     stale: flags.has("offline") || now() - lastRefresh > 6 * 3600,
   };
 }
@@ -297,6 +299,7 @@ function summary(game: Game, settings: Settings): GameSummary {
     reviewPercent: enriched && g.review ? g.review[0] : 0,
     reviewTotal: enriched && g.review ? g.review[1] : 0,
     reviewLabel: enriched && g.review ? g.review[2] : undefined,
+    completionMain: enriched && Array.isArray(g.hltb) ? g.hltb[0] : 0,
     installed: inst ? { ...inst, update: game.key === "steam:1678010" } : undefined,
     wishlisted: !!wish,
     activity: !!wish?.activity.some((a) => !a.read),
@@ -308,7 +311,7 @@ function steamOnlySummary(s: (typeof steamOnly)[number]): GameSummary {
   return {
     key: `steam:${s.appId}`, title: s.title, steamAppId: s.appId, sourceBacked: false, sources: [], releases: 0, publishedAt: 0, updatedAt: 0, sizeBytes: 0,
     languages: [], genres: s.genres, installable: false, popularRank: 0, reviewPercent: s.review[0], reviewTotal: s.review[1], reviewLabel: s.review[2],
-    wishlisted: !!wish, activity: false,
+    completionMain: 0, wishlisted: !!wish, activity: false,
   };
 }
 
@@ -471,7 +474,7 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
         const game = games.find((g) => g.key === w.key);
         const s = steamOnly.find((x) => `steam:${x.appId}` === w.key);
         const summaryOf = game ? summary(game, settings) : s ? steamOnlySummary(s) : steamOnlySummary({ appId: w.steamAppId ?? 0, title: w.title, genres: [], review: [0, 0, ""] });
-        return { key: w.key, title: w.title, steamAppId: w.steamAppId, addedAt: w.addedAt, game: summaryOf, activity: copy(w.activity), unread: w.activity.filter((a) => !a.read).length };
+        return { key: w.key, title: w.title, steamAppId: w.steamAppId, addedAt: w.addedAt, game: summaryOf, activity: copy(w.activity), unread: w.activity.filter((a) => !a.read).length, origin: w.origin ?? "" };
       });
   };
   const emitWish = () => wishListeners.forEach((cb) => cb(wishItems()));
@@ -521,6 +524,12 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
         emitGames({ keys: [], all: true });
         return copy(getSettings());
       },
+      async pauseIndexing(paused) {
+        const s = getSettings();
+        setSettings({ ...s, store: { ...s.store, indexingPaused: paused } });
+        emitStatus();
+        return status(getSettings());
+      },
       async refresh() {
         needOn();
         refreshing = true;
@@ -547,6 +556,9 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
           popularState: chart ? "unavailable" : flags.has("offline") ? "stale" : "ok",
           updated: all.filter((s) => s.updatedAt - s.publishedAt > day).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 12),
           wishlist: wishItems().filter((w) => w.unread > 0).map((w) => w.game),
+          featured: [],
+          recommended: [],
+          recommendedBasis: "",
           status: status(settings),
         };
       },
@@ -728,6 +740,35 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
         emitWish();
         emitGames({ keys: key ? [key] : wishes.map((w) => w.key), all: false });
         return wishItems();
+      },
+      async steamAccount() {
+        if (flags.has("nosteam")) return { steamId: "", detected: false, error: "Steam isn't installed" };
+        return { steamId: "76561198000000042", detected: true };
+      },
+      async importSteam(steamId) {
+        if (!/^7656119\d{10}$/.test(steamId.trim())) throw new Error("That isn't a SteamID64 (17 digits starting with 7656119).");
+        await wait(900);
+        if (flags.has("private")) throw new Error("Steam didn't share that wishlist. In Steam, set the profile and its game details to Public.");
+        const steamWish = [
+          { appId: 1245620, title: "Ember Crown" },
+          { appId: 2210110, title: "Hollow Tide" },
+          { appId: 9990001, title: "Northwind Saga" },
+        ];
+        let added = 0;
+        let existing = 0;
+        for (const w of steamWish) {
+          if (wishes.some((x) => x.steamAppId === w.appId || x.key === `steam:${w.appId}`)) {
+            existing++;
+            continue;
+          }
+          wishes = [...wishes, { key: `steam:${w.appId}`, title: w.title, steamAppId: w.appId, addedAt: now(), activity: [], origin: "steam" }];
+          added++;
+        }
+        emitWish();
+        emitGames({ keys: steamWish.map((w) => `steam:${w.appId}`), all: false });
+        const items = wishItems();
+        const available = items.filter((i) => steamWish.some((w) => i.steamAppId === w.appId) && i.game.sourceBacked).length;
+        return { steamId: steamId.trim(), fetched: steamWish.length, added, existing, available, searching: steamWish.length - available, items };
       },
       onChange: (cb) => on(wishListeners, cb),
     },

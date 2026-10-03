@@ -147,6 +147,12 @@ export interface GameSummary {
     "updatedAt": number;
 
     /**
+     * ReleaseDate is the game's own release date as Steam's metadata
+     * gives it ("12 Mar, 2024"); "" unknown. Never a source date.
+     */
+    "releaseDate"?: string;
+
+    /**
      * the newest release's download claim; 0 unknown
      */
     "sizeBytes": number;
@@ -180,6 +186,12 @@ export interface GameSummary {
      */
     "reviewTotal": number;
     "reviewLabel"?: string;
+
+    /**
+     * CompletionMain is HowLongToBeat's Main Story time in minutes from
+     * the cache; 0 unknown. Cards never fetch it.
+     */
+    "completionMain": number;
     "installed"?: Installed | null;
     "wishlisted": boolean;
 
@@ -219,6 +231,24 @@ export interface Home {
      * wishlisted games with unread activity
      */
     "wishlist": GameSummary[] | null;
+
+    /**
+     * Featured are a few source-backed games for the top of the page:
+     * new and popular first, never installed ones.
+     */
+    "featured": GameSummary[] | null;
+
+    /**
+     * Recommended are source-backed games that share genres with games
+     * played recently or wishlisted, never installed ones; with no useful
+     * history they are popular games. RecommendedBasis says which.
+     */
+    "recommended": Recommendation[] | null;
+
+    /**
+     * Basis* constants
+     */
+    "recommendedBasis": string;
     "status": Status;
 }
 
@@ -335,6 +365,24 @@ export interface ProviderProgress {
      * Cached: answered from the one-hour search cache.
      */
     "cached": boolean;
+}
+
+/**
+ * Recommendation is one recommended game and why.
+ */
+export interface Recommendation {
+    "game": GameSummary;
+
+    /**
+     * Because names the played or wishlisted games it shares genres with,
+     * most relevant first, at most three; empty for BasisPopular.
+     */
+    "because": string[] | null;
+
+    /**
+     * the shared genres
+     */
+    "genres": string[] | null;
 }
 
 /**
@@ -523,6 +571,17 @@ export interface Status {
      */
     "releases": number;
     "refreshing": boolean;
+
+    /**
+     * Paused: the person paused indexing on this PC
+     * (StoreSettings.IndexingPaused); nothing is requested until resumed.
+     */
+    "paused": boolean;
+
+    /**
+     * Playing: a game is running, so indexing waits for it to end.
+     */
+    "playing": boolean;
 
     /**
      * Stale: the newest listings are older than six hours or their last

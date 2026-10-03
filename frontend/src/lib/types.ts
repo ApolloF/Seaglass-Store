@@ -138,6 +138,8 @@ export interface StoreSettings {
   sources: string[];
   /** "": decided when the Store is turned on; "ask": choose once; "done". */
   sourceSetup: "" | "ask" | "done";
+  /** The person paused background indexing on this PC. */
+  indexingPaused: boolean;
   blockDetections: boolean;
   /** The language versions are recommended in; "" for any. */
   language: string;
@@ -688,6 +690,10 @@ export interface DiscoveryStatus {
   games: number;
   releases: number;
   refreshing: boolean;
+  /** The person paused indexing; nothing is requested until resumed. */
+  paused: boolean;
+  /** A game is running, so indexing waits for it to end. */
+  playing: boolean;
   /** Newest listings older than six hours, or their last refresh failed. */
   stale: boolean;
 }
@@ -708,6 +714,8 @@ export interface GameSummary {
   publishedAt: number;
   /** Newest change to a source release. */
   updatedAt: number;
+  /** The game's own release date from Steam ("12 Mar, 2024"); never a source date. */
+  releaseDate?: string;
   sizeBytes: number;
   /** Empty: unknown. */
   languages: string[];
@@ -720,6 +728,8 @@ export interface GameSummary {
   /** 0: unknown or no reviews. */
   reviewTotal: number;
   reviewLabel?: string;
+  /** HowLongToBeat Main Story minutes from the cache; 0 unknown. */
+  completionMain: number;
   installed?: { download: string; version: string; update: boolean };
   wishlisted: boolean;
   /** Unread wishlist activity. */
@@ -788,7 +798,24 @@ export interface StoreHome {
   popularState: ProviderState;
   updated: GameSummary[];
   wishlist: GameSummary[];
+  /** A few source-backed games for the top of the page, never installed ones. */
+  featured: GameSummary[];
+  /** Games sharing genres with recently played or wishlisted ones; popular games without history. */
+  recommended: Recommendation[];
+  recommendedBasis: RecommendationBasis;
   status: DiscoveryStatus;
+}
+
+/** Mirrors the discovery.Basis* constants. */
+export type RecommendationBasis = "" | "played" | "wishlist" | "played+wishlist" | "popular";
+
+/** One recommended game and why. Mirrors discovery.Recommendation. */
+export interface Recommendation {
+  game: GameSummary;
+  /** Played or wishlisted games it shares genres with, at most three; empty for "popular". */
+  because: string[];
+  /** The shared genres. */
+  genres: string[];
 }
 
 /** One release choice on a game's page. Mirrors discovery.Release. */
@@ -1007,4 +1034,38 @@ export interface WishlistItem {
   /** Newest first. */
   activity: WishlistActivity[];
   unread: number;
+  /** "": saved in Seaglass; "steam": imported from a Steam wishlist. */
+  origin: "" | "steam";
+}
+
+/** The Steam account a wishlist import starts from. Mirrors app.SteamAccount. */
+export interface SteamAccount {
+  /** SteamID64; "" when none was found. */
+  steamId: string;
+  /** The account Steam signs in with on this PC. */
+  detected: boolean;
+  error?: string;
+}
+
+/** What importing a Steam wishlist did. Mirrors app.WishlistImport. */
+export interface WishlistImport {
+  steamId: string;
+  /** Games on the Steam wishlist. */
+  fetched: number;
+  added: number;
+  /** Already saved, matched by Steam AppID. */
+  existing: number;
+  /** With a known source release now. */
+  available: number;
+  /** Queued for a source search while idle. */
+  searching: number;
+  items: WishlistItem[];
+}
+
+/** A library game's HowLongToBeat times. Mirrors app.LibraryCompletion. */
+export interface LibraryCompletion {
+  gameId: number;
+  /** "steam:<appid>" or "title:<normalized title>": shared with the Store, never the folder key. */
+  key: string;
+  completion: Completion;
 }

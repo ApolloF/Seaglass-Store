@@ -213,7 +213,8 @@ func facet(cs []card, field func(GameSummary) []string) []string {
 // another ranking.
 func (v *View) Home(annotate Annotate, popularState string, status Status) Home {
 	all := v.cards(annotate)
-	h := Home{New: []GameSummary{}, Popular: []GameSummary{}, Updated: []GameSummary{}, Wishlist: []GameSummary{}, PopularState: popularState, Status: status}
+	h := Home{New: []GameSummary{}, Popular: []GameSummary{}, Updated: []GameSummary{}, Wishlist: []GameSummary{}, Featured: []GameSummary{},
+		Recommended: []Recommendation{}, PopularState: popularState, Status: status}
 	byNew := slices.Clone(all)
 	sortCards(byNew, SortPublished)
 	for _, c := range byNew {

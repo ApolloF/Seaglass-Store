@@ -222,6 +222,11 @@ export interface StoreSettings {
     "sourceSetup": string;
 
     /**
+     * the person paused discovery's background indexing on this PC
+     */
+    "indexingPaused": boolean;
+
+    /**
      * a download Defender or VirusTotal flags isn't installed unless the person insists
      */
     "blockDetections": boolean;

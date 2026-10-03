@@ -12,6 +12,9 @@ import * as library$0 from "../library/models.js";
 import * as discovery$0 from "../store/discovery/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as enrich$0 from "../store/enrich/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as wishlist$0 from "../store/wishlist/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -146,6 +149,23 @@ export interface InstallerLanguage {
 }
 
 /**
+ * LibraryCompletion is a library game's HowLongToBeat times. They work
+ * with the Store off: the cache, its seven-day lifetime and the person's
+ * match corrections are the Store's, shared through Key.
+ */
+export interface LibraryCompletion {
+    "gameId": number;
+
+    /**
+     * Key is the identity the times and a corrected match are kept under,
+     * shared with the Store: "steam:<appid>" for a trusted Steam identity,
+     * else "title:<normalized title>". Never the library's folder key.
+     */
+    "key": string;
+    "completion": enrich$0.Completion;
+}
+
+/**
  * MetaState is what the metadata worker is doing.
  */
 export interface MetaState {
@@ -263,6 +283,26 @@ export interface SessionAchievements {
 }
 
 /**
+ * SteamAccount is the Steam account a wishlist import starts from.
+ */
+export interface SteamAccount {
+    /**
+     * SteamID64; "" when none was found
+     */
+    "steamId": string;
+
+    /**
+     * the account Steam signs in with on this PC
+     */
+    "detected": boolean;
+
+    /**
+     * why none was found
+     */
+    "error"?: string;
+}
+
+/**
  * StoreAccount is one store account as Settings shows it.
  */
 export interface StoreAccount {
@@ -360,6 +400,39 @@ export interface UpdateState {
 }
 
 /**
+ * WishlistImport says what importing a Steam wishlist did.
+ */
+export interface WishlistImport {
+    "steamId": string;
+
+    /**
+     * games on the Steam wishlist
+     */
+    "fetched": number;
+
+    /**
+     * newly saved
+     */
+    "added": number;
+
+    /**
+     * already saved, matched by Steam AppID
+     */
+    "existing": number;
+
+    /**
+     * with a known source release now
+     */
+    "available": number;
+
+    /**
+     * queued for a source search while idle
+     */
+    "searching": number;
+    "items": WishlistItem[] | null;
+}
+
+/**
  * WishlistItem is a saved game with its current state and activity.
  */
 export interface WishlistItem {
@@ -374,4 +447,9 @@ export interface WishlistItem {
      */
     "activity": wishlist$0.ActivityView[] | null;
     "unread": number;
+
+    /**
+     * wishlist.Origin*: saved here or imported from Steam
+     */
+    "origin": string;
 }

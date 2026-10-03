@@ -362,6 +362,36 @@ export const mockApi: Api = {
   },
   setArt: (id, kind, art) => update(id, (g) => (g.meta = { ...g.meta, [kind]: art, artOverrides: [...(g.meta?.artOverrides ?? []), kind] })),
   setCollections: (id, names) => update(id, (g) => (g.collections = [...new Set(names.map((n) => n.trim()).filter(Boolean))])),
+  completion: {
+    async get(id, fetch) {
+      const g = games.find((x) => x.id === id);
+      if (!g) throw new Error("that game isn't in the library");
+      const key = g.steamAppId ? `steam:${g.steamAppId}` : `title:${g.title.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
+      if (fetch) await new Promise((r) => setTimeout(r, 700));
+      const seed = (id * 7919) % 50;
+      const known = fetch || seed % 3 === 0;
+      return {
+        gameId: id,
+        key,
+        completion: known
+          ? { hltbId: 1000 + id, title: g.title, main: 300 + seed * 40, mainExtras: 520 + seed * 60, completionist: 900 + seed * 95, url: `https://howlongtobeat.com/game/${1000 + id}`, corrected: false, fetchedAt: Math.floor(Date.now() / 1000), state: "ok" }
+          : { hltbId: 0, main: 0, mainExtras: 0, completionist: 0, url: "", corrected: false, fetchedAt: 0, state: "loading" },
+      };
+    },
+    async candidates(id, query) {
+      const g = games.find((x) => x.id === id);
+      const t = query || g?.title || "";
+      return [0, 1, 2].map((i) => ({ hltbId: 2000 + id * 10 + i, title: i ? `${t} ${["", "Remastered", "DLC"][i]}`.trim() : t, year: 2020 + i, type: i === 2 ? "dlc" : "game", main: 400 + i * 100, mainExtras: 700 + i * 120, completionist: 1100 + i * 200, url: `https://howlongtobeat.com/game/${2000 + id * 10 + i}` }));
+    },
+    async setMatch(id, hltbId) {
+      const c = await mockApi.completion.get(id, true);
+      return { ...c, completion: { ...c.completion, hltbId: hltbId || c.completion.hltbId, corrected: hltbId > 0 } };
+    },
+    async openLink(url) {
+      if (!/^https:\/\/(www\.)?howlongtobeat\.com\//.test(url)) throw new Error("that link doesn't go to HowLongToBeat");
+      window.open(url, "_blank", "noopener");
+    },
+  },
   async renameCollection(old, name) {
     for (const g of games)
       if (g.collections?.some((c) => c.toLowerCase() === old.toLowerCase())) {

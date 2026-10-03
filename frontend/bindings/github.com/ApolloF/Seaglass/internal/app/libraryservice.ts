@@ -16,6 +16,9 @@ import * as library$0 from "../library/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as meta$0 from "../meta/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as enrich$0 from "../store/enrich/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -35,6 +38,23 @@ export function ArtChoices(id: number, kind: string): $CancellablePromise<meta$0
  */
 export function ChooseExe(id: number): $CancellablePromise<library$0.Game> {
     return $Call.ByID(1621179858, id);
+}
+
+/**
+ * Completion is a game's completion times: cached ones at once, fetched
+ * first when fetch is set and they're missing or older than seven days.
+ * A failure keeps cached times (stale) or says they're unavailable.
+ */
+export function Completion(id: number, fetch: boolean): $CancellablePromise<$models.LibraryCompletion> {
+    return $Call.ByID(2170273181, id, fetch);
+}
+
+/**
+ * CompletionCandidates searches HowLongToBeat for the game's other
+ * possible matches ("" searches its title).
+ */
+export function CompletionCandidates(id: number, query: string): $CancellablePromise<enrich$0.Candidate[] | null> {
+    return $Call.ByID(1083826883, id, query);
 }
 
 /**
@@ -70,6 +90,13 @@ export function Install(id: number): $CancellablePromise<void> {
  */
 export function MetaState(): $CancellablePromise<$models.MetaState> {
     return $Call.ByID(3704126675);
+}
+
+/**
+ * OpenCompletionLink opens a HowLongToBeat link in the browser.
+ */
+export function OpenCompletionLink(raw: string): $CancellablePromise<void> {
+    return $Call.ByID(3519112021, raw);
 }
 
 /**
@@ -135,6 +162,14 @@ export function SetArt(id: number, kind: string, art: string): $CancellablePromi
  */
 export function SetCollections(id: number, names: string[] | null): $CancellablePromise<library$0.Game> {
     return $Call.ByID(630414306, id, names);
+}
+
+/**
+ * SetCompletionMatch makes hltbID the game's match, shared with the
+ * Store's page for the same game (0 goes back to the automatic match).
+ */
+export function SetCompletionMatch(id: number, hltbID: number): $CancellablePromise<$models.LibraryCompletion> {
+    return $Call.ByID(16822812, id, hltbID);
 }
 
 /**

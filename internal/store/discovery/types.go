@@ -132,6 +132,11 @@ type Status struct {
 	Games       int            `json:"games"`    // source-backed games in the index
 	Releases    int            `json:"releases"` // source articles in the index
 	Refreshing  bool           `json:"refreshing"`
+	// Paused: the person paused indexing on this PC
+	// (StoreSettings.IndexingPaused); nothing is requested until resumed.
+	Paused bool `json:"paused"`
+	// Playing: a game is running, so indexing waits for it to end.
+	Playing bool `json:"playing"`
 	// Stale: the newest listings are older than six hours or their last
 	// refresh failed; what is shown is the cached index.
 	Stale bool `json:"stale"`
@@ -172,8 +177,11 @@ type GameSummary struct {
 	Version      string   `json:"version,omitempty"` // the newest release's claim, as published
 	// PublishedAt is the newest source publication; UpdatedAt the newest
 	// change to a source release. Neither is a game release or build date.
-	PublishedAt int64    `json:"publishedAt"`
-	UpdatedAt   int64    `json:"updatedAt"`
+	PublishedAt int64 `json:"publishedAt"`
+	UpdatedAt   int64 `json:"updatedAt"`
+	// ReleaseDate is the game's own release date as Steam's metadata
+	// gives it ("12 Mar, 2024"); "" unknown. Never a source date.
+	ReleaseDate string   `json:"releaseDate,omitempty"`
 	SizeBytes   int64    `json:"sizeBytes"` // the newest release's download claim; 0 unknown
 	Languages   []string `json:"languages"` // claimed by any release; empty: unknown
 	Genres      []string `json:"genres"`    // from Steam once its metadata is known; empty: unknown
@@ -183,11 +191,14 @@ type GameSummary struct {
 	// from anything else.
 	PopularRank int `json:"popularRank"`
 	// Steam's overall review summary, once fetched for this game.
-	ReviewPercent int        `json:"reviewPercent"` // positive share 0..100
-	ReviewTotal   int        `json:"reviewTotal"`   // 0: unknown or no reviews
-	ReviewLabel   string     `json:"reviewLabel,omitempty"`
-	Installed     *Installed `json:"installed,omitempty"`
-	Wishlisted    bool       `json:"wishlisted"`
+	ReviewPercent int    `json:"reviewPercent"` // positive share 0..100
+	ReviewTotal   int    `json:"reviewTotal"`   // 0: unknown or no reviews
+	ReviewLabel   string `json:"reviewLabel,omitempty"`
+	// CompletionMain is HowLongToBeat's Main Story time in minutes from
+	// the cache; 0 unknown. Cards never fetch it.
+	CompletionMain int        `json:"completionMain"`
+	Installed      *Installed `json:"installed,omitempty"`
+	Wishlisted     bool       `json:"wishlisted"`
 	// Activity: unread wishlist activity (a first release or a confirmed
 	// newer version).
 	Activity bool `json:"activity"`
@@ -269,7 +280,42 @@ type Home struct {
 	PopularState string        `json:"popularState"`
 	Updated      []GameSummary `json:"updated"`  // source releases that changed, newest change first
 	Wishlist     []GameSummary `json:"wishlist"` // wishlisted games with unread activity
-	Status       Status        `json:"status"`
+	// Featured are a few source-backed games for the top of the page:
+	// new and popular first, never installed ones.
+	Featured []GameSummary `json:"featured"`
+	// Recommended are source-backed games that share genres with games
+	// played recently or wishlisted, never installed ones; with no useful
+	// history they are popular games. RecommendedBasis says which.
+	Recommended      []Recommendation `json:"recommended"`
+	RecommendedBasis string           `json:"recommendedBasis"` // Basis* constants
+	Status           Status           `json:"status"`
+}
+
+// Recommendation bases (Home.RecommendedBasis).
+const (
+	BasisNone     = ""         // nothing to recommend
+	BasisPlayed   = "played"   // genres of recently played library games
+	BasisWishlist = "wishlist" // genres of wishlisted games
+	BasisBoth     = "played+wishlist"
+	BasisPopular  = "popular" // no useful history: Steam's chart among source-backed games
+)
+
+// Recommendation is one recommended game and why.
+type Recommendation struct {
+	Game GameSummary `json:"game"`
+	// Because names the played or wishlisted games it shares genres with,
+	// most relevant first, at most three; empty for BasisPopular.
+	Because []string `json:"because"`
+	Genres  []string `json:"genres"` // the shared genres
+}
+
+// Signal is a game whose genres steer recommendations.
+type Signal struct {
+	Title  string
+	Genres []string
+	Kind   string // BasisPlayed or BasisWishlist
+	// Weight: more recent play or a newer wishlist entry weighs more.
+	Weight float64
 }
 
 // Release is one release choice on a game's page.

@@ -1,7 +1,7 @@
 // The frontend's one door to the Go side. In mock mode (`npm run dev:mock`)
 // the same interface is served by made-up data, so the interface can be
 // built and checked in a normal browser. Vite drops the unused one.
-import type { BrowseQuery, CompletionCandidate, DiscoveryChange, DiscoveryStatus, Enrichment, GameDetails, PreparedRelease, ReviewPage, ReviewQuery, SearchProgress, SearchResult, StoreHome, WishlistItem, SourceSnapshot, SourceRelease, DownloadLanguageOptions, Accounts, Achievements, AppInfo, ArtChoice, ArtKind, CatalogEntry, CatalogPage, CatalogQuery, Download, InstallOptions, StoreArt, DownloadAction, EngineStatus, FeedInfo, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
+import type { BrowseQuery, CompletionCandidate, LibraryCompletion, SteamAccount, WishlistImport, DiscoveryChange, DiscoveryStatus, Enrichment, GameDetails, PreparedRelease, ReviewPage, ReviewQuery, SearchProgress, SearchResult, StoreHome, WishlistItem, SourceSnapshot, SourceRelease, DownloadLanguageOptions, Accounts, Achievements, AppInfo, ArtChoice, ArtKind, CatalogEntry, CatalogPage, CatalogQuery, Download, InstallOptions, StoreArt, DownloadAction, EngineStatus, FeedInfo, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
 import { realApi } from "./api.real";
 import { mockApi } from "./api.mock";
 
@@ -30,6 +30,18 @@ export interface Api {
   setCollections(id: number, names: string[]): Promise<Game>;
   /** Renames a collection in every game; "" deletes it (the games stay). */
   renameCollection(old: string, name: string): Promise<void>;
+
+  /** HowLongToBeat times for library games, from any source; works with the Store off. */
+  completion: {
+    /** Cached times at once; with fetch, missing or week-old times are fetched first. */
+    get(id: number, fetch: boolean): Promise<LibraryCompletion>;
+    /** Other possible matches; "" searches the game's title. */
+    candidates(id: number, query: string): Promise<CompletionCandidate[]>;
+    /** Shared with the Store's page for the same game; 0 goes back to the automatic match. */
+    setMatch(id: number, hltbId: number): Promise<LibraryCompletion>;
+    /** Opens a HowLongToBeat link in the browser. */
+    openLink(url: string): Promise<void>;
+  };
 
   settings(): Promise<Settings>;
   saveSettings(s: Settings): Promise<Settings>;
@@ -203,6 +215,8 @@ export interface Api {
       setupSources(sources: string[]): Promise<Settings>;
       /** Fetches the newest listings of every chosen source now. */
       refresh(): Promise<DiscoveryStatus>;
+      /** Pauses or resumes background indexing on this PC. */
+      pauseIndexing(paused: boolean): Promise<DiscoveryStatus>;
       home(): Promise<StoreHome>;
       /** Answers from the local index at once. */
       browse(q: BrowseQuery): Promise<SearchResult>;
@@ -247,6 +261,10 @@ export interface Api {
       remove(key: string): Promise<WishlistItem[]>;
       /** Marks a game's activity read; "" marks all. */
       acknowledge(key: string): Promise<WishlistItem[]>;
+      /** The Steam account signed in on this PC, to prefill the import. */
+      steamAccount(): Promise<SteamAccount>;
+      /** Imports a public Steam wishlist (SteamID64); merges by AppID and never removes a saved game. */
+      importSteam(steamId: string): Promise<WishlistImport>;
       onChange(cb: (items: WishlistItem[]) => void): () => void;
     };
   };

@@ -14,6 +14,7 @@ export const mockStoreSettings: StoreSettings = {
   privateSources: true,
   sources: ["fitgirl", "dodi"],
   sourceSetup: "done",
+  indexingPaused: false,
   blockDetections: true,
   language: "English",
   network: {

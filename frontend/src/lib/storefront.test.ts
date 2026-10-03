@@ -21,7 +21,7 @@ import type { BrowsePage, DiscoverySourceStatus, DiscoveryStatus, Enrichment, Ga
 
 const game = (key: string, extra: Partial<GameSummary> = {}): GameSummary => ({
   key, title: key, sourceBacked: true, sources: ["fitgirl"], releases: 1, publishedAt: 1, updatedAt: 1, sizeBytes: 0, languages: [], genres: [],
-  installable: true, popularRank: 0, reviewPercent: 0, reviewTotal: 0, wishlisted: false, activity: false, ...extra,
+  installable: true, popularRank: 0, completionMain: 0, reviewPercent: 0, reviewTotal: 0, wishlisted: false, activity: false, ...extra,
 });
 const page = (...keys: string[]): BrowsePage => ({ games: keys.map((k) => game(k)), total: keys.length, unknown: 0, languages: [], genres: [] });
 const result = (p: BrowsePage, extra: Partial<SearchResult> = {}): SearchResult => ({ query: emptyQuery(), page: p, other: [], remote: [], complete: true, ...extra });
@@ -236,7 +236,7 @@ const source = (over: Partial<DiscoverySourceStatus> = {}): DiscoverySourceStatu
   id: "fitgirl", name: "FitGirl", enabled: true, state: "idle", releases: 0, recentAt: 0, backfillPage: 0, backfillDone: false, retryAt: 0,
   host: "fitgirl-repacks.site", search: true, paged: true, torrents: true, defaultOn: true, notes: [], ...over,
 });
-const status = (over: Partial<DiscoveryStatus> = {}): DiscoveryStatus => ({ enabled: true, setupNeeded: false, sources: [source()], games: 0, releases: 0, refreshing: false, stale: false, ...over });
+const status = (over: Partial<DiscoveryStatus> = {}): DiscoveryStatus => ({ enabled: true, setupNeeded: false, sources: [source()], games: 0, releases: 0, refreshing: false, paused: false, playing: false, stale: false, ...over });
 
 describe("store mode", () => {
   it("asks the existing Store user to choose sources first", () => {
