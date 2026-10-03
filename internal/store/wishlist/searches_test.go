@@ -69,3 +69,18 @@ func TestDroppingAGameTakesItOffTheQueueWithoutASearch(t *testing.T) {
 		t.Errorf("empty queue: %q %v", key, wait)
 	}
 }
+
+func TestASearchThatMissedASourceGoesToTheBackAfterTheSpacing(t *testing.T) {
+	q := OpenSearches(filepath.Join(t.TempDir(), "searches.json"))
+	now := time.Now()
+	q.Enqueue([]string{"steam:1", "steam:2"}, now)
+	if err := q.Later("steam:1", now); err != nil {
+		t.Fatal(err)
+	}
+	if key, wait := q.Next(now); key != "" || wait != SearchSpacing {
+		t.Errorf("within the spacing: %q, wait %v", key, wait)
+	}
+	if key, _ := q.Next(now.Add(SearchSpacing)); key != "steam:2" || q.Len() != 2 {
+		t.Errorf("after the spacing: %q, %d queued", key, q.Len())
+	}
+}

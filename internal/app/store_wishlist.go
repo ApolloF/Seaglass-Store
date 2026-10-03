@@ -52,7 +52,8 @@ func (w *wishlistState) observations(d *discoveryState, key string) []wishlist.O
 }
 
 // observe compares saved games' releases with their baselines, and asks
-// for the articles of saved games known only from a search summary.
+// for the articles of saved games known only from a summary, or whose
+// summary changed since their article was read.
 func (w *wishlistState) observe(d *discoveryState) {
 	entries := w.store.List()
 	changed := w.nameImported(entries)
@@ -65,7 +66,7 @@ func (w *wishlistState) observe(d *discoveryState) {
 		}
 		if g, ok := d.currentView().Game(e.Key); ok {
 			for _, r := range g.Records {
-				if r.Entry.SummaryOnly && !r.Gone && r.FetchError == "" {
+				if discovery.NeedsDetail(r) {
 					d.queueDetail(r.Entry.SourceID, r.Entry.ID, e.Key, false)
 				}
 			}

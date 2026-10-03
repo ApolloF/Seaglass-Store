@@ -19,7 +19,10 @@ const MaxRecords = 50000
 
 // sourceFile is one source's part of the index on disk.
 type sourceFile struct {
-	Schema  int        `json:"schema"`
+	Schema int `json:"schema"`
+	// Folded is the last journal line the file holds; replaying skips it
+	// and the lines before it.
+	Folded  int64      `json:"folded,omitempty"`
 	Crawl   CrawlState `json:"crawl"`
 	Records []Record   `json:"records"`
 }
@@ -37,47 +40,59 @@ type Index struct {
 	dir          string // %LOCALAPPDATA%\Seaglass\store\discovery
 	identityPath string // %APPDATA%\Seaglass\store-identity.json
 
+	// saveMu keeps one Save at a time, from its snapshot until its files
+	// are in place, so an older snapshot never lands after a newer one.
+	saveMu sync.Mutex
+	// identityMu does the same for the corrections file.
+	identityMu sync.Mutex
+
 	mu       sync.RWMutex
 	records  map[string]map[string]*Record // source → entry ID → record
 	crawl    map[string]*CrawlState
 	identity identityFile
-	dirty    map[string]bool // sources whose file needs saving
-	version  int             // bumped on every change, for cached views
+	dirty    map[string]bool  // sources whose file needs saving
+	seq      map[string]int64 // the last journal line written, per source
+	version  int              // bumped on every change, for cached views
 }
 
 // OpenIndex loads the index from dir and the corrections from
 // identityPath. Missing, unreadable or older-schema files start empty: the
 // index is a cache and indexing again rebuilds it.
 func OpenIndex(dir, identityPath string) *Index {
-	ix := &Index{dir: dir, identityPath: identityPath, records: map[string]map[string]*Record{}, crawl: map[string]*CrawlState{}, dirty: map[string]bool{}}
+	ix := &Index{dir: dir, identityPath: identityPath, records: map[string]map[string]*Record{}, crawl: map[string]*CrawlState{}, dirty: map[string]bool{}, seq: map[string]int64{}}
 	for _, src := range Sources {
 		ix.records[src] = map[string]*Record{}
 		ix.crawl[src] = &CrawlState{Source: src}
-		b, err := os.ReadFile(ix.sourcePath(src))
-		if err != nil {
-			continue
-		}
-		var f sourceFile
-		if json.Unmarshal(b, &f) != nil || f.Schema != IndexSchema {
-			continue
-		}
-		f.Crawl.Source = src
-		ix.crawl[src] = &f.Crawl
-		for i := range f.Records {
-			r := f.Records[i]
-			if r.Entry.ID == "" || r.Entry.SourceID != src {
-				continue
-			}
-			ix.records[src][r.Entry.ID] = &r
-		}
-	}
-	for _, src := range Sources {
-		ix.replayJournal(src)
+		ix.replayJournal(src, ix.loadSource(src))
 	}
 	if b, err := os.ReadFile(identityPath); err == nil {
 		_ = json.Unmarshal(b, &ix.identity)
 	}
 	return ix
+}
+
+// loadSource reads a source's file and returns the last journal line it
+// holds.
+func (ix *Index) loadSource(src string) int64 {
+	b, err := os.ReadFile(ix.sourcePath(src))
+	if err != nil {
+		return 0
+	}
+	var f sourceFile
+	if json.Unmarshal(b, &f) != nil || f.Schema != IndexSchema {
+		return 0
+	}
+	f.Crawl.Source = src
+	ix.crawl[src] = &f.Crawl
+	for i := range f.Records {
+		r := f.Records[i]
+		if r.Entry.ID == "" || r.Entry.SourceID != src {
+			continue
+		}
+		ix.records[src][r.Entry.ID] = &r
+	}
+	ix.seq[src] = f.Folded
+	return f.Folded
 }
 
 func (ix *Index) sourcePath(src string) string { return filepath.Join(ix.dir, src+".json") }
@@ -89,48 +104,75 @@ func (ix *Index) Version() int {
 	return ix.version
 }
 
-// Save writes the sources that changed, each atomically.
+// Save writes the sources that changed, each atomically. A source's
+// journal is set aside under the same lock as the snapshot and removed
+// only once the file holding its lines is in place, so a crash or a failed
+// write in between loses no page.
 func (ix *Index) Save() error {
+	ix.saveMu.Lock()
+	defer ix.saveMu.Unlock()
+	var errs []error
+	files := map[string][]byte{}
 	ix.mu.Lock()
-	var files = map[string][]byte{}
 	for src := range ix.dirty {
-		f := sourceFile{Schema: IndexSchema, Crawl: *ix.crawl[src], Records: make([]Record, 0, len(ix.records[src]))}
+		f := sourceFile{Schema: IndexSchema, Folded: ix.seq[src], Crawl: *ix.crawl[src], Records: make([]Record, 0, len(ix.records[src]))}
 		for _, r := range ix.records[src] {
 			f.Records = append(f.Records, *r)
 		}
 		// A stable order keeps the file diffable and the writes deterministic.
 		slices.SortFunc(f.Records, func(a, b Record) int { return strings.Compare(a.Entry.ID, b.Entry.ID) })
 		b, err := json.Marshal(f)
+		if err == nil {
+			err = ix.holdJournal(src)
+		}
 		if err != nil {
-			ix.mu.Unlock()
-			return err
+			errs = append(errs, err) // still dirty: the next save tries again
+			continue
 		}
 		files[src] = b
-		ix.dropJournal(src)
+		delete(ix.dirty, src)
 	}
-	ix.dirty = map[string]bool{}
 	ix.mu.Unlock()
-	var errs []error
 	for src, b := range files {
 		if err := writeAtomic(ix.sourcePath(src), b); err != nil {
 			ix.mu.Lock()
 			ix.dirty[src] = true
 			ix.mu.Unlock()
 			errs = append(errs, err)
+			continue
 		}
+		// Should this fail, replaying skips the lines: the file holds them.
+		_ = os.Remove(ix.heldPath(src))
 	}
 	return errors.Join(errs...)
 }
 
+// replaceFile moves a written temporary file into place; tests make it
+// fail.
+var replaceFile = os.Rename
+
+// writeAtomic writes through a temporary file of its own in the same
+// directory, so two writers never share one, and renames it into place.
 func writeAtomic(path string, b []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	f, err := os.CreateTemp(dir, filepath.Base(path)+".*.tmp")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	_, err = f.Write(b)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = replaceFile(f.Name(), path)
+	}
+	if err != nil {
+		_ = os.Remove(f.Name())
+	}
+	return err
 }
 
 // Crawl returns a copy of a source's crawl state.
@@ -204,6 +246,9 @@ func cloneRecord(r *Record) Record {
 type MergeResult struct {
 	Added, Changed int
 	IDs            []string // the records touched, new or changed
+	// Relisted counts read articles whose summary changed: they wait to be
+	// read again (NeedsDetail).
+	Relisted int
 }
 
 // Merge adds or updates parsed entries of one source. origin is rss,
@@ -229,7 +274,9 @@ func (ix *Index) Merge(src string, entries []sources.Entry, origin string, backf
 				continue
 			}
 			r := &Record{Entry: e, FirstSeen: now, Backfill: backfill, LastSeen: now, Origin: origin}
-			if !e.SummaryOnly {
+			if e.SummaryOnly {
+				r.Listed, r.ListedAt = e.RawTitle, listedAt(e)
+			} else {
 				r.Detailed = now
 			}
 			m[e.ID] = r
@@ -239,12 +286,21 @@ func (ix *Index) Merge(src string, entries []sources.Entry, origin string, backf
 		}
 		old.LastSeen, old.Gone = now, false
 		if e.SummaryOnly && !old.Entry.SummaryOnly {
-			// A search summary knows less than the article already read;
-			// keep the article's claims and only fill a missing date.
+			// A summary knows less than the article already read; keep the
+			// article's claims and only fill a missing date. When the
+			// summary itself changed, the article is read again.
 			if old.Entry.PublishedAt == nil {
 				old.Entry.PublishedAt = e.PublishedAt
 			}
+			if relisted(old, e, now) {
+				old.Detailed, old.FetchError = time.Time{}, ""
+				res.Relisted++
+			}
+			old.Listed, old.ListedAt = e.RawTitle, listedAt(e)
 			continue
+		}
+		if e.SummaryOnly {
+			old.Listed, old.ListedAt = e.RawTitle, listedAt(e)
 		}
 		keepResolved(&e, old.Entry)
 		changed := !old.Entry.SummaryOnly && claimsDiffer(old.Entry, e)
@@ -270,6 +326,46 @@ func (ix *Index) Merge(src string, entries []sources.Entry, origin string, backf
 		ix.version++
 	}
 	return res
+}
+
+// previewRecheck is how often an announcement's page is read again while
+// its source keeps listing it: the page can turn into the release without
+// the listing changing.
+const previewRecheck = 24 * time.Hour
+
+// relisted says a read article's summary row now claims something else: a
+// new title (another update, a build, a preview label gone) or a newer
+// dated batch. A row that only lost its date, as when a news batch leaves
+// a catalog's front page, is no change.
+func relisted(r *Record, e sources.Entry, now time.Time) bool {
+	if r.Detailed.IsZero() {
+		return false // already waiting to be read
+	}
+	if r.Entry.ReleaseKind == "preview" && now.Sub(r.Detailed) >= previewRecheck {
+		return true
+	}
+	if r.Listed == "" {
+		return false // read before its summary was seen: nothing to compare
+	}
+	at := listedAt(e)
+	return e.RawTitle != r.Listed || !at.IsZero() && !at.Equal(r.ListedAt)
+}
+
+// listedAt is the date a summary row is listed under.
+func listedAt(e sources.Entry) time.Time {
+	switch {
+	case e.PublishedAt != nil:
+		return *e.PublishedAt
+	case e.UpdatedAt != nil:
+		return *e.UpdatedAt
+	}
+	return time.Time{}
+}
+
+// NeedsDetail says a record's release page should be read: only its
+// summary is known, or its summary changed since the page was read.
+func NeedsDetail(r Record) bool {
+	return !r.Gone && r.FetchError == "" && (r.Entry.SummaryOnly || r.Detailed.IsZero())
 }
 
 // Origins of records.
@@ -357,12 +453,23 @@ func (ix *Index) SteamCorrections() map[string]IdentityCorrection {
 // SetSteamCorrections records corrections for these title keys and saves
 // them at once (they are the person's choices, not cache).
 func (ix *Index) SetSteamCorrections(cs []IdentityCorrection) error {
+	return ix.saveIdentity(func() {
+		for _, c := range cs {
+			ix.identity.Steam = slices.DeleteFunc(ix.identity.Steam, func(o IdentityCorrection) bool { return o.TitleKey == c.TitleKey })
+			ix.identity.Steam = append(ix.identity.Steam, c)
+		}
+		ix.version++
+	})
+}
+
+// saveIdentity changes the corrections and writes them, one write at a
+// time from the change until the file is in place, so the latest change
+// is the one on disk.
+func (ix *Index) saveIdentity(change func()) error {
+	ix.identityMu.Lock()
+	defer ix.identityMu.Unlock()
 	ix.mu.Lock()
-	for _, c := range cs {
-		ix.identity.Steam = slices.DeleteFunc(ix.identity.Steam, func(o IdentityCorrection) bool { return o.TitleKey == c.TitleKey })
-		ix.identity.Steam = append(ix.identity.Steam, c)
-	}
-	ix.version++
+	change()
 	b, err := json.MarshalIndent(ix.identity, "", "  ")
 	ix.mu.Unlock()
 	if err != nil {
@@ -381,21 +488,16 @@ func (ix *Index) CompletionMatch(key string) int {
 
 // SetCompletionMatch records the person's HowLongToBeat choice (0 clears it).
 func (ix *Index) SetCompletionMatch(key string, id int) error {
-	ix.mu.Lock()
-	if ix.identity.Completion == nil {
-		ix.identity.Completion = map[string]int{}
-	}
-	if id == 0 {
-		delete(ix.identity.Completion, key)
-	} else {
-		ix.identity.Completion[key] = id
-	}
-	b, err := json.MarshalIndent(ix.identity, "", "  ")
-	ix.mu.Unlock()
-	if err != nil {
-		return err
-	}
-	return writeAtomic(ix.identityPath, b)
+	return ix.saveIdentity(func() {
+		if ix.identity.Completion == nil {
+			ix.identity.Completion = map[string]int{}
+		}
+		if id == 0 {
+			delete(ix.identity.Completion, key)
+		} else {
+			ix.identity.Completion[key] = id
+		}
+	})
 }
 
 // CanonicalPage is the article URL records are keyed by: no query or

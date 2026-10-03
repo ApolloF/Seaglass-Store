@@ -7,6 +7,7 @@ import (
 
 	"github.com/ApolloF/Seaglass/internal/logx"
 	"github.com/ApolloF/Seaglass/internal/store/discovery"
+	"github.com/ApolloF/Seaglass/internal/store/enrich"
 	"github.com/ApolloF/Seaglass/internal/store/wishlist"
 )
 
@@ -62,25 +63,37 @@ func (w *wishlistState) canSearch() bool {
 	return false
 }
 
-// searchSources are the chosen sources that may be searched now: with a
-// site search, not halted and not backing off.
-func (w *wishlistState) searchSources(now time.Time) []string {
+// searchSources are the chosen sources with a site search that may be
+// searched now: not halted and not backing off. until is the end of the
+// soonest wait of the others (zero when none waits).
+func (w *wishlistState) searchSources(now time.Time) (srcs []string, until time.Time) {
 	d := w.c.discovery
-	var out []string
 	for _, src := range d.enabled() {
-		if d.searchable(src) && !d.halted(src) && !now.Before(d.index().Crawl(src).RetryAt) {
-			out = append(out, src)
+		if !d.searchable(src) || d.halted(src) {
+			continue
 		}
+		if at := d.index().Crawl(src).RetryAt; now.Before(at) {
+			if until.IsZero() || at.Before(until) {
+				until = at
+			}
+			continue
+		}
+		srcs = append(srcs, src)
 	}
-	return out
+	return srcs, until
 }
 
 // searchNext searches for the next queued game, if one may be searched
-// now, and says how long to wait before looking again.
+// now, and says how long to wait before looking again. A game is done
+// once every chosen source answered its search; otherwise it goes to the
+// back of the queue and is searched again on its turn.
 func (w *wishlistState) searchNext(now time.Time) time.Duration {
 	d := w.c.discovery
-	srcs := w.searchSources(now)
+	srcs, until := w.searchSources(now)
 	if len(srcs) == 0 {
+		if !until.IsZero() {
+			return min(until.Sub(now), searchIdle)
+		}
 		return searchIdle
 	}
 	q := w.queue()
@@ -97,22 +110,32 @@ func (w *wishlistState) searchNext(now time.Time) time.Duration {
 			w.logErr(q.Drop(key, now))
 			continue
 		}
-		ctx := d.indexCtx()
-		title, err := w.searchTitle(ctx, e)
-		if err != nil {
-			// Steam can't name the game right now; it stays queued.
+		title, err := w.searchTitle(d.ctx(), e)
+		switch {
+		case enrich.Unreadable(err):
+			// Steam's answer about this game can't be read, and asking
+			// again soon gets the same: it waits like a searched game, and
+			// the games behind it go on.
+			logx.Printf("store wishlist: naming %s: %v", key, err)
+			w.logErr(q.Done(key, now))
+			continue
+		case err != nil:
+			// Steam can't answer right now; the game stays first in line.
 			logx.Printf("store wishlist: naming %s: %v", key, err)
 			return searchIdle
-		}
-		if title == "" {
+		case title == "":
 			// Nothing to search with: Steam doesn't know the game.
 			w.logErr(q.Done(key, now))
 			continue
 		}
-		added := false
+		complete, added := until.IsZero(), false
 		for _, src := range srcs {
+			ctx := d.indexCtx(src)
 			if d.halted(src) || ctx.Err() != nil {
 				return searchIdle // stays queued for when indexing may run again
+			}
+			if _, ok := d.search.Source(src, title, now); ok {
+				continue // answered within the hour
 			}
 			f, s, err := d.fetcher(src)
 			if err != nil {
@@ -120,18 +143,23 @@ func (w *wishlistState) searchNext(now time.Time) time.Duration {
 				continue
 			}
 			before := d.index().Counts()[src]
-			n, err := discovery.SearchSource(ctx, d.index(), s, f, title, time.Now())
+			n, err := discovery.SearchSource(ctx, d.index(), s, f, title, now)
 			if err != nil {
 				if ctx.Err() != nil {
 					return searchIdle
 				}
 				logx.Printf("store wishlist: searching %s for %q: %v", src, title, err)
+				complete = complete && !discovery.Unanswered(err)
 				continue
 			}
-			d.search.Put(src, title, n, nil, time.Now())
+			d.search.Put(src, title, n, nil, now)
 			added = added || d.index().Counts()[src] > before
 		}
-		w.logErr(q.Done(key, now))
+		if complete {
+			w.logErr(q.Done(key, now))
+		} else {
+			w.logErr(q.Later(key, now))
+		}
 		if added {
 			d.save()
 			d.indexChanged(nil, "")

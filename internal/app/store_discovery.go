@@ -48,10 +48,13 @@ type discoveryState struct {
 	active      map[string]string            // source → crawl state while a pass runs
 	force       map[string]bool              // a pass that ignores the age of the newest listings
 	wasPlaying  bool                         // a game ran at the last tick
+	statusAt    time.Time                    // the last status update for an older page
 	runCtx      context.Context              // cancelled when discovery is turned off
 	runCancel   context.CancelFunc
-	idxCtx      context.Context // background indexing; also cancelled when it's paused
-	idxCancel   context.CancelFunc
+	srcCtx      map[string]context.Context // per source; also cancelled when it's turned off
+	srcCancel   map[string]context.CancelFunc
+	idxCtx      map[string]context.Context // per source's background indexing; also cancelled when it's paused
+	idxCancel   map[string]context.CancelFunc
 	view        *discovery.View
 	viewKey     string         // index version, catalog version and sources the view was built from
 	steamNames  map[int]string // Steam-only search results, for their pages and art
@@ -67,7 +70,8 @@ type detailRequest struct{ src, id, key string }
 func newDiscoveryState(c *Core) *discoveryState {
 	d := &discoveryState{c: c, auto: true, kick: make(chan struct{}, 1), detailWake: make(chan struct{}, 1), breather: 3 * time.Second, lookup: sources.Lookup,
 		fetchers: map[string]discovery.Fetcher{}, passMu: map[string]*sync.Mutex{}, running: map[string]bool{}, active: map[string]string{}, force: map[string]bool{},
-		steamNames: map[int]string{}, queuedIDs: map[string]bool{}}
+		steamNames: map[int]string{}, queuedIDs: map[string]bool{},
+		srcCtx: map[string]context.Context{}, srcCancel: map[string]context.CancelFunc{}, idxCtx: map[string]context.Context{}, idxCancel: map[string]context.CancelFunc{}}
 	d.isPlaying = func() bool { return c.Launch != nil && c.Launch.Active() }
 	for _, src := range discovery.Sources {
 		d.passMu[src] = &sync.Mutex{}
@@ -115,16 +119,35 @@ func (d *discoveryState) ctx() context.Context {
 	return d.runCtx
 }
 
-// indexCtx is the context background indexing and idle wishlist searches
-// run in: discovery's, and also cancelled when the person pauses indexing.
-func (d *discoveryState) indexCtx() context.Context {
+// sourceCtx is the context a source's requests run in: discovery's, and
+// also cancelled when that source is turned off, so turning one source off
+// leaves the others' work running.
+func (d *discoveryState) sourceCtx(src string) context.Context {
 	run := d.ctx()
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.idxCtx == nil || d.idxCtx.Err() != nil {
-		d.idxCtx, d.idxCancel = context.WithCancel(run)
+	return liveChild(d.srcCtx, d.srcCancel, src, run)
+}
+
+// indexCtx is the context a source's background indexing and idle
+// wishlist searches run in: the source's, and also cancelled when the
+// person pauses indexing.
+func (d *discoveryState) indexCtx(src string) context.Context {
+	parent := d.sourceCtx(src)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return liveChild(d.idxCtx, d.idxCancel, src, parent)
+}
+
+// liveChild is the context kept under key, made anew from parent once it
+// was cancelled. d.mu is held.
+func liveChild(ctxs map[string]context.Context, cancels map[string]context.CancelFunc, key string, parent context.Context) context.Context {
+	if c := ctxs[key]; c != nil && c.Err() == nil {
+		return c
 	}
-	return d.idxCtx
+	c, cancel := context.WithCancel(parent)
+	ctxs[key], cancels[key] = c, cancel
+	return c
 }
 
 func (d *discoveryState) wake() {
@@ -284,13 +307,13 @@ func (d *discoveryState) pass(src string, force, wait bool) (discovery.PassResul
 		return discovery.PassResult{}, err
 	}
 	d.setActive(src, map[bool]string{true: discovery.CrawlRecent, false: discovery.CrawlBackfill}[recent])
-	res := discovery.Pass(d.indexCtx(), ix, s, f, force, time.Now, discovery.PassHooks{
+	res := discovery.Pass(d.indexCtx(src), ix, s, f, force, time.Now, discovery.PassHooks{
 		Paused: func() bool { return d.halted(src) },
 		// Releases, the page and errors in the status stay current page by page.
 		Page: func(older bool) {
-			if older {
-				d.setActive(src, discovery.CrawlBackfill)
-			} else {
+			if !older {
+				d.emitStatus()
+			} else if d.backfillPage(src, time.Now()) {
 				d.emitStatus()
 			}
 		},
@@ -301,11 +324,29 @@ func (d *discoveryState) pass(src string, force, wait bool) (discovery.PassResul
 		delete(d.force, src)
 		d.mu.Unlock()
 	}
-	if res.Merged.Added > 0 || res.Merged.Changed > 0 {
-		logx.Printf("store discovery: %s: %d new, %d changed releases (%d pages)", src, res.Merged.Added, res.Merged.Changed, res.Pages)
+	if res.Merged.Added > 0 || res.Merged.Changed > 0 || res.Merged.Relisted > 0 {
+		logx.Printf("store discovery: %s: %d new, %d changed, %d relisted releases (%d pages)", src, res.Merged.Added, res.Merged.Changed, res.Merged.Relisted, res.Pages)
 		d.indexChanged(res.Merged.IDs, src)
 	}
 	return res, res.Err
+}
+
+// statusEvery is the shortest time between two status updates while older
+// pages are indexed: each update counts the games, which groups the whole
+// index, and backfill brings a page every two seconds per source. The end
+// of a batch always updates it.
+const statusEvery = 5 * time.Second
+
+// backfillPage notes an older page of src; true when the status is due.
+func (d *discoveryState) backfillPage(src string, now time.Time) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.active[src] = discovery.CrawlBackfill
+	if now.Sub(d.statusAt) < statusEvery {
+		return false
+	}
+	d.statusAt = now
+	return true
 }
 
 func (d *discoveryState) setActive(src, state string) {
@@ -400,8 +441,8 @@ func (d *discoveryState) settingsChanged(old, saved settings.Settings) {
 	case saved.Store.IndexingPaused && !old.Store.IndexingPaused:
 		// Stop the requests in flight too; their pages are asked again on resume.
 		d.mu.Lock()
-		if d.idxCancel != nil {
-			d.idxCancel()
+		for _, cancel := range d.idxCancel {
+			cancel()
 		}
 		d.mu.Unlock()
 	case !saved.Store.IndexingPaused && old.Store.IndexingPaused:
@@ -411,30 +452,56 @@ func (d *discoveryState) settingsChanged(old, saved settings.Settings) {
 		}
 	}
 	wasOn := func(v settings.Settings, src string) bool { return v.ExperimentalStore && v.Store.DiscoveryOn(src) }
-	turnedOff, turnedOn := false, false
+	var off []string
+	turnedOn, anyOn := false, false
 	for _, src := range discovery.Sources {
 		a, b := wasOn(old, src), wasOn(saved, src)
-		turnedOff = turnedOff || (a && !b)
+		if a && !b {
+			off = append(off, src)
+		}
 		turnedOn = turnedOn || (!a && b)
+		anyOn = anyOn || b
 	}
-	if turnedOff {
-		d.mu.Lock()
+	if len(off) > 0 {
+		d.stopSources(off, !anyOn)
+	}
+	if turnedOn {
+		d.start()
+	}
+	if turnedOn || len(off) > 0 {
+		d.c.emit(EventStoreGames, discovery.Change{Keys: []string{}, All: true})
+	}
+	d.emitStatus()
+}
+
+// stopSources cancels the work of the sources turned off: their passes,
+// searches and release pages, in flight and queued. all: nothing is on
+// anymore, so the person's search stops too.
+func (d *discoveryState) stopSources(off []string, all bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, src := range off {
+		if cancel := d.srcCancel[src]; cancel != nil {
+			cancel()
+		}
+	}
+	if all {
 		if d.runCancel != nil {
 			d.runCancel()
 		}
 		if d.searchStop != nil {
 			d.searchStop()
 		}
-		d.detailQueue, d.queuedIDs = nil, map[string]bool{}
-		d.mu.Unlock()
 	}
-	if turnedOn {
-		d.start()
+	kept := d.detailQueue[:0]
+	for _, r := range d.detailQueue {
+		if slices.Contains(off, r.src) {
+			delete(d.queuedIDs, r.id)
+		} else {
+			kept = append(kept, r)
+		}
 	}
-	if turnedOn || turnedOff {
-		d.c.emit(EventStoreGames, discovery.Change{Keys: []string{}, All: true})
-	}
-	d.emitStatus()
+	d.detailQueue = kept
 }
 
 func (d *discoveryState) sourceName(src string) string {
@@ -638,7 +705,7 @@ func (d *discoveryState) details(key string) (discovery.GameDetails, error) {
 		out.Identity.Name = g.Title
 	}
 	for _, r := range g.Records {
-		if r.Entry.SummaryOnly && !r.Gone && r.FetchError == "" {
+		if discovery.NeedsDetail(r) {
 			out.Loading = true
 			d.queueDetail(r.Entry.SourceID, r.Entry.ID, key, true)
 		}
@@ -726,7 +793,7 @@ func (d *discoveryState) detailLoop(ctx context.Context) {
 		}
 		if slices.Contains(d.enabled(), req.src) {
 			if f, s, err := d.fetcher(req.src); err == nil {
-				err := discovery.FetchDetail(d.ctx(), d.index(), s.Source, f, req.id, time.Now())
+				err := discovery.FetchDetail(d.sourceCtx(req.src), d.index(), s.Source, f, req.id, time.Now())
 				if err != nil && !errors.Is(err, context.Canceled) {
 					logx.Printf("store discovery: release details: %v", err)
 				}
@@ -769,7 +836,7 @@ func (d *discoveryState) prepare(key, id string) (discovery.PreparedRelease, err
 	if !slices.Contains(d.enabled(), src) {
 		return discovery.PreparedRelease{}, sources.ErrDisabled
 	}
-	ctx, cancel := context.WithTimeout(d.ctx(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(d.sourceCtx(src), 3*time.Minute)
 	defer cancel()
 	ix := d.index()
 	if r.Entry.SummaryOnly || r.Detailed.IsZero() {
@@ -958,11 +1025,15 @@ func (d *discoveryState) searchRemote(text string) ([]discovery.ProviderProgress
 				})
 				return
 			}
+			// Turning this source off stops only its part of the search.
+			sctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			defer context.AfterFunc(d.sourceCtx(src), cancel)()
 			f, s, err := d.fetcher(src)
 			if err == nil {
 				before := d.index().Counts()[src]
 				var n int
-				n, err = discovery.SearchSource(ctx, d.index(), s, f, text, time.Now())
+				n, err = discovery.SearchSource(sctx, d.index(), s, f, text, time.Now())
 				if err == nil {
 					d.search.Put(src, text, n, nil, time.Now())
 					if d.index().Counts()[src] > before {

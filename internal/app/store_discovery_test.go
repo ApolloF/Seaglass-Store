@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -270,6 +271,57 @@ func TestTurningSourcesOffCancelsIndexing(t *testing.T) {
 	}
 	if res, _ := s.BrowseGames(discovery.BrowseQuery{}); res.Page.Total != 0 {
 		t.Error("games of turned-off sources are still shown")
+	}
+}
+
+func TestTurningOneSourceOffCancelsOnlyItsWork(t *testing.T) {
+	c, _ := discoveryCore(t)
+	d := c.discovery
+	fitgirl, dodi := d.indexCtx("fitgirl"), d.indexCtx("dodi")
+	d.queueDetail("fitgirl", "fitgirl-release", "title:a", false)
+	d.queueDetail("dodi", "dodi-release", "title:b", false)
+	if _, err := c.updateSettings(func(v *settings.Settings) { v.Store.Sources = []string{"fitgirl"} }); err != nil {
+		t.Fatal(err)
+	}
+	if dodi.Err() == nil {
+		t.Error("DODI's work went on after it was turned off")
+	}
+	if fitgirl.Err() != nil || d.ctx().Err() != nil {
+		t.Error("turning DODI off cancelled FitGirl's work")
+	}
+	d.mu.Lock()
+	queue, queued := slices.Clone(d.detailQueue), len(d.queuedIDs)
+	d.mu.Unlock()
+	if len(queue) != 1 || queue[0].src != "fitgirl" || queued != 1 {
+		t.Errorf("release pages still queued: %+v", queue)
+	}
+	// Pausing stops every source's indexing, but not its other work.
+	if _, err := c.updateSettings(func(v *settings.Settings) { v.Store.IndexingPaused = true }); err != nil {
+		t.Fatal(err)
+	}
+	if fitgirl.Err() == nil || d.sourceCtx("fitgirl").Err() != nil {
+		t.Errorf("after pausing: indexing %v, release pages %v", fitgirl.Err(), d.sourceCtx("fitgirl").Err())
+	}
+}
+
+// Older pages arrive every two seconds per source; each status counts the
+// games by grouping the whole index, so it's sent at most every few
+// seconds (and always at the end of a batch, by setActive).
+func TestOlderPagesUpdateTheStatusAtMostEveryFewSeconds(t *testing.T) {
+	c, _ := discoveryCore(t)
+	d := c.discovery
+	now := time.Now()
+	if !d.backfillPage("fitgirl", now) {
+		t.Error("the first older page sent no status")
+	}
+	if d.backfillPage("dodi", now.Add(2*time.Second)) || d.backfillPage("fitgirl", now.Add(4*time.Second)) {
+		t.Error("a status within a few seconds of the last one")
+	}
+	if !d.backfillPage("fitgirl", now.Add(statusEvery)) {
+		t.Error("no status after the interval")
+	}
+	if d.active["dodi"] != discovery.CrawlBackfill {
+		t.Error("a page without a status isn't noted as indexing older pages")
 	}
 }
 

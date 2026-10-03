@@ -2,6 +2,9 @@ package discovery
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -77,16 +80,30 @@ func (c *SearchCache) Put(provider, text string, found int, steam []SteamHit, no
 
 // SearchSource asks a source site's own search and indexes what it finds.
 // Releases published more than a week ago count as history (backfill),
-// so finding them never looks like news.
+// so finding them never looks like news. It never asks a source before
+// its RetryAt, and a search the source answers with "wait" (HTTP 429 or
+// 503, Retry-After) puts the source into backoff, saved at once, like a
+// failed listing page.
 func SearchSource(ctx context.Context, ix *Index, p sources.Provider, f Fetcher, text string, now time.Time) (int, error) {
 	src := p.Source
 	raw, err := p.SearchURL(strings.TrimSpace(text))
 	if err != nil {
 		return 0, err
 	}
+	if until := ix.Crawl(src.ID).RetryAt; now.Before(until) {
+		return 0, unanswered{waitError(src, until)}
+	}
 	doc, err := f.FetchDocument(ctx, raw)
 	if err != nil {
-		return 0, err
+		if slowDown(err) {
+			if jerr := backOff(ix, src.ID, err, now); jerr != nil {
+				err = errors.Join(err, fmt.Errorf("saving the index: %w", jerr))
+			}
+		}
+		if definite(err) {
+			return 0, err
+		}
+		return 0, unanswered{err}
 	}
 	entries, err := sources.Parse(src, doc.URL, doc.Body)
 	if err != nil {
@@ -104,3 +121,21 @@ func SearchSource(ctx context.Context, ix *Index, p sources.Provider, f Fetcher,
 	ix.Merge(src.ID, older, OriginSearch, true, now)
 	return len(entries), nil
 }
+
+// unanswered is a search the source didn't answer: it asked to wait, the
+// request failed or timed out, or the site had a server error.
+type unanswered struct{ error }
+
+func (e unanswered) Unwrap() error { return e.error }
+
+// definite: the site answered with a client error, such as a missing
+// page, that asking again won't change.
+func definite(err error) bool {
+	var status *sources.HTTPError
+	return errors.As(err, &status) && status.Status >= 400 && status.Status < 500 &&
+		status.Status != http.StatusRequestTimeout && !slowDown(err)
+}
+
+// Unanswered says a search failed in a way asking again later can fix. A
+// page that doesn't exist or can't be read is an answer.
+func Unanswered(err error) bool { return errors.As(err, new(unanswered)) }

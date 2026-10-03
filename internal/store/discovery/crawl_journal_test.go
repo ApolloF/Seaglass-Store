@@ -2,10 +2,12 @@ package discovery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -152,6 +154,147 @@ func TestSaveFoldsTheJournalIntoTheSourceFile(t *testing.T) {
 	disk := reopen(dir)
 	if r, _ := disk.Record("dodi", id); r.FetchError != "kept" || disk.Crawl("dodi").NextPage != 6 || disk.Counts()["dodi"] != 50 {
 		t.Errorf("after reopening: %+v, %+v, %d records", r, disk.Crawl("dodi"), disk.Counts()["dodi"])
+	}
+}
+
+// Saves from other work (release pages, searches, the wishlist) run while
+// a pass journals its pages: whatever order they finish in, reopening
+// finds every page and the position after the last one.
+func TestSavesDuringAPassLoseNoPage(t *testing.T) {
+	ix, dir := testIndex(t)
+	f := newFakeSource(t, "fitgirl", 95)
+	clk := &clock{time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	for range 3 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				if err := ix.Save(); err != nil {
+					t.Error(err)
+					return
+				}
+				ix.Update("fitgirl", sources.EntryID("fitgirl", "https://fitgirl-repacks.site/game-000/"), func(r *Record) { r.FetchError = "" })
+			}
+		}()
+	}
+	for res := Pass(context.Background(), ix, f.src, f, true, clk.now, PassHooks{}); ; res = Pass(context.Background(), ix, f.src, f, false, clk.now, PassHooks{}) {
+		if res.Err != nil {
+			t.Fatal(res.Err)
+		}
+		if !res.More {
+			break
+		}
+	}
+	close(done)
+	wg.Wait()
+	disk := reopen(dir)
+	if c := disk.Crawl("fitgirl"); !c.BackfillDone || c.NextPage != ix.Crawl("fitgirl").NextPage || disk.Counts()["fitgirl"] != 95 {
+		t.Fatalf("after reopening: %+v, %d records", c, disk.Counts()["fitgirl"])
+	}
+	for _, r := range ix.Records([]string{"fitgirl"}) {
+		if d, ok := disk.Record("fitgirl", r.Entry.ID); !ok || d.Entry.Version != r.Entry.Version {
+			t.Errorf("%s lost", r.Entry.Title)
+		}
+	}
+}
+
+func TestAFailedSaveKeepsTheJournalUntilTheFileIsInPlace(t *testing.T) {
+	ix, dir := testIndex(t)
+	f := newFakeSource(t, "dodi", 95)
+	clk := &clock{time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
+	Pass(context.Background(), ix, f.src, f, true, clk.now, PassHooks{})
+	defer func() { replaceFile = os.Rename }()
+	replaceFile = func(string, string) error { return errors.New("the file is locked by a scanner") }
+	if err := ix.Save(); err == nil {
+		t.Fatal("the save didn't report the failed rename")
+	}
+	// More pages after the failed save, then Seaglass stops.
+	Pass(context.Background(), ix, f.src, f, false, clk.now, PassHooks{})
+	disk := reopen(dir)
+	if c := disk.Crawl("dodi"); !c.BackfillDone || disk.Counts()["dodi"] != 95 {
+		t.Fatalf("after a failed save: %+v, %d records", c, disk.Counts()["dodi"])
+	}
+	if matches, _ := filepath.Glob(filepath.Join(dir, "discovery", "*.tmp")); len(matches) != 0 {
+		t.Errorf("temporary files left: %v", matches)
+	}
+
+	replaceFile = os.Rename
+	if err := ix.Save(); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"dodi.journal", "dodi.journal.folding"} {
+		if _, err := os.Stat(filepath.Join(dir, "discovery", name)); !os.IsNotExist(err) {
+			t.Errorf("%s is still there after saving: %v", name, err)
+		}
+	}
+	if disk := reopen(dir); !disk.Crawl("dodi").BackfillDone || disk.Counts()["dodi"] != 95 {
+		t.Errorf("after saving again: %+v, %d records", disk.Crawl("dodi"), disk.Counts()["dodi"])
+	}
+}
+
+// Lines the source file already holds aren't replayed over it: a crash
+// after the file was renamed into place, before the held lines were
+// removed, doesn't undo what changed after them.
+func TestHeldLinesTheFileHoldsAreNotReplayed(t *testing.T) {
+	ix, dir := testIndex(t)
+	f := newFakeSource(t, "dodi", 95)
+	clk := &clock{time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
+	Pass(context.Background(), ix, f.src, f, true, clk.now, PassHooks{})
+	journal := filepath.Join(dir, "discovery", "dodi.journal")
+	lines, err := os.ReadFile(journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := sources.EntryID("dodi", "https://dodi-repacks.site/game-000/")
+	ix.Update("dodi", id, func(r *Record) { r.FetchError = "kept" })
+	if err := ix.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "discovery", "dodi.journal.folding"), lines, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := reopen(dir).Record("dodi", id); r.FetchError != "kept" {
+		t.Errorf("an older held line was replayed over the file: %+v", r)
+	}
+}
+
+func TestCorrectionsWrittenTogetherKeepTheLastChange(t *testing.T) {
+	ix, dir := testIndex(t)
+	var wg sync.WaitGroup
+	for i := range 20 {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			if err := ix.SetCompletionMatch(fmt.Sprintf("title:game%d", i), i+1); err != nil {
+				t.Error(err)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			if err := ix.SetSteamCorrections([]IdentityCorrection{{TitleKey: fmt.Sprintf("game%d", i), SteamAppID: i + 1}}); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	disk := reopen(dir)
+	if n := len(disk.SteamCorrections()); n != 20 {
+		t.Errorf("%d corrections on disk, want 20", n)
+	}
+	for i := range 20 {
+		if got := disk.CompletionMatch(fmt.Sprintf("title:game%d", i)); got != i+1 {
+			t.Errorf("game %d: completion match %d", i, got)
+		}
+	}
+	if matches, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(matches) != 0 {
+		t.Errorf("temporary files left: %v", matches)
 	}
 }
 

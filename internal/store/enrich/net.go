@@ -66,6 +66,10 @@ type errFormat struct{ what string }
 
 func (e *errFormat) Error() string { return "unexpected answer from the provider: " + e.what }
 
+// Unreadable says a provider answered with something Seaglass can't read:
+// asking again soon gets the same answer.
+func Unreadable(err error) bool { return errors.As(err, new(*errFormat)) }
+
 // Limits on what we read and how long we wait.
 const (
 	maxBody        = 4 << 20
