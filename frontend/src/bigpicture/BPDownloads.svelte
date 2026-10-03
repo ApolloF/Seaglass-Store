@@ -1,7 +1,8 @@
 <script lang="ts">
   // The store's downloads, to look at from the couch: what's coming, how
   // far it got, and what's ready. Changing them is for desktop mode.
-  import { progress, statusLine } from "../lib/downloads";
+  import Icon from "../components/Icon.svelte";
+  import { engineLabel, engineProblem, pageList, progress, statusLine } from "../lib/downloads";
   import { feedback, useInput } from "../lib/input.svelte";
   import { shop } from "../lib/shop.svelte";
   import Hints from "./Hints.svelte";
@@ -10,10 +11,8 @@
 
   $effect(() => shop.start());
 
-  // Still going first, newest first.
-  const list = $derived(
-    [...shop.downloads].sort((a, b) => Number(a.state === "installed") - Number(b.state === "installed") || b.created - a.created),
-  );
+  const list = $derived(pageList(shop.downloads));
+  const problem = $derived(engineProblem(shop.engine, shop.downloads, true));
   let scroller: HTMLDivElement | undefined = $state();
 
   $effect(() =>
@@ -36,7 +35,18 @@
   <div class="head">
     <h1>Downloads</h1>
     <span class="sub">{shop.active ? `${shop.active} on their way` : "Nothing on its way"}</span>
+    {#if shop.engine}<span class="engine" class:warn={!!problem}>{engineLabel(shop.engine, shop.downloads)}</span>{/if}
   </div>
+  {#if problem}
+    <div class="problem" role="alert">
+      <Icon name="warn" size={30} />
+      <div class="text">
+        <strong>{problem.title}</strong>
+        {#if problem.error}<span class="err">{problem.error}</span>{/if}
+        <span>{problem.next}</span>
+      </div>
+    </div>
+  {/if}
   <div class="list" bind:this={scroller}>
     {#each list as d (d.id)}
       <div class="row" class:warn={d.state === "failed" || d.state === "blocked"}>
@@ -47,7 +57,7 @@
         {/if}
       </div>
     {:else}
-      <p class="none">Games you get from the store in desktop mode download here, also while you play (unless that's turned off).</p>
+      <p class="none">Games you get from the Store download here, also while you play (unless that's turned off).</p>
     {/each}
   </div>
   <div class="hints"><Hints left="Install, pause and remove downloads in desktop mode" hints={[{ button: "back", label: "Back" }]} /></div>
@@ -76,6 +86,40 @@
   .sub {
     font-size: 22px;
     color: rgba(232, 237, 242, 0.7);
+  }
+  .engine {
+    margin-left: auto;
+    font-size: 20px;
+    font-weight: 600;
+    color: rgba(232, 237, 242, 0.6);
+  }
+  .engine.warn {
+    color: #f3b35a;
+  }
+  .problem {
+    display: flex;
+    gap: 22px;
+    margin-top: 28px;
+    padding: 24px 28px;
+    border-radius: 18px;
+    background: rgba(243, 179, 90, 0.1);
+    border: 1px solid rgba(243, 179, 90, 0.35);
+    color: #f3b35a;
+  }
+  .problem .text {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 20px;
+    color: rgba(232, 237, 242, 0.8);
+  }
+  .problem strong {
+    font-size: 26px;
+    color: #f3f5f7;
+  }
+  .problem .err {
+    color: #f3b35a;
+    overflow-wrap: anywhere;
   }
   .list {
     flex: 1;

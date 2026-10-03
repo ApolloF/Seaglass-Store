@@ -12,6 +12,14 @@ export function needsYou(d: Download): boolean {
   return (d.state === "downloaded" && !!d.safety && !d.autoInstall) || (d.state === "downloaded" && d.safety?.verdict === "warn") || d.state === "blocked";
 }
 
+// What waits for the person first, then what's still going, then the rest.
+const rank = (d: Download) => (needsYou(d) ? 0 : d.state === "installed" ? 2 : d.state === "downloaded" ? 1.5 : 1);
+
+/** The Downloads pages' order: by rank, newest first within each. Every download shows, whatever the engine does. */
+export function pageList(ds: Download[]): Download[] {
+  return [...ds].sort((a, b) => rank(a) - rank(b) || b.created - a.created);
+}
+
 export function progress(d: Download): number {
   return d.size > 0 ? Math.min(1, d.done / d.size) : d.state === "downloaded" ? 1 : 0;
 }
@@ -67,4 +75,58 @@ export function statusLine(d: Download, engine: EngineStatus | null): string {
   }
   if (!d.downSpeed) return [size, d.seeds + d.peers ? `${d.seeds + d.peers} peers, no data yet` : "Looking for peers…"].filter(Boolean).join(" · ");
   return [size, speed(d.downSpeed), eta(d.eta) && `${eta(d.eta)} left`].filter(Boolean).join(" · ");
+}
+
+// ---------------------------------------------------------------------------
+// The download engine, as the Downloads pages show it.
+
+export type EngineState = "running" | "starting" | "stopped" | "held";
+
+/** Downloads that wait for the engine to run. */
+export const waitingCount = (ds: Download[]) => ds.filter((d) => d.state === "queued" || d.state === "downloading").length;
+
+/** What qBittorrent is doing: it starts when something waits and stops when idle. */
+export function engineState(e: EngineStatus, ds: Download[]): EngineState {
+  if (e.held) return "held";
+  if (e.running) return "running";
+  return waitingCount(ds) && !e.error && e.installed ? "starting" : "stopped";
+}
+
+const engineLabels: Record<EngineState, string> = { running: "Running", starting: "Starting", stopped: "Not running", held: "Paused by you" };
+
+/** "qBittorrent: Running" style label for the engine's state. */
+export function engineLabel(e: EngineStatus, ds: Download[]): string {
+  const st = engineState(e, ds);
+  return `qBittorrent: ${engineLabels[st]}${st === "running" && e.version ? ` (${e.version})` : ""}`;
+}
+
+/** What blocks the downloads, with the next step. `fix` picks the buttons. */
+export interface EngineProblem {
+  title: string;
+  /** The engine's own words, when it gave any. */
+  error: string;
+  next: string;
+  fix: "install" | "path";
+}
+
+/**
+ * Why downloads can't move, or null when the engine is fine (or merely
+ * idle). Big picture can't change settings, so its next step points to
+ * desktop mode.
+ */
+export function engineProblem(e: EngineStatus | null, ds: Download[], bigPicture = false): EngineProblem | null {
+  if (!e) return null;
+  const n = waitingCount(ds);
+  const after = n === 0 ? "Downloads start once it runs." : n === 1 ? "The queued download starts once it runs." : `The ${n} queued downloads start once it runs.`;
+  const step = (s: string) => (bigPicture ? `In desktop mode, ${s.charAt(0).toLowerCase()}${s.slice(1)}` : s);
+  if (!e.installed) {
+    return { title: "Downloads need qBittorrent", error: e.error ?? "", next: `${step("Install qBittorrent, or choose qbittorrent.exe in Settings → Experimental.")} ${after}`, fix: "install" };
+  }
+  if (!e.error) return null;
+  return {
+    title: e.running ? "qBittorrent isn't answering" : "qBittorrent couldn't start",
+    error: e.error,
+    next: `${step("Check the qBittorrent path in Settings → Experimental, or install qBittorrent again.")} ${after}`,
+    fix: "path",
+  };
 }

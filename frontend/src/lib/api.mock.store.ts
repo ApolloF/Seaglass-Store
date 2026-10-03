@@ -88,6 +88,14 @@ let downloads: Download[] = [
   dl({ id: "sg-7", title: "Cinder Drift 0.9", version: "0.9", gameKey: "title:cinderdrift", state: "installed", size: 0.4 * gb, done: 0.4 * gb, installer: "archive", installDir: "C:\\Users\\you\\Games\\Cinder Drift", installedAt: now() - 86400, safety: { verdict: "clean", checked: now() - 86500, findings: [] } }),
 ];
 let engine: EngineStatus = { installed: true, exe: "C:\\Program Files\\qBittorrent\\qbittorrent.exe", running: true, version: "v5.1.4", interfaceMissing: false, gameRunning: false, held: false };
+// ?engine=down: qBittorrent fails to start, so downloads wait in the queue
+// and the engine reports why.
+const engineDown = typeof location !== "undefined" && new URLSearchParams(location.search).get("engine") === "down";
+const waiting = (d: Download): Download => (engineDown && d.state === "downloading" ? { ...d, state: "queued", downSpeed: 0, eta: 0, engine: undefined } : d);
+if (engineDown) {
+  engine = { ...engine, running: false, version: undefined, error: "qBittorrent exited right after starting (exit status 1)" };
+  downloads = [dl({ id: "sg-0", title: "Night Harbor v1.2", state: "queued", created: now() - 60 }), ...downloads.map(waiting)];
+}
 let proxyPassword = false;
 let vtKey = false;
 const listeners = new Set<(d: Download[]) => void>();
@@ -188,7 +196,7 @@ function feedInfo(url: string, enabled: boolean): FeedInfo {
 export function mockStore(getSettings: () => Settings, setSettings: (s: Settings) => void): Api["store"] {
   mockStoreSettingsRef = getSettings;
   const queue = (p: Partial<Download> & { title: string; gameKey: string }): Download => {
-    const d = dl({ id: `sg-${Date.now()}`, name: p.title, size: 2 * gb, downSpeed: 3e7, seeds: 40, peers: 8, engine: "downloading", created: now(), ...p });
+    const d = waiting(dl({ id: `sg-${Date.now()}`, name: p.title, size: 2 * gb, downSpeed: 3e7, seeds: 40, peers: 8, engine: "downloading", created: now(), ...p }));
     downloads = [...downloads, d];
     changed();
     return copy(d);
@@ -199,6 +207,7 @@ export function mockStore(getSettings: () => Settings, setSettings: (s: Settings
       return copy(engine);
     },
     async startEngine() {
+      if (engineDown) throw new Error(engine.error);
       engine = { ...engine, running: true };
       engineListeners.forEach((cb) => cb(copy(engine)));
       return copy(engine);
@@ -265,7 +274,7 @@ export function mockStore(getSettings: () => Settings, setSettings: (s: Settings
     async addDownload(source, title) {
       if (!/^(magnet:\?|https?:\/\/)/.test(source.trim())) throw new Error("that isn't a magnet link or a link to a .torrent file");
       const name = title || new URLSearchParams(source.split("?")[1] ?? "").get("dn") || "Download";
-      const d = dl({ id: `sg-${Date.now()}`, title: name, name, source, size: 2 * gb, downSpeed: 8e7, seeds: 12, peers: 2, engine: "downloading", created: now() });
+      const d = waiting(dl({ id: `sg-${Date.now()}`, title: name, name, source, size: 2 * gb, downSpeed: 8e7, seeds: 12, peers: 2, engine: "downloading", created: now() }));
       downloads = [...downloads, d];
       changed();
       return copy(d);
@@ -276,7 +285,7 @@ export function mockStore(getSettings: () => Settings, setSettings: (s: Settings
           case "pause":
             return { ...d, state: "paused", downSpeed: 0, engine: "paused" };
           case "resume":
-            return { ...d, state: "downloading", error: undefined, downSpeed: 5e6, engine: "downloading" };
+            return waiting({ ...d, state: "downloading", error: undefined, downSpeed: 5e6, engine: "downloading" });
           case "install":
             setTimeout(() => {
               downloads = downloads.map((x) => (x.id === id ? { ...x, state: "installed", installedAt: now(), installDone: undefined } : x));
@@ -350,7 +359,7 @@ export function mockStore(getSettings: () => Settings, setSettings: (s: Settings
       const o = e?.offers[i];
       if (!e || !o) throw new Error("that version isn't offered anymore");
       const title = o.version ? `${e.title} ${o.version}` : e.title;
-      const d = dl({ id: `sg-${Date.now()}`, title, name: e.title, source: o.magnet ?? "", size: o.sizeBytes ?? 0, downSpeed: 3e7, seeds: 40, peers: 8, engine: "downloading", created: now(), gameKey: key, version: o.version, feedName: o.feedName, installDir: opts.dir, language: opts.language, autoInstall: opts.install });
+      const d = waiting(dl({ id: `sg-${Date.now()}`, title, name: e.title, source: o.magnet ?? "", size: o.sizeBytes ?? 0, downSpeed: 3e7, seeds: 40, peers: 8, engine: "downloading", created: now(), gameKey: key, version: o.version, feedName: o.feedName, installDir: opts.dir, language: opts.language, autoInstall: opts.install }));
       downloads = [...downloads, d];
       changed();
       return copy(d);
