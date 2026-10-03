@@ -241,5 +241,46 @@ func (v *View) Home(annotate Annotate, popularState string, status Status) Home 
 		}
 	}
 	slices.SortStableFunc(h.Wishlist, func(a, b GameSummary) int { return cmp.Compare(b.PublishedAt, a.PublishedAt) })
+	h.Featured = featured(all)
 	return h
+}
+
+// Recommend recommends from the source-backed games as annotated; see
+// Recommend.
+func (v *View) Recommend(annotate Annotate, signals []Signal, exclude func(GameSummary) bool, limit int) ([]Recommendation, string) {
+	all := v.cards(annotate)
+	games := make([]GameSummary, 0, len(all))
+	for _, c := range all {
+		games = append(games, c.s)
+	}
+	return Recommend(games, signals, exclude, limit)
+}
+
+// featuredSize is how many games the top of the front page rotates through.
+const featuredSize = 5
+
+// featured picks games that can be installed first, then by chart place and
+// recency; installed games are left out.
+func featured(all []card) []GameSummary {
+	var open []GameSummary
+	for _, c := range all {
+		if c.s.Installed == nil {
+			open = append(open, c.s)
+		}
+	}
+	slices.SortFunc(open, func(a, b GameSummary) int {
+		return cmp.Or(compareBool(b.Installable, a.Installable), compareGames(a, b))
+	})
+	return open[:min(len(open), featuredSize)]
+}
+
+// compareBool orders false before true.
+func compareBool(a, b bool) int {
+	switch {
+	case a == b:
+		return 0
+	case b:
+		return -1
+	}
+	return 1
 }

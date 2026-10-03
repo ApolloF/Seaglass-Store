@@ -4,7 +4,10 @@
 // to the URL to see other states (comma-separated): setup (the one-time
 // source choice), empty (nothing indexed yet), offline (remote searches
 // and providers fail; cached answers come back stale), nochart (Steam's
-// chart is unavailable), slow (remote answers take longer).
+// chart is unavailable), slow (remote answers take longer). Recommendations
+// follow the played library games and the wishlist; `playedonly` and
+// `wishlistonly` keep one of the two, `nohistory` neither (the popular
+// fallback).
 import type { Api } from "./api";
 import type {
   BrowsePage,
@@ -19,6 +22,8 @@ import type {
   Meta,
   PreparedRelease,
   ProviderProgress,
+  Recommendation,
+  RecommendationBasis,
   Release,
   Review,
   ReviewPage,
@@ -300,10 +305,81 @@ function summary(game: Game, settings: Settings): GameSummary {
     reviewTotal: enriched && g.review ? g.review[1] : 0,
     reviewLabel: enriched && g.review ? g.review[2] : undefined,
     completionMain: enriched && Array.isArray(g.hltb) ? g.hltb[0] : 0,
+    releaseDate: RELEASE_DATES[game.title],
     installed: inst ? { ...inst, update: game.key === "steam:1678010" } : undefined,
     wishlisted: !!wish,
     activity: !!wish?.activity.some((a) => !a.read),
   };
+}
+
+// The game's own release date as Steam's metadata gives it; the rest are unknown.
+const RELEASE_DATES: Record<string, string> = {
+  "Ember Crown": "12 Mar, 2026",
+  "Hollow Tide": "4 Sep, 2025",
+  "Glass Meridian": "21 Jan, 2026",
+  "Ashen Lanterns": "30 Jun, 2025",
+  "Dune Lark": "8 Nov, 2024",
+  "Iron Vigil": "17 Mar, 2016",
+  "Rust Psalm": "2 Feb, 2026",
+};
+
+// Recently played games of the mock library (api.mock.ts) that the Store
+// recommends from; "installed" ones are never recommended.
+const PLAYED = [
+  { title: "Ember Crown", genres: ["Action", "RPG"], ago: 0 },
+  { title: "Hollow Tide", genres: ["Adventure", "Indie"], ago: 1 },
+  { title: "Neon Meridian", genres: ["Strategy"], ago: 3 },
+];
+
+type MockSignal = { title: string; genres: string[]; kind: "played" | "wishlist"; weight: number };
+
+function mockSignals(wished: { title: string; genres: string[] }[]): MockSignal[] {
+  const out: MockSignal[] = [];
+  if (!flags.has("nohistory") && !flags.has("wishlistonly")) {
+    out.push(...PLAYED.map((p): MockSignal => ({ ...p, kind: "played", weight: Math.max(0.2, 1 - p.ago / 60) })));
+  }
+  if (!flags.has("nohistory") && !flags.has("playedonly")) {
+    out.push(...wished.map((w, i): MockSignal => ({ ...w, kind: "wishlist", weight: Math.max(0.2, 1 - 0.1 * i) })));
+  }
+  return out.filter((s) => s.genres.length > 0);
+}
+
+/** The mock's recommender: genre overlap, never installed or wishlisted games; the chart without history. */
+function recommend(all: GameSummary[], signals: MockSignal[]): { recommended: Recommendation[]; basis: RecommendationBasis } {
+  const libraryTitles = new Set(PLAYED.map((p) => squash(p.title)));
+  const open = all.filter((g) => !g.installed && !g.wishlisted && !libraryTitles.has(squash(g.title)));
+  const byChart = (a: GameSummary, b: GameSummary) => (a.popularRank || 1e9) - (b.popularRank || 1e9) || b.publishedAt - a.publishedAt || a.title.localeCompare(b.title);
+  const scored = open
+    .map((game) => {
+      const parts = signals
+        .map((s) => ({ s, shared: s.genres.filter((x) => game.genres.includes(x)) }))
+        .filter((p) => p.shared.length > 0)
+        .map((p) => ({ ...p, score: (p.s.weight * p.shared.length) / p.s.genres.length }));
+      return { game, parts, score: parts.reduce((n, p) => n + p.score, 0) };
+    })
+    .filter((x) => x.parts.length > 0)
+    .sort((a, b) => b.score - a.score || byChart(a.game, b.game))
+    .slice(0, 12);
+  if (!scored.length) {
+    const ranked = open.filter((g) => g.popularRank > 0).sort(byChart).slice(0, 12);
+    return { recommended: ranked.map((game) => ({ game, because: [], genres: [] })), basis: ranked.length ? "popular" : "" };
+  }
+  const kinds = new Set(scored.flatMap((x) => x.parts.map((p) => p.s.kind)));
+  return {
+    recommended: scored.map((x) => {
+      const parts = [...x.parts].sort((a, b) => b.score - a.score);
+      return { game: x.game, because: parts.slice(0, 3).map((p) => p.s.title), genres: [...new Set(parts.flatMap((p) => p.shared))] };
+    }),
+    basis: kinds.size > 1 ? "played+wishlist" : kinds.has("wishlist") ? "wishlist" : "played",
+  };
+}
+
+/** Up to five games to open the page with: installable first, then popular and recent. */
+function featuredOf(all: GameSummary[]): GameSummary[] {
+  return all
+    .filter((g) => !g.installed)
+    .sort((a, b) => Number(b.installable) - Number(a.installable) || (a.popularRank || 1e9) - (b.popularRank || 1e9) || b.publishedAt - a.publishedAt || a.title.localeCompare(b.title))
+    .slice(0, 5);
 }
 
 function steamOnlySummary(s: (typeof steamOnly)[number]): GameSummary {
@@ -550,15 +626,17 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
         await wait(150);
         const all = visible(settings).map((g) => summary(g, settings)).filter((s) => s.sourceBacked);
         const chart = flags.has("nochart") || flags.has("empty");
+        const wished = wishItems().map((w) => ({ title: w.title, genres: w.game.genres }));
+        const { recommended, basis } = recommend(all, mockSignals(wished));
         return {
           new: [...all].sort((a, b) => b.publishedAt - a.publishedAt).slice(0, 12),
           popular: chart ? [] : all.filter((s) => s.popularRank > 0).sort((a, b) => a.popularRank - b.popularRank).slice(0, 12),
           popularState: chart ? "unavailable" : flags.has("offline") ? "stale" : "ok",
           updated: all.filter((s) => s.updatedAt - s.publishedAt > day).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 12),
           wishlist: wishItems().filter((w) => w.unread > 0).map((w) => w.game),
-          featured: [],
-          recommended: [],
-          recommendedBasis: "",
+          featured: featuredOf(all),
+          recommended,
+          recommendedBasis: basis,
           status: status(settings),
         };
       },

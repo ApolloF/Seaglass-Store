@@ -132,7 +132,10 @@ func (s *StoreService) StoreHome() (discovery.Home, error) {
 			Recommended: []discovery.Recommendation{}, Status: s.DiscoveryStatus()}, err
 	}
 	d := s.c.discovery
-	return d.currentView().Home(d.annotator(), s.c.popularState(), d.status()), nil
+	view, annotate := d.currentView(), d.annotator()
+	h := view.Home(annotate, s.c.popularState(), d.status())
+	h.Recommended, h.RecommendedBasis = s.c.recommendations(view, annotate)
+	return h, nil
 }
 
 // BrowseGames answers a browse or search query from the index alone, at

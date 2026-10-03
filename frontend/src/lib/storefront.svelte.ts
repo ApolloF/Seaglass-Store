@@ -3,7 +3,7 @@
 // date by events.
 import { api } from "./api";
 import { lib } from "./store.svelte";
-import { unreadCount, withEnrichment } from "./storefront";
+import { learnSources, unreadCount, withEnrichment } from "./storefront";
 import type { DiscoveryStatus, Enrichment, GameSummary, WishlistItem } from "./types";
 
 class Storefront {
@@ -20,10 +20,15 @@ class Storefront {
   start() {
     if (this.started) return;
     this.started = true;
-    api.store.discovery.onStatus((s) => (this.status = s));
+    api.store.discovery.onStatus((s) => this.setStatus(s));
     api.store.wishlist.onChange((w) => this.setWishlist(w));
     api.store.enrich.onEnrichment((e) => (this.enriched[e.key] = e));
     void this.load();
+  }
+
+  setStatus(status: DiscoveryStatus) {
+    learnSources(status.sources);
+    this.status = status;
   }
 
   setWishlist(list: WishlistItem[]) {
@@ -33,7 +38,7 @@ class Storefront {
 
   async load() {
     const [status, wishlist] = await Promise.allSettled([api.store.discovery.status(), api.store.wishlist.list()]);
-    if (status.status === "fulfilled") this.status = status.value;
+    if (status.status === "fulfilled") this.setStatus(status.value);
     if (wishlist.status === "fulfilled") this.setWishlist(wishlist.value);
   }
 

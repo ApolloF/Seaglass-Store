@@ -1,8 +1,9 @@
 <script lang="ts">
-  // A titled row of cards that scrolls sideways inside itself.
+  // A titled row of cards that scrolls sideways inside itself. `wide` is for
+  // landscape capsules.
   import type { Snippet } from "svelte";
 
-  let { title, note = "", empty = "", count, children }: { title: string; note?: string; empty?: string; count: number; children: Snippet } = $props();
+  let { title, note = "", empty = "", count, wide = false, children }: { title: string; note?: string; empty?: string; count: number; wide?: boolean; children: Snippet } = $props();
   const id = `sf-shelf-${Math.random().toString(36).slice(2, 8)}`;
 </script>
 
@@ -12,7 +13,7 @@
     {#if note}<span class="sf-chip">{note}</span>{/if}
   </div>
   {#if count > 0}
-    <ul class="row">{@render children()}</ul>
+    <ul class="row" class:wide>{@render children()}</ul>
   {:else}
     <p class="empty sf-muted">{empty}</p>
   {/if}
@@ -45,6 +46,9 @@
     gap: 16px;
     overflow-x: auto;
     scroll-padding: 0 4px;
+  }
+  .row.wide {
+    grid-auto-columns: min(300px, 78cqw);
   }
   .empty {
     margin: 0;
