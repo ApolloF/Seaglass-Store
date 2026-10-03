@@ -1,7 +1,7 @@
 // Made-up library for `npm run dev:mock`: the games from the design canvas,
 // covering every way a game can be found.
 import type { Api } from "./api";
-import type { Accounts, Achievement, Achievements, AppInfo, Game, MetaState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, UpdateState } from "./types";
+import type { Accounts, Achievement, Achievements, AppInfo, Completion, Game, MetaState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, UpdateState } from "./types";
 import { sessionActive } from "./types";
 import { mockStore, mockStoreSettings } from "./api.mock.store";
 
@@ -370,13 +370,15 @@ export const mockApi: Api = {
       if (fetch) await new Promise((r) => setTimeout(r, 700));
       const seed = (id * 7919) % 50;
       const known = fetch || seed % 3 === 0;
-      return {
-        gameId: id,
-        key,
-        completion: known
-          ? { hltbId: 1000 + id, title: g.title, main: 300 + seed * 40, mainExtras: 520 + seed * 60, completionist: 900 + seed * 95, url: `https://howlongtobeat.com/game/${1000 + id}`, corrected: false, fetchedAt: Math.floor(Date.now() / 1000), state: "ok" }
-          : { hltbId: 0, main: 0, mainExtras: 0, completionist: 0, url: "", corrected: false, fetchedAt: 0, state: "loading" },
-      };
+      const none = { hltbId: 0, main: 0, mainExtras: 0, completionist: 0, corrected: false };
+      const ok = { hltbId: 1000 + id, title: g.title, main: 300 + seed * 40, mainExtras: 520 + seed * 60, completionist: 900 + seed * 95, url: `https://howlongtobeat.com/game/${1000 + id}`, corrected: false, fetchedAt: Math.floor(Date.now() / 1000) };
+      // Every fifth game has no match and every seventh has old times, so both states show.
+      const completion: Completion = !known
+        ? { ...none, url: "", fetchedAt: 0, state: "loading" }
+        : id % 5 === 0
+          ? { ...none, url: `https://howlongtobeat.com/?q=${encodeURIComponent(g.title)}`, fetchedAt: 0, state: "unavailable", error: "no confident match on HowLongToBeat" }
+          : { ...ok, state: id % 7 === 0 ? "stale" : "ok", error: id % 7 === 0 ? "howlongtobeat.com can't be reached" : undefined };
+      return { gameId: id, key, completion };
     },
     async candidates(id, query) {
       const g = games.find((x) => x.id === id);
@@ -385,7 +387,10 @@ export const mockApi: Api = {
     },
     async setMatch(id, hltbId) {
       const c = await mockApi.completion.get(id, true);
-      return { ...c, completion: { ...c.completion, hltbId: hltbId || c.completion.hltbId, corrected: hltbId > 0 } };
+      if (!hltbId) return c.completion.state === "ok" ? c : { ...c, completion: { ...c.completion, corrected: false } };
+      const t = hltbId % 10;
+      const chosen: Completion = { hltbId, title: `Chosen game ${t}`, main: 600 + t * 30, mainExtras: 900 + t * 30, completionist: 1500 + t * 30, url: `https://howlongtobeat.com/game/${hltbId}`, corrected: true, fetchedAt: Math.floor(Date.now() / 1000), state: "ok" };
+      return { ...c, completion: chosen };
     },
     async openLink(url) {
       if (!/^https:\/\/(www\.)?howlongtobeat\.com\//.test(url)) throw new Error("that link doesn't go to HowLongToBeat");
