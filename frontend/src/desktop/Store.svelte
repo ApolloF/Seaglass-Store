@@ -1,7 +1,7 @@
 <script lang="ts">
   // The Store: Home, Browse and Wishlist over the automatically discovered
   // releases, with one search box and the status of discovery.
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import Icon from "../components/Icon.svelte";
   import { api } from "../lib/api";
   import { shop } from "../lib/shop.svelte";
@@ -42,15 +42,24 @@
   });
 
   // Whether anything is there to show decides the empty states, not the feed list.
+  // Indexing changes the games many times a second: ask once it settles,
+  // and keep only the newest answer (an older one could say 0).
+  let probeSeq = 0;
   $effect(() => {
     void version;
     void storefront.status?.setupNeeded;
     void storefront.status?.games;
-    api.store.discovery
-      .browse({ ...emptyQuery(), limit: 1 })
-      .then((r) => (shown = r.page.total))
-      .catch(() => {})
-      .finally(() => (probed = true));
+    const seq = ++probeSeq;
+    const t = setTimeout(
+      () =>
+        api.store.discovery
+          .browse({ ...emptyQuery(), limit: 1 })
+          .then((r) => seq === probeSeq && (shown = r.page.total))
+          .catch(() => {}) // keeps the last count; the status line says what's wrong
+          .finally(() => (probed = true)),
+      untrack(() => probed) ? 300 : 0,
+    );
+    return () => clearTimeout(t);
   });
 
   const mode = $derived(storeMode({ loaded: probed, status: storefront.status, shown }));

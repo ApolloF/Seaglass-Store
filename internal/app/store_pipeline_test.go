@@ -142,3 +142,71 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
+
+// An install that failed halfway can be retried into the folder it left
+// files in, and installing doesn't happen on its own a second time.
+func TestRetryInstallOverItsOwnFiles(t *testing.T) {
+	c := testStoreCore(t)
+	c.Launch = launch.NewManager(func(launch.Session) {})
+	dl := t.TempDir()
+	game := filepath.Join(dl, "Tiny Game")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(game, "TinyGame.exe"), append([]byte("MZ"), make([]byte, 128)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	installDir := filepath.Join(t.TempDir(), "Games", "Tiny Game")
+	if err := os.MkdirAll(installDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installDir, "half.pak"), []byte("left by the first try"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	j, err := c.store.jobs.Add(jobs.Job{Title: "Tiny Game", Source: "magnet:?xt=urn:btih:aa", SavePath: dl, InstallDir: installDir, AutoInstall: true}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = c.store.jobs.Update(j.ID, func(j *jobs.Job) bool {
+		j.State, j.Name, j.InstallStarted, j.Error = jobs.Failed, "Tiny Game", true, "installing failed"
+		j.Safety = &safety.Report{Verdict: safety.Clean, Main: "TinyGame.exe"}
+		return true
+	})
+	p := c.store.pipe
+	p.claim(j.ID)
+	p.install(j.ID)
+	got, _ := c.store.jobs.Get(j.ID)
+	if got.State != jobs.Installed {
+		t.Fatalf("retry: %s %q", got.State, got.Error)
+	}
+	if got.AutoInstall {
+		t.Error("still set to install on its own after installing")
+	}
+}
+
+// A game installed straight into the games folder (picked while it was
+// empty) doesn't take the games installed next to it along when it goes.
+func TestUninstallLeavesAFolderOtherGamesShare(t *testing.T) {
+	c := testStoreCore(t)
+	games := filepath.Join(t.TempDir(), "Games")
+	other := filepath.Join(games, "Other Game")
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	add := func(title, dir string) string {
+		j, err := c.store.jobs.Add(jobs.Job{Title: title, Source: "magnet:?xt=urn:btih:aa", SavePath: t.TempDir(), InstallDir: dir}, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = c.store.jobs.Update(j.ID, func(j *jobs.Job) bool { j.State = jobs.Installed; return true })
+		return j.ID
+	}
+	first := add("First Game", games)
+	add("Other Game", other)
+	if err := c.store.pipe.uninstall(first); err == nil {
+		t.Error("uninstalling a game whose folder holds another game deleted it")
+	}
+	if !platform.IsDir(other) {
+		t.Fatal("the other game's folder is gone")
+	}
+}

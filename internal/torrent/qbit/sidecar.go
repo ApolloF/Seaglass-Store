@@ -146,6 +146,7 @@ func (s *Sidecar) start(ctx context.Context, n torrent.Network) (*Client, error)
 		}
 	}
 	if err := c.Apply(ctx, n); err != nil {
+		_ = cmd.Process.Kill() // not left running unmanaged
 		return nil, fmt.Errorf("qBittorrent's network settings: %w", err)
 	}
 	return c, nil
