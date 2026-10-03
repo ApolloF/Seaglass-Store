@@ -25,6 +25,8 @@ type fakeSource struct {
 	fail     map[string]error
 	hits     map[string]int
 	order    []string
+	// before runs ahead of each request, as a crash or a person would.
+	before func(raw string)
 }
 
 type fakeArticle struct {
@@ -65,6 +67,9 @@ func (a fakeArticle) html(host string) string {
 }
 
 func (f *fakeSource) FetchDocument(ctx context.Context, raw string) (sources.Document, error) {
+	if f.before != nil {
+		f.before(raw)
+	}
 	if err := ctx.Err(); err != nil {
 		return sources.Document{}, err
 	}
@@ -133,7 +138,7 @@ func TestFirstPassReadsNewestListingsThenOlderPages(t *testing.T) {
 	ix, _ := testIndex(t)
 	f := newFakeSource(t, "fitgirl", 95)
 	clk := &clock{time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
-	res := Pass(context.Background(), ix, f.src, f, true, clk.now, nil)
+	res := Pass(context.Background(), ix, f.src, f, true, clk.now, PassHooks{})
 	if res.Err != nil || !res.Recent {
 		t.Fatalf("first pass: %+v", res)
 	}
@@ -155,12 +160,12 @@ func TestFirstPassReadsNewestListingsThenOlderPages(t *testing.T) {
 	if newest.Backfill || !older.Backfill {
 		t.Errorf("only older pages are backfill: newest %v, older %v", newest.Backfill, older.Backfill)
 	}
-	// The next pass waits 30 minutes; the newest listings wait six hours.
-	if recent, backfill := Due(ix.Crawl("fitgirl"), clk.now().Add(10*time.Minute), false); recent || backfill {
-		t.Error("a pass is due ten minutes later")
+	// Older pages are due again at once; the newest listings wait six hours.
+	if !res.More {
+		t.Error("the batch ended without saying older pages remain")
 	}
-	if recent, backfill := Due(ix.Crawl("fitgirl"), clk.now().Add(31*time.Minute), false); recent || !backfill {
-		t.Errorf("after 31 minutes: recent %v backfill %v", recent, backfill)
+	if recent, backfill := Due(ix.Crawl("fitgirl"), clk.now(), false); recent || !backfill {
+		t.Errorf("right after the batch: recent %v backfill %v", recent, backfill)
 	}
 }
 
@@ -168,7 +173,7 @@ func TestBackfillResumesAfterRestartAndStopsAtConfirmedEnd(t *testing.T) {
 	ix, dir := testIndex(t)
 	f := newFakeSource(t, "dodi", 95)
 	clk := &clock{time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
-	Pass(context.Background(), ix, f.src, f, true, clk.now, nil)
+	Pass(context.Background(), ix, f.src, f, true, clk.now, PassHooks{})
 	if err := ix.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -177,8 +182,7 @@ func TestBackfillResumesAfterRestartAndStopsAtConfirmedEnd(t *testing.T) {
 		t.Fatalf("after a restart: %+v, %d records", c, ix.Counts()["dodi"])
 	}
 	for i := 0; i < 5 && !ix.Crawl("dodi").BackfillDone; i++ {
-		clk.add(PassEvery)
-		if res := Pass(context.Background(), ix, f.src, f, false, clk.now, nil); res.Err != nil {
+		if res := Pass(context.Background(), ix, f.src, f, false, clk.now, PassHooks{}); res.Err != nil {
 			t.Fatal(res.Err)
 		}
 	}
@@ -189,7 +193,6 @@ func TestBackfillResumesAfterRestartAndStopsAtConfirmedEnd(t *testing.T) {
 	if f.count("https://dodi-repacks.site/page/6/") != 1 {
 		t.Error("page 6 was fetched again after a restart")
 	}
-	clk.add(PassEvery)
 	if _, backfill := Due(ix.Crawl("dodi"), clk.now(), false); backfill {
 		t.Error("backfill continues past the confirmed end")
 	}
@@ -200,7 +203,7 @@ func TestInterruptedPageIsRetriedAfterBackoff(t *testing.T) {
 	f := newFakeSource(t, "dodi", 95)
 	clk := &clock{time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
 	f.fail["https://dodi-repacks.site/page/4/"] = errors.New("connection reset")
-	res := Pass(context.Background(), ix, f.src, f, true, clk.now, nil)
+	res := Pass(context.Background(), ix, f.src, f, true, clk.now, PassHooks{})
 	if res.Err == nil {
 		t.Fatal("the failure wasn't reported")
 	}
@@ -215,8 +218,8 @@ func TestInterruptedPageIsRetriedAfterBackoff(t *testing.T) {
 	if recent, backfill := Due(ix.Crawl("dodi"), clk.now(), true); recent || backfill {
 		t.Error("a refresh ran during backoff")
 	}
-	clk.add(PassEvery)
-	if res := Pass(context.Background(), ix, f.src, f, false, clk.now, nil); res.Err != nil {
+	clk.add(time.Minute)
+	if res := Pass(context.Background(), ix, f.src, f, false, clk.now, PassHooks{}); res.Err != nil {
 		t.Fatal(res.Err)
 	}
 	if f.count("https://dodi-repacks.site/page/4/") != 2 || ix.Crawl("dodi").NextPage != 9 || ix.Crawl("dodi").Failures != 0 {
@@ -254,14 +257,14 @@ func TestRecentRefreshCatchesUpWithoutDuplicates(t *testing.T) {
 	ix, _ := testIndex(t)
 	f := newFakeSource(t, "fitgirl", 40)
 	clk := &clock{time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
-	Pass(context.Background(), ix, f.src, f, true, clk.now, nil)
+	Pass(context.Background(), ix, f.src, f, true, clk.now, PassHooks{})
 	before := ix.Counts()["fitgirl"]
 	// Twelve new articles while Seaglass was closed: two pages' worth.
 	for i := 0; i < 12; i++ {
 		f.publish(fakeArticle{slug: fmt.Sprintf("new-%02d", i), title: fmt.Sprintf("New %02d", i), version: "v1", published: clk.now().Add(time.Duration(i) * time.Hour), magnet: true})
 	}
 	clk.add(RecentEvery)
-	res := Pass(context.Background(), ix, f.src, f, false, clk.now, nil)
+	res := Pass(context.Background(), ix, f.src, f, false, clk.now, PassHooks{})
 	if res.Err != nil || !res.Recent {
 		t.Fatalf("refresh: %+v", res)
 	}
@@ -330,14 +333,14 @@ func TestCancellingOrPlayingStopsAPassWithoutCountingAFailure(t *testing.T) {
 	clk := &clock{time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if res := Pass(ctx, ix, f.src, f, true, clk.now, nil); res.Stopped != StopCanceled || res.Err != nil {
+	if res := Pass(ctx, ix, f.src, f, true, clk.now, PassHooks{}); res.Stopped != StopCanceled || res.Err != nil {
 		t.Errorf("cancelled: %+v", res)
 	}
 	playing := false
 	calls := 0
 	paused := func() bool { calls++; return playing }
 	playing = true
-	if res := Pass(context.Background(), ix, f.src, f, true, clk.now, paused); res.Stopped != StopPaused || res.Pages != 0 {
+	if res := Pass(context.Background(), ix, f.src, f, true, clk.now, PassHooks{Paused: paused}); res.Stopped != StopPaused || res.Pages != 0 {
 		t.Errorf("playing: %+v", res)
 	}
 	if c := ix.Crawl("dodi"); c.Failures != 0 || !c.RetryAt.IsZero() || len(f.order) != 0 {
@@ -349,7 +352,7 @@ func TestMissingArticleIsMarkedUnavailableNotDeleted(t *testing.T) {
 	ix, _ := testIndex(t)
 	f := newFakeSource(t, "fitgirl", 12)
 	clk := &clock{time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
-	Pass(context.Background(), ix, f.src, f, true, clk.now, nil)
+	Pass(context.Background(), ix, f.src, f, true, clk.now, PassHooks{})
 	id := sources.EntryID("fitgirl", "https://fitgirl-repacks.site/game-005/")
 	f.mu.Lock()
 	f.articles = append(f.articles[:5], f.articles[6:]...)
@@ -387,7 +390,7 @@ func TestFiniteCatalogIsCompleteAfterItsOnlyPage(t *testing.T) {
 	f := newFakeSource(t, "dodi", 8)
 	f.src.ListingPage, f.src.Search = "", ""
 	clk := &clock{time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
-	res := Pass(context.Background(), ix, f.src, f, true, clk.now, nil)
+	res := Pass(context.Background(), ix, f.src, f, true, clk.now, PassHooks{})
 	if res.Err != nil || !res.Recent || res.Pages != 1 {
 		t.Fatalf("pass over a one-page catalog: %+v", res)
 	}
@@ -395,7 +398,7 @@ func TestFiniteCatalogIsCompleteAfterItsOnlyPage(t *testing.T) {
 		t.Fatalf("a one-page catalog left backfill open: %+v", c)
 	}
 	clk.add(time.Hour)
-	if res := Pass(context.Background(), ix, f.src, f, false, clk.now, nil); res.Pages != 0 {
+	if res := Pass(context.Background(), ix, f.src, f, false, clk.now, PassHooks{}); res.Pages != 0 {
 		t.Fatalf("a finished one-page catalog was fetched again within six hours: %+v", res)
 	}
 	for _, raw := range f.order {

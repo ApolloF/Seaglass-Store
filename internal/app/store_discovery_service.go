@@ -110,9 +110,14 @@ func (s *StoreService) SetupSources(chosen []string) (settings.Settings, error) 
 }
 
 // PauseIndexing pauses or resumes background indexing on this PC. Paused,
-// nothing is requested from any source until resumed; the index stays.
+// no listing page or idle wishlist search is requested until resumed;
+// opening a game and searching still ask the sources. The index stays.
 func (s *StoreService) PauseIndexing(paused bool) (discovery.Status, error) {
-	return s.DiscoveryStatus(), errors.New("pausing isn't available yet")
+	if err := s.on(); err != nil {
+		return s.DiscoveryStatus(), err
+	}
+	_, err := s.c.updateSettings(func(v *settings.Settings) { v.Store.IndexingPaused = paused })
+	return s.DiscoveryStatus(), err
 }
 
 // RefreshDiscovery fetches the newest listings of every chosen source now.
