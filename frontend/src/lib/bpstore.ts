@@ -4,7 +4,7 @@
 // Labels the desktop Store already has come from storefront.ts.
 import { offerLine } from "./catalog";
 import { bytes } from "./format";
-import { countText, emptyQuery, hoursText, reviewText, sourceLabel, type SearchView } from "./storefront";
+import { countText, emptyQuery, hoursText, notReadyText, reviewText, sourceLabel, type SearchView } from "./storefront";
 import type { BrowseQuery, CatalogEntry, DiscoveryStatus, Enrichment, GameSummary, PreparedRelease, Recommendation, RecommendationBasis, ReviewScore, StoreHome } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -245,16 +245,11 @@ export function installStep(prepared: PreparedRelease | null, entry: CatalogEntr
   if (entry) return entry.offers.length ? "confirm" : "blocked";
   if (!prepared) return "checking";
   if (prepared.state === "ready" && prepared.ready && prepared.offers.length > 0 && prepared.offers.every((o) => o.infoHash)) return "confirm";
-  return prepared.state === "unresolved" ? "browser" : "blocked";
+  return prepared.state === "unresolved" || prepared.state === "browser" ? "browser" : "blocked";
 }
 
 /** Why a release can't be installed. */
-export function blockedText(p: PreparedRelease | null): string {
-  if (p?.reason) return p.reason;
-  if (p?.state === "update-only") return "This is a patch for a game you need to have already. It can't be installed on its own.";
-  if (p?.state === "unresolved") return "Seaglass couldn't get this release's torrent file yet.";
-  return "This release isn't listed by its source anymore.";
-}
+export const blockedText = (p: PreparedRelease | null): string => notReadyText(p ?? { state: "unavailable" });
 
 export interface InstallChoice {
   label: string;

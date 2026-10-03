@@ -50,7 +50,7 @@ func TestElAmigosDiscoveryIndexesFiniteCatalogAndRetainsDetailIdentityAcrossRest
 	ix := discovery.OpenIndex(indexDir, identities)
 	f := &elAmigosFetcher{t: t, p: p}
 	now := time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC)
-	result := discovery.Pass(context.Background(), ix, p, f, true, func() time.Time { return now }, nil)
+	result := discovery.Pass(context.Background(), ix, p, f, true, func() time.Time { return now }, discovery.PassHooks{})
 	if result.Err != nil || result.Pages != 1 || len(f.hits) != 1 || ix.Counts()[p.ID] != 3 || !ix.Crawl(p.ID).BackfillDone {
 		t.Fatalf("result=%+v hits=%v state=%+v", result, f.hits, ix.Crawl(p.ID))
 	}
@@ -77,13 +77,13 @@ func TestElAmigosDiscoveryIndexesFiniteCatalogAndRetainsDetailIdentityAcrossRest
 	if r, ok := ix.Record(p.ID, id); !ok || r.Entry.PageURL != page || r.Entry.Version != "1.3.3" {
 		t.Fatalf(".html identity changed on restart: %+v", r)
 	}
-	result = discovery.Pass(context.Background(), ix, p, f, false, func() time.Time { return now.Add(time.Hour) }, nil)
+	result = discovery.Pass(context.Background(), ix, p, f, false, func() time.Time { return now.Add(time.Hour) }, discovery.PassHooks{})
 	if result.Err != nil || result.Pages != 0 || len(f.hits) != 2 {
 		t.Fatalf("completed catalog requested another page: %+v %v", result, f.hits)
 	}
 	// A failed refresh retains every cached record and completed catalog progress.
 	f.failure = errors.New("provider offline")
-	result = discovery.Pass(context.Background(), ix, p, f, true, func() time.Time { return now.Add(7 * time.Hour) }, nil)
+	result = discovery.Pass(context.Background(), ix, p, f, true, func() time.Time { return now.Add(7 * time.Hour) }, discovery.PassHooks{})
 	if result.Err == nil || ix.Counts()[p.ID] != 3 || !ix.Crawl(p.ID).BackfillDone {
 		t.Fatalf("failure discarded the cache: %+v", result)
 	}

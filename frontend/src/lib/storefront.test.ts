@@ -3,6 +3,7 @@ import {
   adoptPage,
   availabilityLabel,
   canPrepare,
+  notReadyText,
   createSearchController,
   emptyQuery,
   hoursText,
@@ -327,6 +328,15 @@ describe("labels", () => {
     expect(canPrepare(r("update", "update-only"))).toBe(false);
     expect(canPrepare(r("release", "unavailable"))).toBe(false);
     expect(canPrepare(r("release", "summary"))).toBe(false);
+    expect(canPrepare(r("preview", "preview"))).toBe(false);
+    expect(availabilityLabel("preview")).toBe("Announced");
+    expect(canPrepare({ ...r("release", "manual"), browserOnly: true })).toBe(false);
+  });
+  it("explains why a prepared release can't be installed", () => {
+    expect(notReadyText({ state: "browser" })).toContain("browser");
+    expect(notReadyText({ state: "preview" })).toContain("only announces");
+    expect(notReadyText({ state: "update-only", reason: "Given by the source." })).toBe("Given by the source.");
+    expect(notReadyText({ state: "unavailable" })).toBe("This release isn't listed by its source anymore.");
   });
 });
 

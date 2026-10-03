@@ -99,6 +99,58 @@ func TestStoreWorksWithoutAFeedAfterDiscovery(t *testing.T) {
 	}
 }
 
+// An announcement and a release from a source without torrents never
+// reach a download or a .torrent attachment.
+func TestPrepareExplainsAnnouncementsAndBrowserOnlySources(t *testing.T) {
+	c, s := discoveryCore(t)
+	if err := c.discovery.refresh(); err != nil {
+		t.Fatal(err)
+	}
+	d, _ := s.GameDetails("title:embercrown")
+	base, ok := c.discovery.index().Record("dodi", d.Releases[1].ID)
+	if !ok {
+		t.Fatal("the DODI release is not indexed")
+	}
+	preview := base.Entry
+	preview.PageURL, preview.ReleaseKind = "https://dodi-repacks.site/ember-crown-coming-soon/", "preview"
+	browser := base.Entry
+	browser.SourceID, browser.PageURL = "elamigos", "https://elamigos.site/data/Ember_Crown_MULTi9_-_ElAmigos.html"
+	browser.References = []sources.Reference{{Kind: "download", URL: "https://ddownload.com/abc", State: "manual-required"}}
+	now := time.Now()
+	c.discovery.index().Merge("dodi", []sources.Entry{preview}, discovery.OriginListing, false, now)
+	c.discovery.index().Merge("elamigos", []sources.Entry{browser}, discovery.OriginListing, false, now)
+	c.discovery.fetchers["elamigos"] = &pagesFetcher{pages: map[string]string{}}
+	if _, err := s.SetupSources([]string{"fitgirl", "dodi", "elamigos"}); err != nil {
+		t.Fatal(err)
+	}
+	d, _ = s.GameDetails("title:embercrown")
+	for _, r := range d.Releases {
+		if r.BrowserOnly != (r.Source == "elamigos") || (r.Kind == "preview") != (r.Availability == discovery.AvailPreview) {
+			t.Errorf("release %s: kind %s, availability %s, browser only %v", r.Source, r.Kind, r.Availability, r.BrowserOnly)
+		}
+	}
+	for _, want := range []struct{ src, page, state string }{
+		{"dodi", preview.PageURL, "preview"},
+		{"elamigos", browser.PageURL, "browser"},
+	} {
+		id := sources.EntryID(want.src, discovery.CanonicalPage(want.page))
+		p, err := s.PrepareRelease("title:embercrown", id)
+		if err != nil || p.Ready || p.State != want.state || len(p.Offers) != 0 || p.Reason == "" {
+			t.Errorf("%s: %+v %v", want.state, p, err)
+		}
+		r, _ := c.discovery.index().Record(want.src, id)
+		if err := attachable(r); err == nil {
+			t.Errorf("%s: a .torrent could be attached", want.state)
+		}
+		if _, err := s.DownloadRelease("title:embercrown", id, 0, InstallOptions{}); err == nil {
+			t.Errorf("%s: queued a download", want.state)
+		}
+	}
+	if err := attachable(base); err != nil {
+		t.Errorf("a torrent source's release refused a .torrent: %v", err)
+	}
+}
+
 func TestPreparedReleaseQueuesThroughTheExistingChecks(t *testing.T) {
 	c, s := discoveryCore(t)
 	if err := c.discovery.refresh(); err != nil {

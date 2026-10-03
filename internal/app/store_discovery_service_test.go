@@ -1,6 +1,10 @@
 package app
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/ApolloF/Seaglass/internal/store/sources"
+)
 
 // Attribution links open only Steam, Metacritic and HowLongToBeat pages.
 func TestOpenStoreLinkRefusesOtherSites(t *testing.T) {
@@ -18,8 +22,14 @@ func TestDiscoveryStatusFollowsSourceChoice(t *testing.T) {
 	c := testStoreCore(t)
 	s := NewStoreService(c)
 	st := s.DiscoveryStatus()
-	if !st.Enabled || st.SetupNeeded || len(st.Sources) != 2 || !st.Sources[0].Enabled {
+	if !st.Enabled || st.SetupNeeded || len(st.Sources) != len(sources.Providers()) || !st.Sources[0].Enabled {
 		t.Fatalf("new Store user: %+v", st)
+	}
+	// Providers that are not on by default stay off for an existing user.
+	for _, src := range st.Sources {
+		if src.Enabled != src.DefaultOn {
+			t.Errorf("%s enabled=%v, want its default %v", src.ID, src.Enabled, src.DefaultOn)
+		}
 	}
 	if _, err := s.SetupSources([]string{"dodi"}); err != nil {
 		t.Fatal(err)

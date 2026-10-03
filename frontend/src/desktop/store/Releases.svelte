@@ -29,6 +29,8 @@
           <span class="sf-chip" class:accent={r.availability === "installable"} class:warn={r.availability === "unavailable" || r.availability === "manual"}>{availabilityLabel(r.availability)}</span>
           {#if r.availability === "summary"}Release details are loading.{/if}
           {#if r.kind === "update"}A patch for an installed game. It can't be installed on its own.{/if}
+          {#if r.kind === "preview"}The source only announces this release. There is nothing to download yet.{/if}
+          {#if r.browserOnly && r.kind !== "preview"}This source's files open in your browser. Seaglass can't download or install them.{/if}
         </span>
         {#each r.unresolved as u, j (j)}<span class="line why"><Icon name="info" size={13} stroke={2.2} />{u}</span>{/each}
         {#if r.warnings.length}

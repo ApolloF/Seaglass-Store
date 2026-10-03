@@ -229,6 +229,9 @@ func ReleaseOf(r Record, sourceName string) Release {
 	if rel.Kind == "" {
 		rel.Kind = "release"
 	}
+	if p, ok := sources.Lookup(e.SourceID); ok && !p.Torrents {
+		rel.BrowserOnly = true
+	}
 	return rel
 }
 
@@ -257,6 +260,8 @@ func availability(r Record) string {
 		return AvailGone
 	case e.ReleaseKind == "update":
 		return AvailUpdateOnly
+	case e.ReleaseKind == "preview":
+		return AvailPreview
 	case len(validTransports(e)) > 0:
 		return AvailInstallable
 	case e.SummaryOnly:

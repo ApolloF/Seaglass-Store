@@ -37,6 +37,11 @@ func (w *wishlistState) observations(d *discoveryState, key string) []wishlist.O
 	}
 	var out []wishlist.Observation
 	for _, r := range g.Records {
+		if r.Entry.ReleaseKind == "preview" {
+			// An announcement is not a release: it becomes news once the
+			// source publishes the game itself.
+			continue
+		}
 		o := wishlist.Observation{ReleaseID: r.Entry.ID, Source: r.Entry.SourceID, SourceName: d.sourceName(r.Entry.SourceID), Version: r.Entry.Version, Backfill: r.Backfill}
 		if r.Entry.PublishedAt != nil {
 			o.PublishedAt = *r.Entry.PublishedAt

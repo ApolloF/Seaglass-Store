@@ -248,6 +248,9 @@ func (s *StoreService) AttachSourceTorrent(key, releaseID string) (discovery.Pre
 	if err != nil {
 		return discovery.PreparedRelease{}, err
 	}
+	if err := attachable(r); err != nil {
+		return discovery.PreparedRelease{}, err
+	}
 	path, err := application.Get().Dialog.OpenFile().SetTitle("Choose the .torrent file for "+g.Title).
 		CanChooseFiles(true).CanChooseDirectories(false).AddFilter("Torrent metadata", "*.torrent").PromptForSingleSelection()
 	if err != nil {

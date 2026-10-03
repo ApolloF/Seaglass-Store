@@ -5,6 +5,7 @@
   import { onMount } from "svelte";
   import { api } from "../../lib/api";
   import { lib } from "../../lib/store.svelte";
+  import { notReadyText } from "../../lib/storefront";
   import type { CatalogEntry, PreparedRelease, Release } from "../../lib/types";
   import InstallDialog from "../InstallDialog.svelte";
   import Modal from "./Modal.svelte";
@@ -46,6 +47,11 @@
     if (p) prepared = p; // ready: the confirmation opens; otherwise the reason shows again
   }
   const openPage = () => lib.run(() => api.store.discovery.openRelease(gameKey, release.id));
+  const notReadyTitle: Partial<Record<PreparedRelease["state"], string>> = {
+    "update-only": "This is an update",
+    preview: "Announced only",
+    browser: "Opens in your browser",
+  };
   const feedOffer = $derived(feedEntry ? Math.max(0, release.feedOffer) : 0);
 </script>
 
@@ -64,12 +70,10 @@
     </div>
   </Modal>
 {:else if prepared}
-  <Modal label={prepared.state === "update-only" ? "This is an update" : "Not available"} {onclose}>
-    <p class="why">
-      {prepared.reason ||
-        (prepared.state === "update-only" ? "This is a patch for a game you need to have already. It can't be installed on its own." : "This release isn't listed by its source anymore.")}
-    </p>
+  <Modal label={notReadyTitle[prepared.state] ?? "Not available"} {onclose}>
+    <p class="why">{notReadyText(prepared)}</p>
     <div class="actions">
+      {#if prepared.state === "browser" && release.pageUrl}<button type="button" class="sf-btn" onclick={openPage}>Open release page</button>{/if}
       <button type="button" class="sf-btn" onclick={onclose}>Close</button>
     </div>
   </Modal>

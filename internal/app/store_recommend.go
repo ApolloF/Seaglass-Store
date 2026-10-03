@@ -16,9 +16,6 @@ const (
 	// recommendations.
 	recentPlayWindow = 60 * 24 * time.Hour
 	maxPlayedSignals = 10
-	// steamTrust is the confidence from which a library game's Steam
-	// identity is trusted without the person confirming it.
-	steamTrust = 85
 	// minSignalWeight keeps the oldest play or wishlist entry in the mix.
 	minSignalWeight = 0.2
 )
@@ -79,8 +76,8 @@ func installedInLibrary(games []library.Game) func(discovery.GameSummary) bool {
 		if !g.Installed {
 			continue
 		}
-		if g.SteamAppID > 0 && (g.Confirmed || g.Confidence >= steamTrust) {
-			keys["steam:"+strconv.Itoa(g.SteamAppID)] = true
+		if id := trustedSteamApp(g); id > 0 {
+			keys["steam:"+strconv.Itoa(id)] = true
 		}
 		for _, t := range []string{g.Title, g.CustomTitle} {
 			if n := scan.Normalize(t); n != "" {

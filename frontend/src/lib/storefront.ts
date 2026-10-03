@@ -8,6 +8,7 @@ import type {
   DiscoveryStatus,
   Enrichment,
   GameSummary,
+  PreparedRelease,
   ProviderProgress,
   ProviderState,
   Release,
@@ -299,13 +300,32 @@ const availabilityLabels: Record<ReleaseAvailability, string> = {
   unresolved: "Needs resolving",
   manual: "Browser only",
   "update-only": "Update only",
+  preview: "Announced",
   summary: "Details loading",
   unavailable: "No longer listed",
 };
 export const availabilityLabel = (a: ReleaseAvailability) => availabilityLabels[a] ?? a;
 
-/** A release is a game someone can install: not an update patch, not gone. */
-export const canPrepare = (r: Release) => r.kind === "release" && r.availability !== "update-only" && r.availability !== "unavailable" && r.availability !== "summary";
+/** A release is a game someone can install: not an update patch or an announcement, not gone, from a source with torrents. */
+export const canPrepare = (r: Release) =>
+  r.kind === "release" && !r.browserOnly && r.availability !== "update-only" && r.availability !== "preview" && r.availability !== "unavailable" && r.availability !== "summary";
+
+/** Why a prepared release can't be installed, when the Go side gave no reason. */
+export function notReadyText(p: Pick<PreparedRelease, "state" | "reason">): string {
+  if (p.reason) return p.reason;
+  switch (p.state) {
+    case "update-only":
+      return "This is a patch for a game you need to have already. It can't be installed on its own.";
+    case "preview":
+      return "The source only announces this release. There is nothing to download yet.";
+    case "browser":
+      return "This source offers its files through file hosts in your browser only. Seaglass can't download or install them.";
+    case "unresolved":
+      return "Seaglass couldn't get this release's torrent file yet.";
+    default:
+      return "This release isn't listed by its source anymore.";
+  }
+}
 
 /** The languages a release states, or what the source claims, or that it doesn't say. */
 export function languagesLine(r: Pick<Release, "languages" | "languageClaim">): string {

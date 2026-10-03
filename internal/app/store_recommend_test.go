@@ -3,6 +3,8 @@ package app
 import (
 	"errors"
 	"net/http"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -92,10 +94,14 @@ func TestInstalledInLibraryMatchesTrustedSteamIdentityAndNormalizedTitle(t *test
 	}
 }
 
-type countingTransport struct{ requests int }
+// countingTransport counts requests other than the Steam chart, which the
+// Popular shelf refreshes in the background on its own.
+type countingTransport struct{ requests atomic.Int32 }
 
-func (c *countingTransport) RoundTrip(*http.Request) (*http.Response, error) {
-	c.requests++
+func (c *countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if !strings.Contains(r.URL.Path, "GetMostPlayedGames") {
+		c.requests.Add(1)
+	}
 	return nil, errors.New("no network in this test")
 }
 
@@ -115,7 +121,7 @@ func TestAnnotatorReadsCompletionAndReleaseDateWithoutFetching(t *testing.T) {
 			t.Errorf("%s: completion %d, release %q while nothing is cached", g.Title, g.CompletionMain, g.ReleaseDate)
 		}
 	}
-	if wire.requests != 0 {
-		t.Errorf("%d requests while annotating cards", wire.requests)
+	if n := wire.requests.Load(); n != 0 {
+		t.Errorf("%d requests while annotating cards", n)
 	}
 }

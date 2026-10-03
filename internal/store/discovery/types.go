@@ -47,6 +47,7 @@ const (
 	AvailUnresolved  = "unresolved"  // torrent mirrors are listed but not resolved yet
 	AvailManual      = "manual"      // only a browser can get the torrent (CAPTCHA, unsupported host)
 	AvailUpdateOnly  = "update-only" // a patch, not a standalone install
+	AvailPreview     = "preview"     // announced by the source; nothing to download yet
 	AvailSummary     = "summary"     // only the listing summary is known; details load on demand
 	AvailGone        = "unavailable" // the article disappeared from its source
 )
@@ -338,10 +339,13 @@ type Release struct {
 	InstalledSizeBytes int64    `json:"installedSizeBytes,omitempty"`
 	Languages          []string `json:"languages"` // recognized names; empty: unknown
 	LanguageClaim      string   `json:"languageClaim,omitempty"`
-	Kind               string   `json:"kind"`         // release or update
+	Kind               string   `json:"kind"`         // release, update or preview
 	Availability       string   `json:"availability"` // Avail* constants
 	// Transports is the number of validated torrent identities.
 	Transports int `json:"transports"`
+	// BrowserOnly: the source offers no torrents; its files open in a
+	// browser and can't be downloaded or installed by Seaglass.
+	BrowserOnly bool `json:"browserOnly"`
 	// Unresolved explains why mirrors are not usable yet (captcha-required,
 	// rate-limited, unsupported host …), one line each.
 	Unresolved []string `json:"unresolved"`
@@ -387,7 +391,8 @@ type PreparedRelease struct {
 	// validated transport.
 	Offers []PreparedOffer `json:"offers"`
 	// State: "ready", "unresolved" (resolution failed or needs a browser),
-	// "update-only", "unavailable".
+	// "update-only", "unavailable", "preview" (announced, nothing to
+	// download yet), "browser" (a source without torrents).
 	State    string   `json:"state"`
 	Reason   string   `json:"reason,omitempty"`
 	Warnings []string `json:"warnings"`

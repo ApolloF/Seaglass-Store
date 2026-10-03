@@ -69,16 +69,11 @@ describe("mock indexing and Steam import", () => {
     expect((await api.discovery.pauseIndexing(false)).paused).toBe(false);
   });
 
-  it("lists a third provider behind the extra flag, off and never searched", async () => {
-    mockDiscoveryFlag("extra", true);
-    try {
-      const { api } = make();
-      const extra = (await api.discovery.status()).sources.find((x) => x.id === "example");
-      expect(extra).toMatchObject({ enabled: false, defaultOn: false, search: false, paged: false, torrents: false });
-      expect(extra?.notes.length).toBeGreaterThan(0);
-    } finally {
-      mockDiscoveryFlag("extra", false);
-    }
+  it("lists ElAmigos off, unsearched and browser only, as the registry does", async () => {
+    const { api } = make();
+    const elamigos = (await api.discovery.status()).sources.find((x) => x.id === "elamigos");
+    expect(elamigos).toMatchObject({ name: "ElAmigos", enabled: false, defaultOn: false, search: false, paged: false, torrents: false });
+    expect(elamigos?.notes.length).toBeGreaterThan(0);
   });
 
   it("imports by AppID, keeps saved games and reports private profiles", async () => {

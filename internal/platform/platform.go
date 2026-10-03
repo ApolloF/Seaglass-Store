@@ -57,7 +57,10 @@ func AppDirOverridden() bool { return appDirOverride != "" }
 // CacheDir is a folder under %LOCALAPPDATA%\Seaglass, created on demand.
 func CacheDir(sub ...string) string {
 	base := filepath.Join(Local, "Seaglass")
-	if localDirOverride != "" {
+	switch {
+	case cacheDirOverride != "":
+		base = cacheDirOverride
+	case localDirOverride != "":
 		base = localDirOverride
 	}
 	return ensure(filepath.Join(append([]string{base}, sub...)...))
@@ -65,6 +68,13 @@ func CacheDir(sub ...string) string {
 
 // localDirOverride is WaterLauncher's folder when it couldn't be moved.
 var localDirOverride string
+
+var cacheDirOverride string
+
+// UseCacheDir puts the local caches (art, Store index, downloads, updates)
+// in dir instead, so a test harness never reads or changes the real ones.
+// Call it before anything is opened.
+func UseCacheDir(dir string) { cacheDirOverride = filepath.Clean(dir) }
 
 func ensure(dir string) string {
 	_ = os.MkdirAll(dir, 0o755)

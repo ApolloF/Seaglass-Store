@@ -651,7 +651,7 @@ export const lastPlayed = (g: Game) => Math.max(g.lastPlayed ?? 0, g.storeLastPl
 /** Provider and request states. A failure never hides what is cached: it comes back "stale". */
 export type ProviderState = "ok" | "loading" | "stale" | "unavailable" | "error" | "skipped";
 export type CrawlState = "idle" | "recent" | "backfill" | "paused" | "backoff" | "disabled";
-export type ReleaseAvailability = "installable" | "unresolved" | "manual" | "update-only" | "summary" | "unavailable";
+export type ReleaseAvailability = "installable" | "unresolved" | "manual" | "update-only" | "preview" | "summary" | "unavailable";
 
 /** One source's indexing state. Mirrors discovery.SourceStatus. */
 export interface DiscoverySourceStatus {
@@ -839,10 +839,12 @@ export interface Release {
   /** Empty: unknown. */
   languages: string[];
   languageClaim?: string;
-  kind: "release" | "update";
+  kind: "release" | "update" | "preview";
   availability: ReleaseAvailability;
   /** Validated torrent identities. */
   transports: number;
+  /** The source offers no torrents; its files open in a browser only. */
+  browserOnly: boolean;
   /** Why mirrors aren't usable yet, one line each. */
   unresolved: string[];
   warnings: string[];
@@ -892,7 +894,7 @@ export interface PreparedRelease {
   release: Release;
   ready: boolean;
   offers: PreparedOffer[];
-  state: "ready" | "unresolved" | "update-only" | "unavailable";
+  state: "ready" | "unresolved" | "update-only" | "unavailable" | "preview" | "browser";
   reason?: string;
   warnings: string[];
   /** The copy the Store installed, which an update replaces in its folder. */

@@ -445,6 +445,25 @@ func (d *discoveryState) sourceName(src string) string {
 	return s.Name
 }
 
+// torrentSource: the provider's releases can come as torrents; the others
+// only open in a browser.
+func torrentSource(src string) bool {
+	p, ok := sources.Lookup(src)
+	return ok && p.Torrents
+}
+
+// attachable refuses a .torrent for a release that can't have one: an
+// announcement, or a release from a source without torrents.
+func attachable(r discovery.Record) error {
+	if r.Entry.ReleaseKind == "preview" {
+		return errors.New("the source only announces this release; there is nothing to download yet")
+	}
+	if !torrentSource(r.Entry.SourceID) {
+		return errors.New("this source offers no torrents; its files open in your browser")
+	}
+	return nil
+}
+
 // status is what discovery is doing now.
 func (d *discoveryState) status() discovery.Status {
 	v := d.c.Settings.Get()
@@ -791,6 +810,14 @@ func (d *discoveryState) prepared(key, id string) (discovery.PreparedRelease, er
 		p.State, p.Reason = "update-only", "This is an update for an installed copy, not a standalone game."
 	case discovery.AvailGone:
 		p.State, p.Reason = "unavailable", "The source no longer lists this release."
+	case discovery.AvailPreview:
+		p.State, p.Reason = "preview", "The source only announces this release. There is nothing to download yet."
+	case discovery.AvailUnresolved, discovery.AvailManual, discovery.AvailSummary:
+		if !torrentSource(r.Entry.SourceID) {
+			p.State, p.Reason = "browser", "This source offers its files through file hosts in your browser only. Seaglass can't download or install them."
+			break
+		}
+		fallthrough
 	default:
 		p.State = "unresolved"
 		p.Reason = "No validated torrent yet. Open the release page in your browser, get the .torrent file there, then attach it."

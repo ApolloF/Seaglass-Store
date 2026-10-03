@@ -410,3 +410,36 @@ func TestFiniteCatalogIsCompleteAfterItsOnlyPage(t *testing.T) {
 		t.Fatalf("records %d, want 8", n)
 	}
 }
+
+// A finite catalog's one page holds its whole history: only rows dated
+// within the last week can become wishlist news.
+func TestFiniteCatalogKeepsOldAndUndatedRowsAsHistory(t *testing.T) {
+	ix, _ := testIndex(t)
+	f := newFakeSource(t, "dodi", 10)
+	f.src.ListingPage, f.src.Search = "", ""
+	now := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	res := Pass(context.Background(), ix, f.src, f, true, func() time.Time { return now }, PassHooks{})
+	if res.Err != nil || len(res.Merged.IDs) != 10 {
+		t.Fatalf("pass: %+v", res)
+	}
+	news := 0
+	for _, id := range res.Merged.IDs {
+		r, _ := ix.Record("dodi", id)
+		recent := now.Sub(*r.Entry.PublishedAt) <= 7*24*time.Hour
+		if r.Backfill == recent {
+			t.Errorf("%s published %s: backfill %v", r.Entry.Title, r.Entry.PublishedAt, r.Backfill)
+		}
+		if recent {
+			news++
+		}
+	}
+	if news == 0 || news == 10 {
+		t.Fatalf("fixture should mix recent and old rows, %d recent", news)
+	}
+	week := now.Add(-48 * time.Hour)
+	undated := sources.Entry{Title: "Undated"}
+	dated := sources.Entry{Title: "Updated", UpdatedAt: &week}
+	if got := catalogHistory([]sources.Entry{undated, dated}, now, true); len(got) != 1 || got[0].Title != "Undated" {
+		t.Errorf("history %+v, want the undated row only", got)
+	}
+}

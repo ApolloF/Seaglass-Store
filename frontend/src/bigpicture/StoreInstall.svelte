@@ -178,9 +178,11 @@
     {#if step === "checking"}
       <p class="sub" aria-live="polite">Seaglass is reading the release page. This can take a few seconds.</p>
     {:else if step === "browser"}
-      <p class="why">{prepared?.reason || "Seaglass couldn't get this release's torrent file yet."}</p>
+      <p class="why">{blockedText(prepared)}</p>
       {#each prepared?.warnings ?? [] as w, k (k)}<p class="sub">{w}</p>{/each}
-      <p class="sub">Get the .torrent file from the release page and attach it in desktop mode. Seaglass checks it before anything downloads.</p>
+      {#if prepared?.state === "unresolved"}
+        <p class="sub">Get the .torrent file from the release page and attach it in desktop mode. Seaglass checks it before anything downloads.</p>
+      {/if}
     {:else if step === "blocked"}
       <p class="why">{blockedText(prepared)}</p>
     {:else if o}

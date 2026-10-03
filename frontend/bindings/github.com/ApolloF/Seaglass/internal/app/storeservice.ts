@@ -363,7 +363,8 @@ export function OpenStoreLink(raw: string): $CancellablePromise<void> {
 
 /**
  * PauseIndexing pauses or resumes background indexing on this PC. Paused,
- * nothing is requested from any source until resumed; the index stays.
+ * no listing page or idle wishlist search is requested until resumed;
+ * opening a game and searching still ask the sources. The index stays.
  */
 export function PauseIndexing(paused: boolean): $CancellablePromise<discovery$0.Status> {
     return $Call.ByID(680953517, paused);

@@ -5,8 +5,7 @@
 // source choice), empty (nothing indexed yet), offline (remote searches
 // and providers fail; cached answers come back stale), nochart (Steam's
 // chart is unavailable), slow (remote answers take longer), playing (a game
-// runs, so indexing waits), extra (a third provider without site search or
-// torrents), nosteam (no Steam account on this PC), private (the Steam
+// runs, so indexing waits), nosteam (no Steam account on this PC), private (the Steam
 // wishlist isn't public). Recommendations follow the played library games
 // and the wishlist; `playedonly` and `wishlistonly` keep one of the two,
 // `nohistory` neither (the popular fallback).
@@ -53,21 +52,21 @@ const day = 86400;
 const gb = 1 << 30;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, flags.has("slow") ? ms * 3 : ms));
 const squash = (t: string) => t.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]/g, "");
-const SOURCE_NAMES: Record<string, string> = { fitgirl: "FitGirl", dodi: "DODI", example: "Example Archive", feeds: "Feeds", steam: "Steam" };
+const SOURCE_NAMES: Record<string, string> = { fitgirl: "FitGirl", dodi: "DODI", elamigos: "ElAmigos", feeds: "Feeds", steam: "Steam" };
 
 /** The providers the mock registry declares, as sources.Providers does. */
 const PROVIDERS = [
   { id: "fitgirl", host: "fitgirl-repacks.site", search: true, paged: true, torrents: true, defaultOn: true, notes: [] as string[] },
   { id: "dodi", host: "dodi-repacks.site", search: true, paged: true, torrents: true, defaultOn: true, notes: [] as string[] },
+  { id: "elamigos", host: "elamigos.site", search: false, paged: false, torrents: false, defaultOn: false,
+    notes: ["One finite catalog; search uses indexed titles.", "File-host containers open in the browser. Automated downloads are unsupported."] },
 ];
-/** A provider added later: off until chosen, one finite page, no search. */
-const EXTRA = { id: "example", host: "archive.example", search: false, paged: false, torrents: false, defaultOn: false, notes: ["Lists one page of releases, so it is complete after one request."] };
-const providers = () => (flags.has("extra") ? [...PROVIDERS, EXTRA] : PROVIDERS);
+const providers = () => PROVIDERS;
 const searchable = (id: string) => providers().find((p) => p.id === id)?.search ?? true;
 
 // A release as the fixtures write it.
 interface R {
-  source: "fitgirl" | "dodi" | "feeds";
+  source: "fitgirl" | "dodi" | "elamigos" | "feeds";
   version?: string;
   ago: number; // days since publication
   changedAgo?: number; // days since the article changed
@@ -76,7 +75,7 @@ interface R {
   claim?: string;
   avail?: Release["availability"];
   unresolved?: string[];
-  kind?: "release" | "update";
+  kind?: Release["kind"];
   // What preparing it does: resolve (works after a moment), captcha (needs the browser).
   prepare?: "resolve" | "captcha";
   backfill?: boolean;
@@ -106,6 +105,7 @@ const fixtures: G[] = [
       { source: "fitgirl", version: "v1.2.0", ago: 2, size: 47.9, languages: MULTI, claim: "MULTi6", avail: "installable" },
       { source: "dodi", version: "v1.1.4", ago: 30, size: 52.3, languages: ["English", "Russian"], claim: "ENG/RUS", avail: "unresolved", unresolved: ["File-Me: not resolved yet"], prepare: "resolve" },
       { source: "fitgirl", version: "v1.0.6", ago: 120, changedAgo: 1, size: 38.1, languages: MULTI, avail: "installable", backfill: true },
+      { source: "elamigos", version: "v1.2.0", ago: 3, size: 44.6, languages: MULTI, claim: "MULTi6", avail: "manual", unresolved: ["DDOWNLOAD: open it in your browser"] },
     ] },
   { title: "Hollow Tide", appId: 2210110, rank: 12, genres: ["Adventure", "Indie"], review: [81, 23_800, "Very Positive"], recent: [74, 310, "Mostly Positive"], hltb: [540, 720, 1100], dev: "Tidewater", year: 2025,
     blurb: "Dive a drowned city at low tide and get back before the sea returns.",
@@ -124,7 +124,10 @@ const fixtures: G[] = [
       { source: "dodi", version: "v1.4.2 + 3 DLCs", ago: 10, size: 13.0, languages: [], claim: "MULTi9", avail: "unresolved", unresolved: ["File-Me: rate-limited, try again in a minute"], prepare: "resolve" },
     ] },
   { title: "Ashen Lanterns 2", genres: ["Action"], hltb: "none", dev: "Low Ember", year: 2026,
-    releases: [{ source: "dodi", version: "v0.3 Early Access", ago: 3, size: 9.0, languages: [], avail: "unresolved", unresolved: ["File-Me: not resolved yet"], prepare: "resolve" }] },
+    releases: [
+      { source: "dodi", version: "v0.3 Early Access", ago: 3, size: 9.0, languages: [], avail: "unresolved", unresolved: ["File-Me: not resolved yet"], prepare: "resolve" },
+      { source: "elamigos", ago: 1, kind: "preview", avail: "preview" },
+    ] },
   { title: "Cinder Drift", genres: ["Racing"], review: [74, 3_300, "Mostly Positive"], dev: "Sidecar", year: 2025,
     releases: [{ source: "feeds", version: "1.0", ago: 280, size: 0.4, languages: EN, avail: "installable" }] },
   { title: "Dune Lark", appId: 1678010, rank: 58, genres: ["Adventure"], review: [95, 18_200, "Overwhelmingly Positive"], critic: 89, hltb: [300, 420, 600], dev: "Sandglass", year: 2024,
@@ -199,7 +202,12 @@ function makeGame(g: G): Game {
         title: g.title,
         rawTitle: `${g.title}${r.version ? ` – ${r.version}` : ""}${r.source === "dodi" ? " [DODI Repack]" : ""}`,
         version: r.version,
-        pageUrl: r.source === "feeds" ? undefined : `https://${r.source === "dodi" ? "dodi-repacks.site" : "fitgirl-repacks.site"}/${squash(g.title)}/`,
+        pageUrl:
+          r.source === "feeds"
+            ? undefined
+            : r.source === "elamigos"
+              ? `https://elamigos.site/data/${g.title.replace(/\W+/g, "_")}_-_ElAmigos.html`
+              : `https://${r.source === "dodi" ? "dodi-repacks.site" : "fitgirl-repacks.site"}/${squash(g.title)}/`,
         publishedAt: now() - r.ago * day,
         updatedAt: now() - (r.changedAgo ?? r.ago) * day,
         sizeBytes: Math.round((r.size ?? 0) * gb),
@@ -209,6 +217,7 @@ function makeGame(g: G): Game {
         kind: r.kind ?? "release",
         availability: avail,
         transports: avail === "installable" ? 1 : 0,
+        browserOnly: r.source === "elamigos",
         unresolved: r.unresolved ?? [],
         warnings:
           r.source === "feeds"
@@ -587,7 +596,13 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
       offers: ready
         ? [{ transport: 0, title: r.title, version: r.version, sizeBytes: r.sizeBytes, installedSizeBytes: r.sizeBytes * 2, languages: r.languages, torrentName: r.rawTitle, infoHash: "a".repeat(40), sourceName: r.sourceName }]
         : [],
-      state: ready ? "ready" : r.availability === "update-only" ? "update-only" : r.availability === "unavailable" ? "unavailable" : "unresolved",
+      state: ready
+        ? "ready"
+        : r.availability === "update-only" || r.availability === "unavailable" || r.availability === "preview"
+          ? r.availability
+          : r.browserOnly
+            ? "browser"
+            : "unresolved",
       reason: ready ? undefined : (reason ?? r.unresolved[0]),
       warnings: copy(r.warnings),
       installed: installed[key] ? { version: installed[key].version, dir: `C:\\Users\\you\\Games\\${r.title}` } : undefined,
@@ -743,6 +758,7 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
       async attachTorrent(key, id) {
         needOn();
         const rec = findRec(key, id);
+        if (rec.release.kind === "preview" || rec.release.browserOnly) throw new Error("this release can't take a .torrent file");
         Object.assign(rec.release, { availability: "installable", transports: 1, unresolved: [], warnings: [...rec.release.warnings, "Manual torrent attached: confirm that its name matches the selected game."] });
         emitGames({ keys: [key], all: false });
         return prepared(key, rec);

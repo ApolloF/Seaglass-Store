@@ -149,6 +149,14 @@ func Pass(ctx context.Context, ix *Index, p sources.Provider, f Fetcher, force b
 			if err != nil && !errors.Is(err, errNoReleases) {
 				return failed(ix, src.ID, &res, err, now())
 			}
+			if !p.Paged() {
+				// A finite catalog lists its whole history on one page;
+				// only its recently dated rows can be news.
+				if _, ok := commit(catalogHistory(entries, now(), true), OriginListing, true, nil); !ok {
+					return res
+				}
+				entries = catalogHistory(entries, now(), false)
+			}
 			m, ok := commit(entries, OriginListing, false, nil)
 			if !ok {
 				return res
@@ -222,6 +230,25 @@ func Pass(ctx context.Context, ix *Index, p sources.Provider, f Fetcher, force b
 }
 
 var errNoReleases = errors.New("the page lists no releases")
+
+// catalogHistory picks a finite catalog's history (history true) or its
+// news: rows without a date, as in an alphabetic index, and rows dated more
+// than a week back are history, so turning the source on never presents its
+// whole back catalog as wishlist news.
+func catalogHistory(entries []sources.Entry, now time.Time, history bool) []sources.Entry {
+	var out []sources.Entry
+	for _, e := range entries {
+		at := e.PublishedAt
+		if at == nil {
+			at = e.UpdatedAt
+		}
+		old := at == nil || now.Sub(*at) > 7*24*time.Hour
+		if old == history {
+			out = append(out, e)
+		}
+	}
+	return out
+}
 
 // fetchParse fetches and parses one source document; next is the page's
 // own "next" link ("" at the end).

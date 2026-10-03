@@ -327,7 +327,8 @@ export interface PreparedRelease {
 
     /**
      * State: "ready", "unresolved" (resolution failed or needs a browser),
-     * "update-only", "unavailable".
+     * "update-only", "unavailable", "preview" (announced, nothing to
+     * download yet), "browser" (a source without torrents).
      */
     "state": string;
     "reason"?: string;
@@ -427,7 +428,7 @@ export interface Release {
     "languageClaim"?: string;
 
     /**
-     * release or update
+     * release, update or preview
      */
     "kind": string;
 
@@ -440,6 +441,12 @@ export interface Release {
      * Transports is the number of validated torrent identities.
      */
     "transports": number;
+
+    /**
+     * BrowserOnly: the source offers no torrents; its files open in a
+     * browser and can't be downloaded or installed by Seaglass.
+     */
+    "browserOnly": boolean;
 
     /**
      * Unresolved explains why mirrors are not usable yet (captcha-required,

@@ -34,7 +34,7 @@ const home = (p: Partial<StoreHome> = {}): StoreHome => ({
 });
 const release = (p: Partial<Release> = {}): Release => ({
   id: "r1", origin: "source", source: "fitgirl", sourceName: "FitGirl", title: "Ember Crown", rawTitle: "Ember Crown v1.2", version: "v1.2", publishedAt: 0, updatedAt: 0, sizeBytes: 4e10,
-  languages: ["English", "German"], kind: "release", availability: "installable", transports: 1, unresolved: [], warnings: [], newer: false, feedOffer: -1, ...p,
+  languages: ["English", "German"], kind: "release", availability: "installable", transports: 1, browserOnly: false, unresolved: [], warnings: [], newer: false, feedOffer: -1, ...p,
 });
 const prepared = (p: Partial<PreparedRelease> = {}): PreparedRelease => ({
   gameKey: "steam:1", release: release(), ready: true, state: "ready", warnings: [],
@@ -207,6 +207,8 @@ describe("install confirmation", () => {
     expect(installStep(prepared({ offers: [{ ...prepared().offers[0], infoHash: "" }] }))).toBe("blocked");
     expect(installStep(prepared({ ready: false, state: "update-only", offers: [] }))).toBe("blocked");
     expect(installStep(prepared({ ready: false, state: "unavailable", offers: [] }))).toBe("blocked");
+    expect(installStep(prepared({ ready: false, state: "preview", offers: [] }))).toBe("blocked");
+    expect(installStep(prepared({ ready: false, state: "browser", offers: [] }))).toBe("browser");
     const entry = { key: "title:x", title: "X", offers: [], version: "", updated: "", size: 0, languages: [] } as CatalogEntry;
     expect(installStep(null, entry)).toBe("blocked");
   });
