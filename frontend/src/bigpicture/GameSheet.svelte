@@ -14,6 +14,7 @@
   import ArtPicker from "./ArtPicker.svelte";
   import AchievementsScreen from "./AchievementsScreen.svelte";
   import CollectionPicker from "./CollectionPicker.svelte";
+  import CompletionTimes from "../components/CompletionTimes.svelte";
   import Hints from "./Hints.svelte";
 
   let { game, onplay, onclose }: { game: Game; onplay: () => void; onclose: () => void } = $props();
@@ -175,6 +176,7 @@
         <span class="path">{game.dir}</span>
       </div>
     {:else if game.meta?.description}<p class="desc">{game.meta.description}</p>{/if}
+    {#if !game.needsReview}<CompletionTimes {game} big />{/if}
     <div class="buttons">
       {#each buttons as bt, k (bt.id)}
         <button type="button" class="btn" class:primary={k === 0} class:on={k === b && !picking} onclick={() => ((b = k), press(bt.id))}>
