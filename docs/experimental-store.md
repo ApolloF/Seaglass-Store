@@ -87,7 +87,7 @@ They catch what they know: a file that isn't what the feed listed, and what Defe
   - `WL_REAL_DEFENDER=1 go test -run RealDefender -v ./internal/safety`
   - `WL_STORE_LIVE=1 go test -run LiveDiscovery -v ./internal/store/discovery` (one bounded pass per source and a source search)
   - `WL_STORE_LIVE=1 go test -run Live -v ./internal/store/enrich` (the chart, one game's reviews, Metacritic and HowLongToBeat)
-  - `WL_STEAM_ID=<SteamID64> go test -run LiveSteamWishlist -v ./internal/store/enrich` (a public Steam wishlist)
+  - `WL_STORE_LIVE=1 WL_STEAM_ID=<SteamID64> go test -run LiveSteamWishlist -v ./internal/store/enrich` (a public Steam wishlist)
   - `WL_ELAMIGOS_LIVE=1 go test -run LiveElAmigos -v ./internal/store/sources` (the ElAmigos catalog and three release pages)
 - `tools/harness/store.mjs` runs the whole path in the real app against a feed and web seed served by the script itself.
 - `tools/harness/discovery.mjs` drives discovery in the real app: indexing, search, a game page, the wishlist and the install confirmation (closed without downloading), in both themes and at 390 px.
