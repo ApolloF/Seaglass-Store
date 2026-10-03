@@ -95,6 +95,45 @@ func TestElAmigosPreviewHasNoAvailableReleaseReferences(t *testing.T) {
 	}
 }
 
+func TestElAmigosComingSoonInADescriptionDoesNotMakeAReleaseAPreview(t *testing.T) {
+	data := `<h2>Example (2026), 2GB</h2><h3>ElAmigos release. Updated to version 1.2 (01.10.2026).</h3>` +
+		`<p>A co-op campaign for four. Online mode coming soon; ranked play not yet available.</p>` +
+		`<h2>DDOWNLOAD</h2><a href="https://filecrypt.cc/Container/BASE.html">base</a>`
+	e, err := parseElAmigosFixture(t, "https://elamigos.site/data/Example.html", []byte(data))
+	if err != nil || len(e) != 1 || e[0].ReleaseKind != "release" || e[0].Version != "1.2" || len(e[0].References) != 1 {
+		t.Fatalf("%+v %v", e, err)
+	}
+	// The label in the heading or the release claim still marks a preview.
+	for _, data := range []string{
+		`<h2>Example (2027), coming soon</h2><h3>ElAmigos release.</h3><h2>DDOWNLOAD</h2><a href="https://filecrypt.cc/Container/X.html">x</a>`,
+		`<h2>Example (2027)</h2><h3>ElAmigos release, preview only.</h3><h2>DDOWNLOAD</h2><a href="https://filecrypt.cc/Container/X.html">x</a>`,
+	} {
+		if e, err := parseElAmigosFixture(t, "https://elamigos.site/data/Example.html", []byte(data)); err != nil || e[0].ReleaseKind != "preview" || len(e[0].References) != 0 {
+			t.Errorf("%s: %+v %v", data, e, err)
+		}
+	}
+}
+
+func TestElAmigosCatalogSkipsAFewUnreadableRows(t *testing.T) {
+	var b strings.Builder
+	for i := range 20 {
+		fmt.Fprintf(&b, `<h3>Game %d ElAmigos <a href="/data/Game_%d.html">DOWNLOAD</a></h3>`, i, i)
+	}
+	odd := `<h3>Odd Link ElAmigos <a href="/data/sub/Odd.html?x=1">DOWNLOAD</a></h3>` +
+		`<h3>!!! ElAmigos <a href="/data/No_Title.html">DOWNLOAD</a></h3>`
+	e, err := parseElAmigosFixture(t, "https://elamigos.site/", []byte(b.String()+odd))
+	if err != nil || len(e) != 20 {
+		t.Fatalf("two odd rows among 22: %d entries, %v", len(e), err)
+	}
+	// More than a quarter unreadable: the layout changed.
+	for range 6 {
+		b.WriteString(odd)
+	}
+	if e, err := parseElAmigosFixture(t, "https://elamigos.site/", []byte(b.String())); err == nil {
+		t.Fatalf("12 odd rows among 32 accepted: %d entries", len(e))
+	}
+}
+
 func TestElAmigosPatchLinksDoNotBecomeStandaloneInstallerLinks(t *testing.T) {
 	data := `<h2>Example (2026), 2GB</h2><h3>ElAmigos release. Updated to version 1.0 (01.10.2026).</h3><h2>DDOWNLOAD</h2><a href="https://filecrypt.cc/Container/BASE.html">base</a><h2>Example update 1.0 - 2.0 (02.10.2026), 3GB</h2><h2>RAPIDGATOR</h2><a href="https://filecrypt.cc/Container/PATCH.html">patch</a><h3>Languages: Patch language</h3>`
 	e, err := parseElAmigosFixture(t, "https://elamigos.site/data/Example.html", []byte(data))

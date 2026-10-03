@@ -3,6 +3,8 @@ package discovery
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -16,8 +18,11 @@ import (
 // write its full size (about 1.3 KB per release: 7.5 MB and 26 ms for
 // 6,000 releases, see BenchmarkSaveWholeSourcePerPage) for every ten
 // releases read, against 13 KB and 0.3 ms for a journal line. Save folds
-// the journal into the source file and starts a new one; opening the
-// index replays it.
+// the journal into the source file: it sets the journal aside as held
+// lines, new pages start a new journal, and the held lines are removed
+// once the source file holding them is in place. Opening the index
+// replays the held lines, then the journal. Lines are numbered, so lines
+// the source file already holds are skipped.
 
 // journalCompactAt is the journal size from which a pass folds it into
 // the source file, so replaying it at start stays quick.
@@ -26,11 +31,16 @@ const journalCompactAt = 4 << 20
 // journalLine is one saved page.
 type journalLine struct {
 	Schema  int        `json:"schema"`
+	Seq     int64      `json:"seq,omitempty"`
 	Crawl   CrawlState `json:"crawl"`
 	Records []Record   `json:"records,omitempty"`
 }
 
 func (ix *Index) journalPath(src string) string { return filepath.Join(ix.dir, src+".journal") }
+
+// heldPath holds a journal's lines while Save writes them to the source
+// file.
+func (ix *Index) heldPath(src string) string { return filepath.Join(ix.dir, src+".journal.folding") }
 
 // commitPage merges one page's entries, applies the crawl change (nil:
 // none) and appends both to the source's journal, before the next request.
@@ -50,8 +60,8 @@ func (ix *Index) commitPage(src string, entries []sources.Entry, origin string, 
 }
 
 // journal applies the crawl change and appends the page. ix.mu is held
-// while the line is written, so Save, which removes the journal under the
-// same lock, never drops a line whose state it didn't write.
+// while the line is written, so Save, which sets the journal aside under
+// the same lock, holds every line its snapshot contains.
 func (ix *Index) journal(src string, entries []sources.Entry, crawl func(*CrawlState)) (int64, error) {
 	ix.mu.Lock()
 	defer ix.mu.Unlock()
@@ -64,7 +74,8 @@ func (ix *Index) journal(src string, entries []sources.Entry, crawl func(*CrawlS
 		ix.dirty[src] = true
 		ix.version++
 	}
-	line := journalLine{Schema: IndexSchema, Crawl: *c}
+	ix.seq[src]++
+	line := journalLine{Schema: IndexSchema, Seq: ix.seq[src], Crawl: *c}
 	for _, e := range entries {
 		if r := ix.records[src][sources.EntryID(src, CanonicalPage(e.PageURL))]; r != nil {
 			line.Records = append(line.Records, cloneRecord(r))
@@ -96,12 +107,22 @@ func (ix *Index) journal(src string, entries []sources.Entry, crawl func(*CrawlS
 	return st.Size(), nil
 }
 
-// replayJournal applies a source's journal over its loaded file. A line
-// cut short by a crash ends the replay: that page is simply fetched again.
-func (ix *Index) replayJournal(src string) {
-	b, err := os.ReadFile(ix.journalPath(src))
+// replayJournal applies a source's held lines and then its journal over
+// its loaded file, skipping the lines up to folded, which the file holds.
+// A line cut short by a crash ends the replay: that page is simply fetched
+// again.
+func (ix *Index) replayJournal(src string, folded int64) {
+	if ix.replayFile(ix.heldPath(src), src, folded) {
+		ix.replayFile(ix.journalPath(src), src, folded)
+	}
+}
+
+// replayFile replays one journal file; false when a line was cut short,
+// so later lines mustn't be applied over the gap.
+func (ix *Index) replayFile(path, src string, folded int64) bool {
+	b, err := os.ReadFile(path)
 	if err != nil {
-		return
+		return true
 	}
 	for _, raw := range bytes.Split(b, []byte("\n")) {
 		if len(raw) == 0 {
@@ -109,7 +130,11 @@ func (ix *Index) replayJournal(src string) {
 		}
 		var l journalLine
 		if json.Unmarshal(raw, &l) != nil || l.Schema != IndexSchema {
-			break
+			return false
+		}
+		ix.seq[src] = max(ix.seq[src], l.Seq)
+		if l.Seq != 0 && l.Seq <= folded {
+			continue
 		}
 		l.Crawl.Source = src
 		*ix.crawl[src] = l.Crawl
@@ -122,10 +147,34 @@ func (ix *Index) replayJournal(src string) {
 		}
 		ix.dirty[src] = true
 	}
+	return true
 }
 
-// dropJournal forgets a journal whose state is about to be written to the
-// source file. ix.mu is held.
-func (ix *Index) dropJournal(src string) {
-	_ = os.Remove(ix.journalPath(src))
+// holdJournal sets a source's journal aside before Save writes its lines
+// to the source file; new pages then start a new journal. Lines still
+// held after a failed save get these appended. ix.mu is held.
+func (ix *Index) holdJournal(src string) error {
+	path, held := ix.journalPath(src), ix.heldPath(src)
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if _, err := os.Stat(held); errors.Is(err, fs.ErrNotExist) {
+		return os.Rename(path, held)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(held, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(b)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return err
+	}
+	return os.Remove(path)
 }

@@ -114,6 +114,20 @@ func (q *Searches) Done(key string, now time.Time) error {
 	return q.save(now)
 }
 
+// Later records a search that didn't reach every source: key goes to the
+// back of the queue, and the spacing applies before the next search.
+func (q *Searches) Later(key string, now time.Time) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	n := len(q.f.Queue)
+	q.f.Queue = slices.DeleteFunc(q.f.Queue, func(k string) bool { return k == key })
+	if len(q.f.Queue) < n {
+		q.f.Queue = append(q.f.Queue, key)
+	}
+	q.f.Last = now
+	return q.save(now)
+}
+
 // Drop takes key off the queue without a search: it isn't saved anymore,
 // or it has a source release now.
 func (q *Searches) Drop(key string, now time.Time) error {

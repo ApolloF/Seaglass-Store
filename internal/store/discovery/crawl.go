@@ -59,6 +59,7 @@ type PassResult struct {
 const (
 	StopPaused   = "paused"   // a game started, or the person paused indexing
 	StopCanceled = "canceled" // the Store or the source was turned off, or Seaglass is closing
+	StopWaiting  = "waiting"  // a search or a release page made the source ask to wait
 )
 
 // PassHooks let the caller stop a pass and follow it page by page.
@@ -93,6 +94,10 @@ func Pass(ctx context.Context, ix *Index, p sources.Provider, f Fetcher, force b
 			res.Stopped = StopPaused
 			return true
 		}
+		if now().Before(ix.Crawl(src.ID).RetryAt) {
+			res.Stopped = StopWaiting
+			return true
+		}
 		return false
 	}
 	// commit saves a page and its crawl change before anything else is
@@ -101,6 +106,7 @@ func Pass(ctx context.Context, ix *Index, p sources.Provider, f Fetcher, force b
 		m, err := ix.commitPage(src.ID, entries, origin, older, now(), crawl)
 		res.Merged.Added += m.Added
 		res.Merged.Changed += m.Changed
+		res.Merged.Relisted += m.Relisted
 		res.Merged.IDs = append(res.Merged.IDs, m.IDs...)
 		if err != nil {
 			res.Err = fmt.Errorf("saving the index: %w", err)
@@ -150,12 +156,17 @@ func Pass(ctx context.Context, ix *Index, p sources.Provider, f Fetcher, force b
 				return failed(ix, src.ID, &res, err, now())
 			}
 			if !p.Paged() {
-				// A finite catalog lists its whole history on one page;
-				// only its recently dated rows can be news.
-				if _, ok := commit(catalogHistory(entries, now(), true), OriginListing, true, nil); !ok {
+				// A finite catalog lists its whole history on one page:
+				// all of it the first time, and later only its recently
+				// dated rows can be news.
+				history, news := entries, []sources.Entry(nil)
+				if !first {
+					history, news = catalogHistory(entries, now(), true), catalogHistory(entries, now(), false)
+				}
+				if _, ok := commit(history, OriginListing, true, nil); !ok {
 					return res
 				}
-				entries = catalogHistory(entries, now(), false)
+				entries = news
 			}
 			m, ok := commit(entries, OriginListing, false, nil)
 			if !ok {
@@ -170,7 +181,8 @@ func Pass(ctx context.Context, ix *Index, p sources.Provider, f Fetcher, force b
 		}
 		res.Recent = true
 		if _, ok := commit(nil, OriginListing, false, func(c *CrawlState) {
-			c.RecentAt, c.Failures, c.RetryAt, c.Error = now(), 0, time.Time{}, ""
+			c.RecentAt = now()
+			answered(c, now())
 			if c.NextPage < 2 {
 				c.NextPage = 2
 			}
@@ -212,7 +224,7 @@ func Pass(ctx context.Context, ix *Index, p sources.Provider, f Fetcher, force b
 			return failed(ix, src.ID, &res, err, now())
 		}
 		if _, ok := commit(entries, OriginListing, true, func(c *CrawlState) {
-			c.Failures, c.RetryAt, c.Error = 0, time.Time{}, ""
+			answered(c, now())
 			if next == "" {
 				c.BackfillDone = true
 			} else {
@@ -286,6 +298,38 @@ func failed(ix *Index, src string, res *PassResult, err error, now time.Time) Pa
 	return *res
 }
 
+// answered clears the backoff after a page came back, unless a search or
+// a release page made the source ask to wait meanwhile.
+func answered(c *CrawlState, now time.Time) {
+	if now.Before(c.RetryAt) {
+		return
+	}
+	c.Failures, c.RetryAt, c.Error = 0, time.Time{}, ""
+}
+
+// slowDown says a failed request asked Seaglass to wait: HTTP 429 or 503,
+// or any answer with a Retry-After.
+func slowDown(err error) bool {
+	var status *sources.HTTPError
+	if !errors.As(err, &status) {
+		return false
+	}
+	return status.Status == http.StatusTooManyRequests || status.Status == http.StatusServiceUnavailable || status.RetryAfter != ""
+}
+
+// backOff puts a source into backoff after a search or a release page
+// asked to wait, and saves it at once, as a failed listing page does: no
+// pass, search or release page asks the source again before RetryAt.
+func backOff(ix *Index, src string, err error, now time.Time) error {
+	_, jerr := ix.commitPage(src, nil, OriginListing, false, now, func(c *CrawlState) { Backoff(c, err, now) })
+	return jerr
+}
+
+// waitError refuses a request while the source asked to wait.
+func waitError(src sources.Source, until time.Time) error {
+	return fmt.Errorf("%s asked to wait; try again after %s", src.Name, until.Local().Format("15:04"))
+}
+
 // Backoff updates a crawl state after a failed request.
 func Backoff(c *CrawlState, err error, now time.Time) {
 	c.Failures++
@@ -327,8 +371,8 @@ func FetchDetail(ctx context.Context, ix *Index, src sources.Source, f Fetcher, 
 	if !ok {
 		return errors.New("that release isn't listed anymore")
 	}
-	if now.Before(ix.Crawl(src.ID).RetryAt) {
-		return fmt.Errorf("%s asked to wait; try again after %s", src.Name, ix.Crawl(src.ID).RetryAt.Local().Format("15:04"))
+	if until := ix.Crawl(src.ID).RetryAt; now.Before(until) {
+		return waitError(src, until)
 	}
 	doc, err := f.FetchDocument(ctx, r.Entry.PageURL)
 	var status *sources.HTTPError
@@ -337,8 +381,10 @@ func FetchDetail(ctx context.Context, ix *Index, src sources.Source, f Fetcher, 
 		return nil
 	}
 	if err != nil {
-		if errors.As(err, &status) && (status.Status == http.StatusTooManyRequests || status.Status == http.StatusServiceUnavailable) {
-			ix.SetCrawl(src.ID, func(c *CrawlState) { Backoff(c, err, now) })
+		if slowDown(err) {
+			if jerr := backOff(ix, src.ID, err, now); jerr != nil {
+				err = errors.Join(err, fmt.Errorf("saving the index: %w", jerr))
+			}
 		}
 		if !errors.Is(err, context.Canceled) {
 			ix.Update(src.ID, id, func(r *Record) { r.FetchError = err.Error() })

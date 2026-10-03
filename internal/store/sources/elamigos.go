@@ -2,6 +2,7 @@ package sources
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
@@ -12,6 +13,12 @@ import (
 
 // The complete catalog is finite and considerably larger than a WordPress page.
 const maxElAmigosEntries = 5000
+
+// A catalog row Seaglass can't read (an odd link, a missing title) is
+// skipped. When more than a quarter of the rows can't be read, the layout
+// changed: the catalog fails, so the source shows an error instead of
+// quietly indexing a fraction of it.
+const maxElAmigosBadShare = 4 // at most 1 in 4 rows
 
 var (
 	elAmigosTitleRE   = regexp.MustCompile(`^(.+?)\s+\((?:19|20)\d{2}\)(?:\s*,\s*(.*))?$`)
@@ -39,6 +46,7 @@ func elAmigosDetailURL(u *url.URL) bool {
 func parseElAmigosCatalog(source Source, page string, root *html.Node) ([]Entry, error) {
 	var entries []Entry
 	var date *time.Time
+	bad := 0
 	seen := map[string]bool{}
 	for n := root; n != nil; n = next(root, n) {
 		// The alphabetic index has no dates; don't inherit the last news batch's date.
@@ -66,18 +74,16 @@ func parseElAmigosCatalog(source Source, page string, root *html.Node) ([]Entry,
 				continue
 			}
 			resolved, err := resolve(source, page, attr(a, "href"))
-			if err != nil {
-				return nil, err
-			}
 			u, _ := url.Parse(resolved)
-			if !elAmigosDetailURL(u) {
-				return nil, errors.New("unsupported ElAmigos release link")
+			e := elAmigosEntry(source, resolved, raw, strings.TrimSpace(raw[:pos]))
+			if err != nil || !elAmigosDetailURL(u) || e.TitleKey == "" || len(raw) > 1024 {
+				bad++
+				continue
 			}
 			if seen[resolved] {
 				continue
 			}
 			seen[resolved] = true
-			e := elAmigosEntry(source, resolved, raw, strings.TrimSpace(raw[:pos]))
 			e.SummaryOnly = true
 			e.UpdatedAt = date
 			e.Warnings = append(e.Warnings, "Catalog summary; fetch the detail page to verify availability and the included installer version")
@@ -96,13 +102,16 @@ func parseElAmigosCatalog(source Source, page string, root *html.Node) ([]Entry,
 	if len(entries) == 0 {
 		return nil, errors.New("no ElAmigos catalog entries found; unsupported layout")
 	}
+	if bad*maxElAmigosBadShare > len(entries)+bad {
+		return nil, fmt.Errorf("%d of %d ElAmigos catalog rows are unsupported; the layout changed", bad, len(entries)+bad)
+	}
 	return entries, nil
 }
 
 func parseElAmigosDetail(source Source, page string, root *html.Node) ([]Entry, error) {
 	var e Entry
 	var found, releaseClaim, preview, patch bool
-	var host string
+	var host, firstLine string
 	seen := map[string]bool{}
 	for n := root; n != nil; n = next(root, n) {
 		if n.Type != html.ElementNode {
@@ -116,6 +125,7 @@ func parseElAmigosDetail(source Source, page string, root *html.Node) ([]Entry, 
 					continue
 				}
 				e = elAmigosEntry(source, page, line, m[1])
+				preview = elAmigosPreview(strings.ToLower(line))
 				e.SizeClaim = m[2]
 				e.SizeBytes, _ = parseSize(m[2])
 				if elAmigosPatchRE.MatchString(m[1]) || strings.Contains(strings.ToLower(m[1]), "update only") {
@@ -140,9 +150,12 @@ func parseElAmigosDetail(source Source, page string, root *html.Node) ([]Entry, 
 		if (n.Data == "h3" || n.Data == "p") && !patch && host == "" {
 			line := text(n, false)
 			lower := strings.ToLower(line)
-			preview = preview || elAmigosPreview(lower)
+			if firstLine == "" {
+				firstLine = lower
+			}
 			if strings.HasPrefix(lower, "elamigos release") {
 				releaseClaim = true
+				preview = preview || elAmigosPreview(lower)
 				if m := elAmigosVersionRE.FindStringSubmatch(line); m != nil {
 					e.Version = m[2]
 					if strings.EqualFold(m[1], "build") {
@@ -192,6 +205,10 @@ func parseElAmigosDetail(source Source, page string, root *html.Node) ([]Entry, 
 		e.References = append(e.References, Reference{URL: u.String(), Label: host,
 			Kind: "download", State: "manual-required", Reason: "File-host container requires browser handoff; automated downloads are unsupported"})
 	}
+	// Without a release claim, the line under the heading is where an
+	// announcement says so; a description mentioning "coming soon" elsewhere
+	// doesn't make a release a preview.
+	preview = preview || !releaseClaim && elAmigosPreview(firstLine)
 	if !found || !releaseClaim && !preview {
 		return nil, errors.New("no ElAmigos release metadata found; unsupported layout")
 	}

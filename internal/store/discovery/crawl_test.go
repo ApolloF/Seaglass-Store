@@ -308,6 +308,28 @@ func TestArticleUpdatesChangeTheRecordButSummariesDoNotDowngradeIt(t *testing.T)
 	}
 }
 
+// An announcement's page can turn into the release while its summary row
+// stays the same: it is read again once a day while still listed.
+func TestAnAnnouncementIsReadAgainADayLater(t *testing.T) {
+	ix, _ := testIndex(t)
+	now := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	page := "https://elamigos.site/data/Upcoming.html"
+	row := sources.Entry{SourceID: "elamigos", PageURL: page, RawTitle: "Upcoming ElAmigos", Title: "Upcoming", TitleKey: "upcoming", ReleaseKind: "release", SummaryOnly: true}
+	ix.Merge("elamigos", []sources.Entry{row}, OriginListing, true, now)
+	detail := row
+	detail.SummaryOnly, detail.ReleaseKind, detail.RawTitle = false, "preview", "Upcoming (2027)"
+	ix.Merge("elamigos", []sources.Entry{detail}, OriginDetailFetch, true, now)
+	id := sources.EntryID("elamigos", page)
+	ix.Merge("elamigos", []sources.Entry{row}, OriginListing, true, now.Add(6*time.Hour))
+	if r, _ := ix.Record("elamigos", id); NeedsDetail(r) {
+		t.Fatal("read again six hours later")
+	}
+	ix.Merge("elamigos", []sources.Entry{row}, OriginListing, true, now.Add(previewRecheck))
+	if r, _ := ix.Record("elamigos", id); !NeedsDetail(r) || r.Entry.ReleaseKind != "preview" {
+		t.Errorf("a day later: needs reading %v, %+v", NeedsDetail(r), r.Entry)
+	}
+}
+
 func TestResolvedTorrentsSurviveARefresh(t *testing.T) {
 	ix, _ := testIndex(t)
 	now := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
@@ -411,31 +433,38 @@ func TestFiniteCatalogIsCompleteAfterItsOnlyPage(t *testing.T) {
 	}
 }
 
-// A finite catalog's one page holds its whole history: only rows dated
-// within the last week can become wishlist news.
+// A finite catalog's one page holds its whole history. Indexed for the
+// first time, all of it is history, so turning the source on never creates
+// wishlist news; later, only rows dated within the last week can be news.
 func TestFiniteCatalogKeepsOldAndUndatedRowsAsHistory(t *testing.T) {
 	ix, _ := testIndex(t)
 	f := newFakeSource(t, "dodi", 10)
 	f.src.ListingPage, f.src.Search = "", ""
 	now := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
-	res := Pass(context.Background(), ix, f.src, f, true, func() time.Time { return now }, PassHooks{})
+	clk := &clock{now}
+	res := Pass(context.Background(), ix, f.src, f, true, clk.now, PassHooks{})
 	if res.Err != nil || len(res.Merged.IDs) != 10 {
-		t.Fatalf("pass: %+v", res)
+		t.Fatalf("first pass: %+v", res)
 	}
-	news := 0
 	for _, id := range res.Merged.IDs {
-		r, _ := ix.Record("dodi", id)
-		recent := now.Sub(*r.Entry.PublishedAt) <= 7*24*time.Hour
-		if r.Backfill == recent {
-			t.Errorf("%s published %s: backfill %v", r.Entry.Title, r.Entry.PublishedAt, r.Backfill)
-		}
-		if recent {
-			news++
+		if r, _ := ix.Record("dodi", id); !r.Backfill {
+			t.Errorf("first pass: %s published %s is news", r.Entry.Title, r.Entry.PublishedAt)
 		}
 	}
-	if news == 0 || news == 10 {
-		t.Fatalf("fixture should mix recent and old rows, %d recent", news)
+
+	clk.add(RecentEvery)
+	f.publish(fakeArticle{slug: "fresh", title: "Fresh", version: "v1.0", published: clk.now().Add(-48 * time.Hour)})
+	f.publish(fakeArticle{slug: "old-addition", title: "Old Addition", version: "v1.0", published: clk.now().Add(-30 * 24 * time.Hour)})
+	res = Pass(context.Background(), ix, f.src, f, false, clk.now, PassHooks{})
+	if res.Err != nil || res.Merged.Added != 2 {
+		t.Fatalf("later refresh: %+v", res)
 	}
+	fresh, _ := ix.Record("dodi", sources.EntryID("dodi", "https://dodi-repacks.site/fresh/"))
+	old, _ := ix.Record("dodi", sources.EntryID("dodi", "https://dodi-repacks.site/old-addition/"))
+	if fresh.Backfill || !old.Backfill {
+		t.Errorf("later refresh: a row from two days ago is history %v, one from a month ago %v", fresh.Backfill, old.Backfill)
+	}
+
 	week := now.Add(-48 * time.Hour)
 	undated := sources.Entry{Title: "Undated"}
 	dated := sources.Entry{Title: "Updated", UpdatedAt: &week}

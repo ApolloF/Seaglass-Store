@@ -84,9 +84,15 @@ type Record struct {
 	LastSeen  time.Time `json:"lastSeen"` // last listing, search or detail fetch that returned it
 	// Changed is when the parsed claims (title, version, size, transports)
 	// last changed after the first fetch; zero when they never did.
-	Changed  time.Time `json:"changed,omitzero"`
-	Detailed time.Time `json:"detailed,omitzero"` // the full article was parsed (not a summary)
-	Origin   string    `json:"origin"`            // rss, listing, search, detail
+	Changed time.Time `json:"changed,omitzero"`
+	// Detailed is when the full article was parsed; zero for a summary, and
+	// again once its summary row changed (see NeedsDetail).
+	Detailed time.Time `json:"detailed,omitzero"`
+	Origin   string    `json:"origin"` // rss, listing, search, detail
+	// Listed and ListedAt are the summary row (raw title, dated batch) the
+	// record was last listed or found with, to notice when it changes.
+	Listed   string    `json:"listed,omitempty"`
+	ListedAt time.Time `json:"listedAt,omitzero"`
 	// Gone: the article returned 404/410 or vanished from its listing.
 	// The record stays so wishlists and installed games keep their history.
 	Gone       bool   `json:"gone,omitempty"`
