@@ -1,13 +1,16 @@
 <script lang="ts">
-  // The front page: new repacks, what's popular on Steam, recent updates and
-  // news about wishlisted games.
+  // The front page: featured games, news about wishlisted games, what to play
+  // next, and the new, popular and updated releases as a list with a preview.
   import { api } from "../../lib/api";
   import { shop } from "../../lib/shop.svelte";
   import { lib } from "../../lib/store.svelte";
   import { storefront } from "../../lib/storefront.svelte";
+  import { recommendationTitle, recommendationWhy } from "../../lib/storefront-home";
   import type { GameSummary, StoreHome } from "../../lib/types";
-  import GameCard from "./GameCard.svelte";
+  import Featured from "./Featured.svelte";
+  import Rows from "./Rows.svelte";
   import Shelf from "./Shelf.svelte";
+  import WideCard from "./WideCard.svelte";
 
   let {
     version,
@@ -30,7 +33,7 @@
   });
   $effect(() => {
     if (!home) return;
-    const keys = [...home.new, ...home.popular, ...home.updated, ...home.wishlist].map((g) => g.key);
+    const keys = [...home.featured, ...home.recommended.map((r) => r.game), ...home.new, ...home.popular, ...home.updated, ...home.wishlist].map((g) => g.key);
     shop.requestArt(keys);
     storefront.ask(keys);
   });
@@ -38,25 +41,24 @@
 
 {#snippet cards(list: GameSummary[])}
   {#each list as g (g.key)}
-    <li><GameCard game={g} {onopen} downloading={downloading.has(g.key)} /></li>
+    <li><WideCard game={g} {onopen} downloading={downloading.has(g.key)} /></li>
   {/each}
 {/snippet}
 
 {#if home}
   <div class="home">
+    <Featured games={home.featured} {onopen} />
     {#if home.wishlist.length}
-      <Shelf title="Wishlist activity" count={home.wishlist.length}>{@render cards(home.wishlist)}</Shelf>
+      <Shelf title="Wishlist activity" count={home.wishlist.length} wide>{@render cards(home.wishlist)}</Shelf>
     {/if}
-    <Shelf title="New repacks" count={home.new.length} empty="No releases yet.">{@render cards(home.new)}</Shelf>
-    <Shelf
-      title="Popular"
-      count={home.popular.length}
-      note={home.popularState === "stale" ? "Cached chart" : ""}
-      empty={home.popularState === "unavailable" ? "Steam's most-played chart isn't available right now." : "None of the games on Steam's most-played chart have a release here yet."}
-    >
-      {@render cards(home.popular)}
-    </Shelf>
-    <Shelf title="Recently updated" count={home.updated.length} empty="No releases were changed recently.">{@render cards(home.updated)}</Shelf>
+    {#if home.recommended.length}
+      <Shelf title={recommendationTitle(home.recommendedBasis, home.recommended)} count={home.recommended.length} wide>
+        {#each home.recommended as r (r.game.key)}
+          <li><WideCard game={r.game} why={recommendationWhy(r)} {onopen} downloading={downloading.has(r.game.key)} /></li>
+        {/each}
+      </Shelf>
+    {/if}
+    <Rows {home} {downloading} {onopen} />
   </div>
 {:else}
   <div class="home" aria-busy="true" aria-label="Loading">
@@ -67,7 +69,9 @@
 {/if}
 
 <style>
+  /* The parts size themselves to the page, not the window: the sidebar takes room too. */
   .home {
+    container-type: inline-size;
     display: flex;
     flex-direction: column;
     gap: 18px;

@@ -6,7 +6,7 @@
   import { api } from "../../lib/api";
   import { shop } from "../../lib/shop.svelte";
   import { lib } from "../../lib/store.svelte";
-  import { adoptPage, createSearchController, emptyQuery, PAGE_SIZE, providerText, queryKey, remoteShown, sourceLabel, type SearchController, type SearchView } from "../../lib/storefront";
+  import { adoptPage, createSearchController, emptyQuery, PAGE_SIZE, providerText, queryKey, remoteShown, sourceFilters, type SearchController, type SearchView } from "../../lib/storefront";
   import { storefront } from "../../lib/storefront.svelte";
   import type { BrowseQuery, BrowseSort, GameSummary } from "../../lib/types";
   import GameCard from "./GameCard.svelte";
@@ -87,6 +87,7 @@
     [sources, language, genre, availability, installed] = [[], "", "", "", ""];
   }
 
+  const choices = $derived(sourceFilters(storefront.status));
   const total = $derived(view.page?.total ?? 0);
   const unknown = $derived(view.page?.unknown ?? 0);
   const unknownFields = $derived([language && "language", genre && "genre"].filter(Boolean).join(" or "));
@@ -96,8 +97,8 @@
 <div class="browse">
   <div class="filters" role="group" aria-label="Filters">
     <div class="seg" role="group" aria-label="Source">
-      {#each ["fitgirl", "dodi", "feeds"] as id (id)}
-        <button type="button" class:on={sources.includes(id)} aria-pressed={sources.includes(id)} onclick={() => toggleSource(id)}>{sourceLabel(id)}</button>
+      {#each choices as f (f.id)}
+        <button type="button" class:on={sources.includes(f.id)} aria-pressed={sources.includes(f.id)} onclick={() => toggleSource(f.id)}>{f.label}</button>
       {/each}
     </div>
     <label class="pick"><span class="sr-only">Language</span>

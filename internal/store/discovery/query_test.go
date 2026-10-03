@@ -112,3 +112,25 @@ func TestHomeShelvesOrderNewPopularAndUpdated(t *testing.T) {
 		t.Error("without a chart the Popular shelf showed something")
 	}
 }
+
+func TestHomeFeaturedLeavesOutInstalledAndPrefersInstallableAndPopular(t *testing.T) {
+	installedOne := func(s *GameSummary) {
+		ranks(s)
+		s.Installable = s.Title != "Game 007"
+		if s.Title == "Game 120" {
+			s.Installed = &Installed{}
+		}
+	}
+	h := testView().Home(installedOne, StateOK, Status{})
+	if len(h.Featured) != featuredSize {
+		t.Fatalf("featured: %d games", len(h.Featured))
+	}
+	if h.Featured[0].Title != "Game 050" || h.Featured[1].Title != "Game 000" {
+		t.Errorf("order: %s, %s", h.Featured[0].Title, h.Featured[1].Title)
+	}
+	for _, g := range h.Featured {
+		if g.Installed != nil || g.Title == "Game 007" {
+			t.Errorf("featured %s: installed or not installable while others are", g.Title)
+		}
+	}
+}

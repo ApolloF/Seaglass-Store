@@ -8,9 +8,12 @@ import {
   hoursText,
   completionKind,
   languagesLine,
+  learnSources,
   providerText,
   publishedText,
   sizeLine,
+  sourceFilters,
+  sourceLabel,
   sourceLine,
   statusSummary,
   storeMode,
@@ -339,5 +342,23 @@ describe("withEnrichment", () => {
   });
   it("keeps what the summary already says", () => {
     expect(withEnrichment(game("k", { reviewTotal: 5, reviewPercent: 50 }), e("ok")).reviewPercent).toBe(50);
+  });
+});
+
+describe("source filters", () => {
+  const src = (id: string, name: string, enabled: boolean) => ({ id, name, enabled }) as DiscoverySourceStatus;
+  it("come from the enabled providers of the registry, then feeds", () => {
+    const status = { sources: [src("fitgirl", "FitGirl", true), src("dodi", "DODI", false), src("elamigos", "ElAmigos", true)] };
+    expect(sourceFilters(status)).toEqual([
+      { id: "fitgirl", label: "FitGirl" },
+      { id: "elamigos", label: "ElAmigos" },
+      { id: "feeds", label: "Feeds" },
+    ]);
+    expect(sourceFilters(null)).toEqual([{ id: "feeds", label: "Feeds" }]);
+  });
+  it("name a provider the interface has never heard of", () => {
+    expect(sourceLabel("newsite")).toBe("newsite");
+    learnSources([src("newsite", "New Site", true)]);
+    expect(sourceLabel("newsite")).toBe("New Site");
   });
 });

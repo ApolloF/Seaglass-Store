@@ -249,7 +249,21 @@ export const dateText = (unix: number) => (unix > 0 ? dateFmt(unix) : "");
 /** "Published 12 Sep 2026": the source's date, never the game's release date. */
 export const publishedText = (unix: number) => (unix > 0 ? `Published ${dateFmt(unix)}` : "");
 
-export const sourceLabel = (id: string): string => ({ fitgirl: "FitGirl", dodi: "DODI", feeds: "Feeds", steam: "Steam" })[id] ?? id;
+const builtinNames: Record<string, string> = { fitgirl: "FitGirl", dodi: "DODI", feeds: "Feeds", steam: "Steam" };
+const providerNames = new Map<string, string>();
+
+/** Remembers the names the source registry gave, so a new provider needs no change here. */
+export function learnSources(list: Pick<DiscoverySourceStatus, "id" | "name">[]) {
+  for (const s of list) if (s.name) providerNames.set(s.id, s.name);
+}
+
+export const sourceLabel = (id: string): string => providerNames.get(id) ?? builtinNames[id] ?? id;
+
+/** The source filters: the registry's enabled providers, then the games from feeds. */
+export function sourceFilters(status: Pick<DiscoveryStatus, "sources"> | null): { id: string; label: string }[] {
+  const on = (status?.sources ?? []).filter((s) => s.enabled).map((s) => ({ id: s.id, label: s.name || sourceLabel(s.id) }));
+  return [...on, { id: "feeds", label: "Feeds" }];
+}
 
 /** "Steam: Very Positive (92%)", or "" without reviews. */
 export function reviewText(g: Pick<GameSummary, "reviewLabel" | "reviewPercent" | "reviewTotal">): string {
