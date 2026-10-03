@@ -472,3 +472,148 @@ func TestFiniteCatalogKeepsOldAndUndatedRowsAsHistory(t *testing.T) {
 		t.Errorf("history %+v, want the undated row only", got)
 	}
 }
+
+// relistedRecord indexes a read article whose summary row then changed:
+// it waits to be read again.
+func relistedRecord(t *testing.T, ix *Index, f *fakeSource, now time.Time) string {
+	t.Helper()
+	page := "https://dodi-repacks.site/game-001/"
+	row := sources.Entry{SourceID: "dodi", PageURL: page, RawTitle: "Game 001 – v1.0", Title: "Game 001", TitleKey: "game001", ReleaseKind: "release", SummaryOnly: true}
+	ix.Merge("dodi", []sources.Entry{row}, OriginListing, false, now)
+	id := sources.EntryID("dodi", page)
+	if err := FetchDetail(context.Background(), ix, f.src.Source, f, id, now); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.articles[1].version = "v1.1"
+	f.mu.Unlock()
+	row.RawTitle = "Game 001 – v1.1"
+	if res := ix.Merge("dodi", []sources.Entry{row}, OriginListing, false, now.Add(time.Hour)); res.Relisted != 1 {
+		t.Fatalf("not relisted: %+v", res)
+	}
+	return id
+}
+
+func TestARelistedReleaseWhoseRereadHitsAServerErrorIsReadAgainLater(t *testing.T) {
+	ix, _ := testIndex(t)
+	f := newFakeSource(t, "dodi", 3)
+	clk := &clock{time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
+	id := relistedRecord(t, ix, f, clk.now())
+	page := "https://dodi-repacks.site/game-001/"
+	clk.add(2 * time.Hour)
+	f.fail[page] = &sources.HTTPError{Status: http.StatusServiceUnavailable}
+	if err := FetchDetail(context.Background(), ix, f.src.Source, f, id, clk.now()); err == nil {
+		t.Fatal("the 503 wasn't reported")
+	}
+	r, _ := ix.Record("dodi", id)
+	if r.FetchError != "" || !NeedsDetail(r) {
+		t.Fatalf("a server error stopped the release from being read again: %+v", r)
+	}
+	// Before the source's wait ends it isn't asked; after, it is read.
+	if err := FetchDetail(context.Background(), ix, f.src.Source, f, id, clk.now()); err == nil || f.count(page) != 2 {
+		t.Fatalf("asked during the wait: %v, %d requests", err, f.count(page))
+	}
+	clk.add(time.Hour)
+	if err := FetchDetail(context.Background(), ix, f.src.Source, f, id, clk.now()); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := ix.Record("dodi", id); r.Detailed.IsZero() || r.Entry.Version != "v1.1" || NeedsDetail(r) {
+		t.Errorf("after the wait: %+v", r)
+	}
+}
+
+func TestATimedOutRereadLeavesTheReleaseWaitingToBeRead(t *testing.T) {
+	ix, _ := testIndex(t)
+	f := newFakeSource(t, "dodi", 3)
+	now := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	id := relistedRecord(t, ix, f, now)
+	ctx, cancel := context.WithTimeout(context.Background(), 0)
+	defer cancel()
+	if err := FetchDetail(ctx, ix, f.src.Source, f, id, now.Add(2*time.Hour)); err == nil {
+		t.Fatal("the timeout wasn't reported")
+	}
+	if r, _ := ix.Record("dodi", id); r.FetchError != "" || !NeedsDetail(r) {
+		t.Errorf("a timeout stopped the release from being read again: %+v", r)
+	}
+}
+
+// A page that can't be parsed stays unread until the source's row for it
+// changes again, so it isn't asked for over and over.
+func TestAReleaseThatCouldNotBeReadIsReadAgainWhenItsRowChanges(t *testing.T) {
+	ix, _ := testIndex(t)
+	f := newFakeSource(t, "dodi", 3)
+	now := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	id := relistedRecord(t, ix, f, now)
+	ix.Update("dodi", id, func(r *Record) { r.FetchError = "the release page lists no matching release" })
+	row := sources.Entry{SourceID: "dodi", PageURL: "https://dodi-repacks.site/game-001/", RawTitle: "Game 001 – v1.1", Title: "Game 001", TitleKey: "game001", ReleaseKind: "release", SummaryOnly: true}
+	ix.Merge("dodi", []sources.Entry{row}, OriginListing, false, now.Add(2*time.Hour))
+	if r, _ := ix.Record("dodi", id); NeedsDetail(r) {
+		t.Fatal("read again while its row stayed the same")
+	}
+	row.RawTitle = "Game 001 – v1.2"
+	if res := ix.Merge("dodi", []sources.Entry{row}, OriginListing, false, now.Add(3*time.Hour)); res.Relisted != 1 {
+		t.Errorf("not relisted: %+v", res)
+	}
+	if r, _ := ix.Record("dodi", id); !NeedsDetail(r) || r.FetchError != "" {
+		t.Errorf("after its row changed: %+v", r)
+	}
+}
+
+// fetchFunc is a Fetcher made of a function.
+type fetchFunc func(ctx context.Context, raw string) (sources.Document, error)
+
+func (f fetchFunc) FetchDocument(ctx context.Context, raw string) (sources.Document, error) {
+	return f(ctx, raw)
+}
+
+// A release page and a search wait for DODI while a listing page is out;
+// DODI answers that one with 429: neither is sent after it.
+func TestRequestsQueuedBehindAWaitAnswerAreNotSent(t *testing.T) {
+	ix, _ := testIndex(t)
+	p, _ := sources.Lookup("dodi")
+	listing, out, answer := "https://dodi-repacks.site/page/7/", make(chan struct{}), make(chan struct{})
+	var mu sync.Mutex
+	var sent []string
+	paced := Paced(ix, p.Source, fetchFunc(func(ctx context.Context, raw string) (sources.Document, error) {
+		mu.Lock()
+		sent = append(sent, raw)
+		mu.Unlock()
+		if raw == listing {
+			close(out)
+			<-answer
+			return sources.Document{}, &sources.HTTPError{Status: http.StatusTooManyRequests, RetryAfter: "3600"}
+		}
+		return sources.Document{URL: raw, Body: []byte("<html></html>"), ContentType: "text/html"}, nil
+	}))
+	first := make(chan error, 1)
+	go func() {
+		_, err := paced.FetchDocument(context.Background(), listing)
+		first <- err
+	}()
+	<-out
+	queued := make(chan error, 2)
+	for _, raw := range []string{"https://dodi-repacks.site/game-001/", "https://dodi-repacks.site/?s=game"} {
+		go func() {
+			_, err := paced.FetchDocument(context.Background(), raw)
+			queued <- err
+		}()
+	}
+	close(answer)
+	if err := <-first; !slowDown(err) {
+		t.Fatalf("the listing page: %v", err)
+	}
+	for range 2 {
+		if err := <-queued; !errors.As(err, new(waiting)) || !transient(err) {
+			t.Errorf("a queued request: %v", err)
+		}
+	}
+	if len(sent) != 1 {
+		t.Errorf("sent after the 429: %v", sent[1:])
+	}
+	// A pass that meets such a wait stops without counting a failure or
+	// shortening the wait its caller saves.
+	res := Pass(context.Background(), ix, p, paced, true, time.Now, PassHooks{})
+	if c := ix.Crawl("dodi"); res.Stopped != StopWaiting || res.Err != nil || c.Failures != 0 || !c.RetryAt.IsZero() {
+		t.Errorf("the pass: %+v, %+v", res, c)
+	}
+}

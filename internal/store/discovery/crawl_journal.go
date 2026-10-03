@@ -110,11 +110,9 @@ func (ix *Index) journal(src string, entries []sources.Entry, crawl func(*CrawlS
 // replayJournal applies a source's held lines and then its journal over
 // its loaded file, skipping the lines up to folded, which the file holds.
 // A line cut short by a crash ends the replay: that page is simply fetched
-// again.
-func (ix *Index) replayJournal(src string, folded int64) {
-	if ix.replayFile(ix.heldPath(src), src, folded) {
-		ix.replayFile(ix.journalPath(src), src, folded)
-	}
+// again. false when it did.
+func (ix *Index) replayJournal(src string, folded int64) bool {
+	return ix.replayFile(ix.heldPath(src), src, folded) && ix.replayFile(ix.journalPath(src), src, folded)
 }
 
 // replayFile replays one journal file; false when a line was cut short,

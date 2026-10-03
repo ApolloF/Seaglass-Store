@@ -441,3 +441,146 @@ func TestASourceWithoutTorrentsHasNoDownloadableTransport(t *testing.T) {
 		t.Errorf("DODI offers %v", got)
 	}
 }
+
+// fetchFunc is a Fetcher made of a function.
+type fetchFunc func(ctx context.Context, raw string) (sources.Document, error)
+
+func (f fetchFunc) FetchDocument(ctx context.Context, raw string) (sources.Document, error) {
+	return f(ctx, raw)
+}
+
+// relistedHollowTide indexes the test sources, saves Hollow Tide to the
+// wishlist and makes DODI's article wait to be read again, with a newer
+// version on its page.
+func relistedHollowTide(t *testing.T) (*Core, *pagesFetcher, string) {
+	c, s := discoveryCore(t)
+	d := c.discovery
+	d.auto = false
+	if err := d.refresh(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddToWishlist("title:hollowtide", "Hollow Tide", 0); err != nil {
+		t.Fatal(err)
+	}
+	page := "https://dodi-repacks.site/hollow-tide/"
+	id := sources.EntryID("dodi", page)
+	if !d.index().Update("dodi", id, func(r *discovery.Record) { r.Detailed = time.Time{} }) {
+		t.Fatal("no DODI record for Hollow Tide")
+	}
+	dodi := d.fetchers["dodi"].(*pagesFetcher)
+	dodi.pages[page] = "<html><body>" + article("dodi-repacks.site", "hollow-tide", "Hollow Tide", "v2.1", 1,
+		`<p>Languages: MULTi9</p><p>Torrent: <a href="https://unknown-host.example/abc">Mirror</a></p>`) + "</body></html>"
+	return c, dodi, id
+}
+
+// takeDetail takes the next release page request as the detail loop does.
+func takeDetail(t *testing.T, d *discoveryState) detailRequest {
+	t.Helper()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.detailQueue) == 0 {
+		t.Fatal("no release page queued")
+	}
+	req := d.detailQueue[0]
+	d.detailQueue = d.detailQueue[1:]
+	delete(d.queuedIDs, req.id)
+	return req
+}
+
+func TestWishlistReleasePagesWaitWhileIndexingCannotRun(t *testing.T) {
+	c, dodi, id := relistedHollowTide(t)
+	d := c.discovery
+	page := "https://dodi-repacks.site/hollow-tide/"
+	if _, err := c.updateSettings(func(v *settings.Settings) { v.Store.IndexingPaused = true }); err != nil {
+		t.Fatal(err)
+	}
+	c.wishlist.observe(d)
+	d.readDetail(takeDetail(t, d))
+	if slices.Contains(dodi.asked, page) {
+		t.Fatal("a wishlist release page was read while indexing was paused")
+	}
+	// Resuming asks for it again; a game running holds it back too.
+	if _, err := c.updateSettings(func(v *settings.Settings) { v.Store.IndexingPaused = false }); err != nil {
+		t.Fatal(err)
+	}
+	d.isPlaying = func() bool { return true }
+	d.tick()
+	d.readDetail(takeDetail(t, d))
+	if slices.Contains(dodi.asked, page) {
+		t.Fatal("a wishlist release page was read while a game ran")
+	}
+	d.isPlaying = func() bool { return false }
+	d.tick()
+	d.readDetail(takeDetail(t, d))
+	if r, _ := d.index().Record("dodi", id); !slices.Contains(dodi.asked, page) || r.Detailed.IsZero() || r.Entry.Version != "v2.1" {
+		t.Errorf("after the game ended: %+v", r)
+	}
+}
+
+func TestOpeningAGameReadsItsQueuedReleasePageWhilePaused(t *testing.T) {
+	c, dodi, _ := relistedHollowTide(t)
+	d := c.discovery
+	if _, err := c.updateSettings(func(v *settings.Settings) { v.Store.IndexingPaused = true }); err != nil {
+		t.Fatal(err)
+	}
+	d.queueDetail("fitgirl", "other-release", "title:other", false)
+	c.wishlist.observe(d)
+	if det, err := d.details("title:hollowtide"); err != nil || !det.Loading {
+		t.Fatalf("details: %+v %v", det, err)
+	}
+	req := takeDetail(t, d)
+	if req.src != "dodi" || req.background {
+		t.Fatalf("the opened game's page isn't first, as the person's: %+v", req)
+	}
+	d.readDetail(req)
+	if !slices.Contains(dodi.asked, "https://dodi-repacks.site/hollow-tide/") {
+		t.Error("the opened game's release page wasn't read")
+	}
+}
+
+func TestAReleasePageThatFailedIsNotAskedForAgainAtOnce(t *testing.T) {
+	c, dodi, id := relistedHollowTide(t)
+	d := c.discovery
+	page := "https://dodi-repacks.site/hollow-tide/"
+	d.fetchers["dodi"] = &failingFetcher{next: dodi, fail: map[string]error{page: &sources.HTTPError{Status: 502}}}
+	if det, _ := d.details("title:hollowtide"); !det.Loading {
+		t.Fatal("the release page wasn't asked for")
+	}
+	d.readDetail(takeDetail(t, d))
+	if r, _ := d.index().Record("dodi", id); r.FetchError != "" || !discovery.NeedsDetail(r) {
+		t.Fatalf("a server error stopped the release from being read again: %+v", r)
+	}
+	// The open page asks again on every update: it waits instead.
+	if det, _ := d.details("title:hollowtide"); det.Loading || len(d.detailQueue) != 0 {
+		t.Fatalf("asked for again at once: %+v", d.detailQueue)
+	}
+	d.mu.Lock()
+	d.detailRetry[id] = time.Now().Add(-time.Second)
+	d.mu.Unlock()
+	d.fetchers["dodi"] = dodi
+	if det, _ := d.details("title:hollowtide"); !det.Loading {
+		t.Fatal("not asked for after the wait")
+	}
+	d.readDetail(takeDetail(t, d))
+	if r, _ := d.index().Record("dodi", id); r.Detailed.IsZero() || r.Entry.Version != "v2.1" {
+		t.Errorf("after the wait: %+v", r)
+	}
+}
+
+func TestReenablingASourceWhileItsCancelledPassEndsKeepsTheForcedRefresh(t *testing.T) {
+	c, _ := discoveryCore(t)
+	d := c.discovery
+	// DODI is turned off and on again while its listing is being fetched.
+	d.fetchers["dodi"] = fetchFunc(func(ctx context.Context, raw string) (sources.Document, error) {
+		d.stopSources([]string{"dodi"}, false)
+		d.start()
+		return sources.Document{}, ctx.Err()
+	})
+	res, err := d.pass("dodi", true, true)
+	if err != nil || res.Stopped != discovery.StopCanceled {
+		t.Fatalf("the cancelled pass: %+v %v", res, err)
+	}
+	if !d.forced("dodi") {
+		t.Error("the cancelled pass took away the refresh asked for when DODI was turned on again")
+	}
+}
