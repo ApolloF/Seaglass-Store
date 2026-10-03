@@ -136,3 +136,12 @@ func mustGet(t *testing.T, s *Store, key string) Entry {
 	}
 	return e
 }
+
+func TestImportSavesAGameListedTwiceOnce(t *testing.T) {
+	s := Open(filepath.Join(t.TempDir(), "wishlist.json"))
+	games := []Imported{{Key: "steam:10", Title: "Ember Crown", AppID: 10}, {Key: "steam:10", Title: "Ember Crown", AppID: 10}}
+	added, existing, err := s.Import(games, t0)
+	if err != nil || added != 1 || existing != 1 || len(s.List()) != 1 {
+		t.Fatalf("added %d, existing %d, saved %d, %v", added, existing, len(s.List()), err)
+	}
+}

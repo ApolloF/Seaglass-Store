@@ -132,7 +132,8 @@ func (s *Store) Import(games []Imported, now time.Time) (added, existing int, er
 		if g.Key == "" {
 			continue
 		}
-		if slices.ContainsFunc(s.f.Entries, func(e Entry) bool { return e.Key == g.Key || (g.AppID > 0 && e.SteamAppID == g.AppID) }) {
+		same := func(e Entry) bool { return e.Key == g.Key || (g.AppID > 0 && e.SteamAppID == g.AppID) }
+		if slices.ContainsFunc(s.f.Entries, same) || slices.ContainsFunc(fresh, same) {
 			existing++
 			continue
 		}
