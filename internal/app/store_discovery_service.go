@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 	"os"
@@ -48,6 +49,7 @@ type WishlistItem struct {
 	Game       discovery.GameSummary   `json:"game"`
 	Activity   []wishlist.ActivityView `json:"activity"` // newest first
 	Unread     int                     `json:"unread"`
+	Origin     string                  `json:"origin"` // wishlist.Origin*: saved here or imported from Steam
 }
 
 // errNotIndexed is the answer for a game discovery doesn't know (anymore).
@@ -72,15 +74,15 @@ func (s *StoreService) DiscoveryStatus() discovery.Status {
 // baseDiscoveryStatus is the status the settings alone decide.
 func baseDiscoveryStatus(v settings.Settings) discovery.Status {
 	st := discovery.Status{SetupNeeded: v.ExperimentalStore && v.Store.SourceSetup == settings.SetupAsk, Sources: []discovery.SourceStatus{}}
-	for _, id := range discovery.Sources {
-		src, _ := sources.PrivateSource(id, true)
-		on := v.ExperimentalStore && v.Store.DiscoveryOn(id)
+	for _, p := range sources.Providers() {
+		on := v.ExperimentalStore && v.Store.DiscoveryOn(p.ID)
 		state := discovery.CrawlDisabled
 		if on {
 			state = discovery.CrawlIdle
 			st.Enabled = true
 		}
-		st.Sources = append(st.Sources, discovery.SourceStatus{ID: id, Name: src.Name, Enabled: on, State: state})
+		st.Sources = append(st.Sources, discovery.SourceStatus{ID: p.ID, Name: p.Name, Enabled: on, State: state,
+			Host: p.Host, Search: p.Search != "", Paged: p.Paged(), Torrents: p.Torrents, DefaultOn: p.DefaultOn, Notes: append([]string{}, p.Notes...)})
 	}
 	return st
 }
@@ -93,7 +95,7 @@ func (s *StoreService) SetupSources(chosen []string) (settings.Settings, error) 
 	}
 	for _, id := range chosen {
 		if !slices.Contains(discovery.Sources, id) {
-			return s.c.Settings.Get(), errors.New("choose FitGirl or DODI")
+			return s.c.Settings.Get(), fmt.Errorf("unknown source %q", id)
 		}
 	}
 	saved, err := s.c.updateSettings(func(v *settings.Settings) {
@@ -105,6 +107,17 @@ func (s *StoreService) SetupSources(chosen []string) (settings.Settings, error) 
 		s.c.discovery.start()
 	}
 	return saved, err
+}
+
+// PauseIndexing pauses or resumes background indexing on this PC. Paused,
+// no listing page or idle wishlist search is requested until resumed;
+// opening a game and searching still ask the sources. The index stays.
+func (s *StoreService) PauseIndexing(paused bool) (discovery.Status, error) {
+	if err := s.on(); err != nil {
+		return s.DiscoveryStatus(), err
+	}
+	_, err := s.c.updateSettings(func(v *settings.Settings) { v.Store.IndexingPaused = paused })
+	return s.DiscoveryStatus(), err
 }
 
 // RefreshDiscovery fetches the newest listings of every chosen source now.
@@ -120,10 +133,14 @@ func (s *StoreService) RefreshDiscovery() (discovery.Status, error) {
 func (s *StoreService) StoreHome() (discovery.Home, error) {
 	if err := s.on(); err != nil {
 		return discovery.Home{New: []discovery.GameSummary{}, Popular: []discovery.GameSummary{}, PopularState: discovery.StateUnavailable,
-			Updated: []discovery.GameSummary{}, Wishlist: []discovery.GameSummary{}, Status: s.DiscoveryStatus()}, err
+			Updated: []discovery.GameSummary{}, Wishlist: []discovery.GameSummary{}, Featured: []discovery.GameSummary{},
+			Recommended: []discovery.Recommendation{}, Status: s.DiscoveryStatus()}, err
 	}
 	d := s.c.discovery
-	return d.currentView().Home(d.annotator(), s.c.popularState(), d.status()), nil
+	view, annotate := d.currentView(), d.annotator()
+	h := view.Home(annotate, s.c.popularState(), d.status(), installedInLibrary(s.c.libraryGames()))
+	h.Recommended, h.RecommendedBasis = s.c.recommendations(view, annotate)
+	return h, nil
 }
 
 // BrowseGames answers a browse or search query from the index alone, at
@@ -231,6 +248,9 @@ func (s *StoreService) AttachSourceTorrent(key, releaseID string) (discovery.Pre
 	if err != nil {
 		return discovery.PreparedRelease{}, err
 	}
+	if err := attachable(r); err != nil {
+		return discovery.PreparedRelease{}, err
+	}
 	path, err := application.Get().Dialog.OpenFile().SetTitle("Choose the .torrent file for "+g.Title).
 		CanChooseFiles(true).CanChooseDirectories(false).AddFilter("Torrent metadata", "*.torrent").PromptForSingleSelection()
 	if err != nil {
@@ -298,6 +318,9 @@ func (s *StoreService) DownloadRelease(key, releaseID string, transport int, opt
 	}
 	if r.Gone {
 		return jobs.Job{}, errors.New("the source no longer lists this release")
+	}
+	if err := attachable(r); err != nil {
+		return jobs.Job{}, err
 	}
 	if !slices.Contains(validTransports(r.Entry), transport) {
 		return jobs.Job{}, errors.New("this release has no validated torrent: prepare it again")

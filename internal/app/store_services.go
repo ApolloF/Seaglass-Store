@@ -164,7 +164,7 @@ func (s *StoreService) AddDownload(source, title string) (jobs.Job, error) {
 	}
 	j, err := s.c.store.jobs.Add(jobs.Job{Title: title, Source: src, SavePath: dir, Language: "English"}, time.Now())
 	if err == nil {
-		s.c.store.wake()
+		s.c.store.changed()
 	}
 	return j, err
 }
@@ -185,7 +185,7 @@ func (s *StoreService) DownloadAction(id string, action jobs.Action, deleteFiles
 	switch action {
 	case jobs.Pause:
 		_, err := s.c.store.jobs.Update(id, func(j *jobs.Job) bool { j.State = jobs.Paused; return true })
-		s.c.store.wake()
+		s.c.store.changed()
 		return err
 	case jobs.Resume:
 		if j.Safety != nil { // it failed installing: install again
@@ -195,7 +195,7 @@ func (s *StoreService) DownloadAction(id string, action jobs.Action, deleteFiles
 			j.State, j.Error = jobs.Queued, ""
 			return true
 		})
-		s.c.store.wake()
+		s.c.store.changed()
 		return err
 	case jobs.Install:
 		return s.startInstall(j)
@@ -204,7 +204,7 @@ func (s *StoreService) DownloadAction(id string, action jobs.Action, deleteFiles
 			j.State, j.Safety = jobs.Downloaded, nil
 			return true
 		})
-		s.c.store.wake()
+		s.c.store.changed()
 		return err
 	case jobs.Uninstall:
 		return s.c.store.pipe.uninstall(id)
@@ -514,7 +514,7 @@ func (s *StoreService) queueOffer(e catalog.Entry, offer int, opts InstallOption
 	j, err := s.c.store.jobs.Add(jobs.Job{Title: title, Source: o.Source(), SavePath: dir, GameKey: e.Key, Version: o.Version, FeedName: o.FeedName,
 		InstallDir: filepath.Clean(opts.Dir), Language: opts.Language, Languages: slices.Clone(o.Languages), AutoInstall: opts.Install, SHA256: o.SHA256, Installer: o.InstallerType, Replaces: replaces}, time.Now())
 	if err == nil {
-		s.c.store.wake()
+		s.c.store.changed()
 	}
 	return j, err
 }

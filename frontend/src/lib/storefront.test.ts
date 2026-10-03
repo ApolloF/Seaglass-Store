@@ -3,15 +3,18 @@ import {
   adoptPage,
   availabilityLabel,
   canPrepare,
+  notReadyText,
   createSearchController,
   emptyQuery,
   hoursText,
   completionKind,
   languagesLine,
+  learnSources,
   providerText,
   publishedText,
   sizeLine,
-  sourceLine,
+  sourceFilters,
+  sourceLabel,
   statusSummary,
   storeMode,
   withEnrichment,
@@ -21,7 +24,7 @@ import type { BrowsePage, DiscoverySourceStatus, DiscoveryStatus, Enrichment, Ga
 
 const game = (key: string, extra: Partial<GameSummary> = {}): GameSummary => ({
   key, title: key, sourceBacked: true, sources: ["fitgirl"], releases: 1, publishedAt: 1, updatedAt: 1, sizeBytes: 0, languages: [], genres: [],
-  installable: true, popularRank: 0, reviewPercent: 0, reviewTotal: 0, wishlisted: false, activity: false, ...extra,
+  installable: true, browserOnly: false, announced: false, popularRank: 0, completionMain: 0, reviewPercent: 0, reviewTotal: 0, wishlisted: false, activity: false, ...extra,
 });
 const page = (...keys: string[]): BrowsePage => ({ games: keys.map((k) => game(k)), total: keys.length, unknown: 0, languages: [], genres: [] });
 const result = (p: BrowsePage, extra: Partial<SearchResult> = {}): SearchResult => ({ query: emptyQuery(), page: p, other: [], remote: [], complete: true, ...extra });
@@ -233,9 +236,10 @@ describe("adoptPage", () => {
 });
 
 const source = (over: Partial<DiscoverySourceStatus> = {}): DiscoverySourceStatus => ({
-  id: "fitgirl", name: "FitGirl", enabled: true, state: "idle", releases: 0, recentAt: 0, backfillPage: 0, backfillDone: false, retryAt: 0, ...over,
+  id: "fitgirl", name: "FitGirl", enabled: true, state: "idle", releases: 0, recentAt: 0, backfillPage: 0, backfillDone: false, retryAt: 0,
+  host: "fitgirl-repacks.site", search: true, paged: true, torrents: true, defaultOn: true, notes: [], ...over,
 });
-const status = (over: Partial<DiscoveryStatus> = {}): DiscoveryStatus => ({ enabled: true, setupNeeded: false, sources: [source()], games: 0, releases: 0, refreshing: false, stale: false, ...over });
+const status = (over: Partial<DiscoveryStatus> = {}): DiscoveryStatus => ({ enabled: true, setupNeeded: false, sources: [source()], games: 0, releases: 0, refreshing: false, paused: false, playing: false, stale: false, ...over });
 
 describe("store mode", () => {
   it("asks the existing Store user to choose sources first", () => {
@@ -267,14 +271,6 @@ describe("status text", () => {
   });
   it("mentions indexing of older releases", () => {
     expect(statusSummary(status({ sources: [source({ state: "backfill" })] })).text).toBe("Indexing older releases");
-  });
-  it("says when to try again after a failure", () => {
-    const line = sourceLine(source({ state: "backoff", retryAt: 1600, releases: 4 }), 1000);
-    expect(line).toContain("Trying again in 10 min");
-  });
-  it("shows backfill progress and a finished backfill", () => {
-    expect(sourceLine(source({ state: "backfill", backfillPage: 14, releases: 1 }), 1000)).toContain("Indexing older releases (page 14)");
-    expect(sourceLine(source({ backfillDone: true, releases: 2 }), 1000)).toContain("Older releases indexed");
   });
 });
 
@@ -323,6 +319,15 @@ describe("labels", () => {
     expect(canPrepare(r("update", "update-only"))).toBe(false);
     expect(canPrepare(r("release", "unavailable"))).toBe(false);
     expect(canPrepare(r("release", "summary"))).toBe(false);
+    expect(canPrepare(r("preview", "preview"))).toBe(false);
+    expect(availabilityLabel("preview")).toBe("Announced");
+    expect(canPrepare({ ...r("release", "manual"), browserOnly: true })).toBe(false);
+  });
+  it("explains why a prepared release can't be installed", () => {
+    expect(notReadyText({ state: "browser" })).toContain("browser");
+    expect(notReadyText({ state: "preview" })).toContain("only announces");
+    expect(notReadyText({ state: "update-only", reason: "Given by the source." })).toBe("Given by the source.");
+    expect(notReadyText({ state: "unavailable" })).toBe("This release isn't listed by its source anymore.");
   });
 });
 
@@ -338,5 +343,23 @@ describe("withEnrichment", () => {
   });
   it("keeps what the summary already says", () => {
     expect(withEnrichment(game("k", { reviewTotal: 5, reviewPercent: 50 }), e("ok")).reviewPercent).toBe(50);
+  });
+});
+
+describe("source filters", () => {
+  const src = (id: string, name: string, enabled: boolean) => ({ id, name, enabled }) as DiscoverySourceStatus;
+  it("come from the enabled providers of the registry, then feeds", () => {
+    const status = { sources: [src("fitgirl", "FitGirl", true), src("dodi", "DODI", false), src("elamigos", "ElAmigos", true)] };
+    expect(sourceFilters(status)).toEqual([
+      { id: "fitgirl", label: "FitGirl" },
+      { id: "elamigos", label: "ElAmigos" },
+      { id: "feeds", label: "Feeds" },
+    ]);
+    expect(sourceFilters(null)).toEqual([{ id: "feeds", label: "Feeds" }]);
+  });
+  it("name a provider the interface has never heard of", () => {
+    expect(sourceLabel("newsite")).toBe("newsite");
+    learnSources([src("newsite", "New Site", true)]);
+    expect(sourceLabel("newsite")).toBe("New Site");
   });
 });

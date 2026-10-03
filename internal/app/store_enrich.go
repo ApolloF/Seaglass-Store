@@ -150,13 +150,30 @@ func (e *enrichState) game(ctx context.Context, key string) (enrich.Enrichment, 
 
 // year is a game's release year from its fetched metadata (0 unknown).
 func (e *enrichState) year(key string) int {
+	year, _ := e.release(key)
+	return year
+}
+
+// release is a game's release year and date from its fetched metadata
+// (zero and "" unknown): the game's own date, never a source's.
+func (e *enrichState) release(key string) (int, string) {
 	if e.c.art == nil {
-		return 0
+		return 0, ""
 	}
 	e.c.art.mu.Lock()
 	defer e.c.art.mu.Unlock()
 	if m := e.c.art.known[key]; m != nil {
-		return m.ReleaseYear
+		return m.ReleaseYear, m.ReleaseDate
+	}
+	return 0, ""
+}
+
+// cachedCompletionMain is the Main Story time in minutes from the cache
+// alone (0 unknown); a card never asks HowLongToBeat.
+func (e *enrichState) cachedCompletionMain(key, title string, year int) int {
+	q := enrich.CompletionQuery{Title: title, Year: year, HLTBID: e.c.discovery.index().CompletionMatch(key)}
+	if c, ok := e.client.CachedCompletion(q); ok && c.HLTBID > 0 && (c.State == enrich.StateOK || c.State == enrich.StateStale) {
+		return c.Main
 	}
 	return 0
 }
@@ -200,13 +217,17 @@ func (e *enrichState) refreshChart() bool {
 	return true
 }
 
-// enrichAnnotator adds the chart rank and cached review scores.
+// enrichAnnotator adds the chart rank, cached review scores, cached
+// completion time and the game's own release date.
 func (c *Core) enrichAnnotator() discovery.Annotate {
 	if c.enrich == nil {
 		return nil
 	}
 	ranks := c.enrich.client.CachedPopularity().Ranks
 	return func(s *discovery.GameSummary) {
+		year, date := c.enrich.release(s.Key)
+		s.ReleaseDate = date
+		s.CompletionMain = c.enrich.cachedCompletionMain(s.Key, s.Title, year)
 		if s.SteamAppID <= 0 {
 			return
 		}

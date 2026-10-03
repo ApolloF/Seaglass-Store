@@ -1,7 +1,7 @@
 // Made-up library for `npm run dev:mock`: the games from the design canvas,
 // covering every way a game can be found.
 import type { Api } from "./api";
-import type { Accounts, Achievement, Achievements, AppInfo, Game, MetaState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, UpdateState } from "./types";
+import type { Accounts, Achievement, Achievements, AppInfo, Completion, Game, MetaState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, UpdateState } from "./types";
 import { sessionActive } from "./types";
 import { mockStore, mockStoreSettings } from "./api.mock.store";
 
@@ -311,6 +311,9 @@ async function runMockSession(g: Game) {
   }, 1000);
 }
 
+/** The HowLongToBeat match chosen per game, so a later get agrees with setMatch. */
+const chosenMatches = new Map<number, Completion>();
+
 export const mockApi: Api = {
   async games() {
     await wait();
@@ -362,6 +365,43 @@ export const mockApi: Api = {
   },
   setArt: (id, kind, art) => update(id, (g) => (g.meta = { ...g.meta, [kind]: art, artOverrides: [...(g.meta?.artOverrides ?? []), kind] })),
   setCollections: (id, names) => update(id, (g) => (g.collections = [...new Set(names.map((n) => n.trim()).filter(Boolean))])),
+  completion: {
+    async get(id, fetch) {
+      const g = games.find((x) => x.id === id);
+      if (!g) throw new Error("that game isn't in the library");
+      const key = g.steamAppId ? `steam:${g.steamAppId}` : `title:${g.title.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
+      if (fetch) await new Promise((r) => setTimeout(r, 700));
+      const seed = (id * 7919) % 50;
+      const known = fetch || seed % 3 === 0;
+      const none = { hltbId: 0, main: 0, mainExtras: 0, completionist: 0, corrected: false };
+      const ok = { hltbId: 1000 + id, title: g.title, main: 300 + seed * 40, mainExtras: 520 + seed * 60, completionist: 900 + seed * 95, url: `https://howlongtobeat.com/game/${1000 + id}`, corrected: false, fetchedAt: Math.floor(Date.now() / 1000) };
+      // Every fifth game has no match and every seventh has old times, so both states show.
+      const completion: Completion = !known
+        ? { ...none, url: "", fetchedAt: 0, state: "loading" }
+        : id % 5 === 0
+          ? { ...none, url: `https://howlongtobeat.com/?q=${encodeURIComponent(g.title)}`, fetchedAt: 0, state: "unavailable", error: "no confident match on HowLongToBeat" }
+          : { ...ok, state: id % 7 === 0 ? "stale" : "ok", error: id % 7 === 0 ? "howlongtobeat.com can't be reached" : undefined };
+      return { gameId: id, key, completion: chosenMatches.get(id) ?? completion };
+    },
+    async candidates(id, query) {
+      const g = games.find((x) => x.id === id);
+      const t = query || g?.title || "";
+      return [0, 1, 2].map((i) => ({ hltbId: 2000 + id * 10 + i, title: i ? `${t} ${["", "Remastered", "DLC"][i]}`.trim() : t, year: 2020 + i, type: i === 2 ? "dlc" : "game", main: 400 + i * 100, mainExtras: 700 + i * 120, completionist: 1100 + i * 200, url: `https://howlongtobeat.com/game/${2000 + id * 10 + i}` }));
+    },
+    async setMatch(id, hltbId) {
+      if (!hltbId) chosenMatches.delete(id);
+      const c = await mockApi.completion.get(id, true);
+      if (!hltbId) return c.completion.state === "ok" ? c : { ...c, completion: { ...c.completion, corrected: false } };
+      const t = hltbId % 10;
+      const chosen: Completion = { hltbId, title: `Chosen game ${t}`, main: 600 + t * 30, mainExtras: 900 + t * 30, completionist: 1500 + t * 30, url: `https://howlongtobeat.com/game/${hltbId}`, corrected: true, fetchedAt: Math.floor(Date.now() / 1000), state: "ok" };
+      chosenMatches.set(id, chosen);
+      return { ...c, completion: chosen };
+    },
+    async openLink(url) {
+      if (!/^https:\/\/(www\.)?howlongtobeat\.com\//.test(url)) throw new Error("that link doesn't go to HowLongToBeat");
+      window.open(url, "_blank", "noopener");
+    },
+  },
   async renameCollection(old, name) {
     for (const g of games)
       if (g.collections?.some((c) => c.toLowerCase() === old.toLowerCase())) {

@@ -20,10 +20,13 @@ import (
 )
 
 // LibraryService is the game library, as the frontend sees it.
-type LibraryService struct{ c *Core }
+type LibraryService struct {
+	c      *Core
+	lookup latestLookup
+}
 
 // NewLibraryService binds the library to core.
-func NewLibraryService(c *Core) *LibraryService { return &LibraryService{c} }
+func NewLibraryService(c *Core) *LibraryService { return &LibraryService{c: c} }
 
 // ServiceStartup starts scanning once the app runs.
 func (s *LibraryService) ServiceStartup(context.Context, application.ServiceOptions) error {

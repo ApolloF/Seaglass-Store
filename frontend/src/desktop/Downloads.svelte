@@ -1,7 +1,7 @@
 <script lang="ts">
   import Icon from "../components/Icon.svelte";
   import { api } from "../lib/api";
-  import { needsYou } from "../lib/downloads";
+  import { engineLabel, engineProblem, pageList } from "../lib/downloads";
   import { shop } from "../lib/shop.svelte";
   import { lib } from "../lib/store.svelte";
   import DownloadRow from "./DownloadRow.svelte";
@@ -34,17 +34,23 @@
     if (s) lib.settings = s;
   }
 
-  // What waits for the person first, then what's still going, then the
-  // rest; newest first within each.
-  const rank = (d: (typeof shop.downloads)[number]) => (needsYou(d) ? 0 : d.state === "installed" ? 2 : d.state === "downloaded" ? 1.5 : 1);
-  const list = $derived([...shop.downloads].sort((a, b) => rank(a) - rank(b) || b.created - a.created));
+  const list = $derived(pageList(shop.downloads));
   const eng = $derived(shop.engine);
+  const problem = $derived(engineProblem(eng, shop.downloads));
+  let retrying = $state(false);
+  async function retry() {
+    retrying = true;
+    const s = await lib.run(() => api.store.startEngine());
+    retrying = false;
+    if (s) shop.engine = s;
+  }
 </script>
 
 <div class="page">
   <div class="toolbar">
     <h1>Downloads</h1>
     <span class="badge">Experimental</span>
+    {#if eng}<span class="state" class:warn={!!problem}>{engineLabel(eng, shop.downloads)}</span>{/if}
     <div class="grow"></div>
     {#if shop.engine}
       <button type="button" class="btn" onclick={() => lib.run(() => api.store.holdDownloads(!shop.engine?.held))}
@@ -55,15 +61,25 @@
   </div>
 
   <div class="body">
-    {#if eng && !eng.installed}
-      <div class="banner">
-        <Icon name="info" size={20} />
+    {#if problem}
+      <div class="banner problem" class:warn={problem.fix === "path"} role="alert">
+        <Icon name={problem.fix === "path" ? "warn" : "info"} size={20} />
         <div class="text">
-          <strong>Downloads need qBittorrent</strong>
-          <span>Seaglass runs it in the background with settings of its own, so your own qBittorrent and its torrents are left alone.</span>
+          <strong>{problem.title}</strong>
+          {#if problem.error}<span class="err">{problem.error}</span>{/if}
+          <span>{problem.next}</span>
+          {#if problem.fix === "install"}<span>Seaglass runs it in the background with settings of its own, so your own qBittorrent and its torrents are left alone.</span>{/if}
         </div>
-        <button type="button" class="btn primary" onclick={() => lib.run(() => api.store.getQBittorrent())}><Icon name="link" size={16} />Get qBittorrent</button>
-        <button type="button" class="btn" onclick={chooseExe}>Choose qbittorrent.exe</button>
+        <div class="fixes">
+          {#if problem.fix === "install"}
+            <button type="button" class="btn primary" onclick={() => lib.run(() => api.store.getQBittorrent())}><Icon name="link" size={16} />Get qBittorrent</button>
+            <button type="button" class="btn" onclick={chooseExe}>Choose qbittorrent.exe</button>
+          {:else}
+            <button type="button" class="btn primary" disabled={retrying} onclick={retry}><Icon name="refresh" size={16} />{retrying ? "Starting…" : "Try again"}</button>
+            <button type="button" class="btn" onclick={chooseExe}>Choose qbittorrent.exe</button>
+            <button type="button" class="btn" onclick={onsettings}>Settings</button>
+          {/if}
+        </div>
       </div>
     {:else if eng?.interfaceMissing}
       <div class="banner warn">
@@ -127,6 +143,14 @@
     font-size: 12px;
     font-weight: 700;
   }
+  .state {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .state.warn {
+    color: var(--warn);
+  }
   .grow {
     flex: 1;
   }
@@ -176,6 +200,21 @@
   }
   .banner strong {
     color: var(--text);
+  }
+  .banner.problem {
+    align-items: flex-start;
+  }
+  /* The ways out sit under the explanation, lined up with it. */
+  .fixes {
+    flex-basis: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-left: 32px;
+  }
+  .banner .err {
+    color: var(--warn);
+    overflow-wrap: anywhere;
   }
   .add {
     display: flex;

@@ -2,6 +2,7 @@ package sources
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -9,16 +10,13 @@ import (
 	"golang.org/x/net/html"
 )
 
-// SearchURL asks the source's own WordPress search, rather than filtering only its recent feed.
+// SearchURL asks the source's own site search when its provider has one.
 func (s Source) SearchURL(query string) (string, error) {
-	if s.ID != "fitgirl" && s.ID != "dodi" {
-		return "", errors.New("source search is supported for FitGirl and DODI")
+	p, ok := Lookup(s.ID)
+	if !ok {
+		return "", fmt.Errorf("unknown source %q", s.ID)
 	}
-	query = strings.TrimSpace(query)
-	if query == "" || len(query) > 200 {
-		return "", errors.New("search must contain 1..200 bytes")
-	}
-	return "https://" + s.Host + "/?" + url.Values{"s": {query}}.Encode(), nil
+	return p.SearchURL(query)
 }
 
 // NextPage accepts only a source-authored next link on the same origin.
@@ -28,6 +26,9 @@ func NextPage(source Source, page string, data []byte) (string, error) {
 	}
 	if _, err := source.ValidateURL(page); err != nil {
 		return "", err
+	}
+	if p, ok := Lookup(source.ID); ok && !p.Paged() {
+		return "", nil
 	}
 	if strings.Contains(strings.SplitN(page, "?", 2)[0], "/feed/") {
 		// RSS pagination is a WordPress endpoint, not an HTML navigation link.

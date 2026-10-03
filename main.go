@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -36,6 +37,7 @@ func main() {
 	dev := args.Dev.Any() && app.DevAllowed(version)
 	if dev && args.Dev.DataDir != "" {
 		platform.UseAppDir(args.Dev.DataDir)
+		platform.UseCacheDir(filepath.Join(args.Dev.DataDir, "local"))
 	}
 	if args.Updated {
 		// Started by an update: the old version may still be closing

@@ -69,6 +69,8 @@ type storeState struct {
 	added    map[string]time.Time // when a download was handed to the engine, which lists it a moment later
 	ticks    int
 	lastSave time.Time
+	// sendJobs replaces the store:jobs event in tests.
+	sendJobs func([]jobs.Job)
 }
 
 // engineIdle is how long the engine keeps running with nothing to do.
@@ -119,6 +121,20 @@ func (st *storeState) wake() {
 	case st.kick <- struct{}{}:
 	default:
 	}
+}
+
+// changed sends the downloads to the interface at once and wakes the
+// loop. The loop sends them only after reaching the engine, so without
+// this a download queued, paused or retried while qBittorrent can't start
+// wouldn't show until it ran.
+func (st *storeState) changed() {
+	all := st.jobs.All()
+	if st.sendJobs != nil {
+		st.sendJobs(all)
+	} else {
+		st.c.emit(EventStoreJobs, all)
+	}
+	st.wake()
 }
 
 func (st *storeState) tick(ctx context.Context) {

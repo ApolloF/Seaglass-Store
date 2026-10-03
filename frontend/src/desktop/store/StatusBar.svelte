@@ -1,11 +1,12 @@
 <script lang="ts">
   // What discovery is doing, in one line that opens to a line per source.
   import Icon from "../../components/Icon.svelte";
-  import { sourceLine, statusSummary } from "../../lib/storefront";
+  import { indexingSummary, providerLine } from "../../lib/indexing";
   import { storefront } from "../../lib/storefront.svelte";
+  import IndexingPause from "./IndexingPause.svelte";
 
   const st = $derived(storefront.status);
-  const sum = $derived(statusSummary(st));
+  const sum = $derived(indexingSummary(st));
   const sources = $derived((st?.sources ?? []).filter((s) => s.enabled));
   let open = $state(false);
 </script>
@@ -23,10 +24,11 @@
         {#each sources as s (s.id)}
           <li>
             <span class="name">{s.name}</span>
-            <span class="sf-muted">{sourceLine(s)}</span>
+            <span class="sf-muted">{providerLine(s, st)}</span>
             {#if s.error}<span class="err">{s.error}</span>{/if}
           </li>
         {/each}
+        <li class="pause"><IndexingPause variant="sf-btn" /></li>
       </ul>
     {/if}
   </div>
@@ -107,6 +109,10 @@
     border-radius: var(--radius);
     background: var(--surface-2);
     font-size: 13.5px;
+  }
+  .list li.pause {
+    padding: 0;
+    background: none;
   }
   .name {
     min-width: 70px;

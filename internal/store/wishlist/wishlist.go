@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -106,6 +107,74 @@ func (s *Store) Add(key, title string, appID int, known []Observation, now time.
 	}
 	s.f.Entries = append(s.f.Entries, e)
 	return s.save()
+}
+
+// Imported is a game from the person's Steam wishlist, with the releases
+// known for it now.
+type Imported struct {
+	Key   string
+	Title string
+	AppID int
+	Known []Observation
+}
+
+// Import saves the games that aren't saved yet, as Add does, and counts
+// those already saved under the same key or Steam AppID, which it leaves
+// as they are. It never removes a game. games come in priority order, most
+// wanted first: when not all fit under MaxEntries, the first ones are kept
+// and the rest left out. They are saved last to first, so games saved at
+// the same instant list in the given order. One write for the whole import.
+func (s *Store) Import(games []Imported, now time.Time) (added, existing int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var fresh []Entry
+	for _, g := range games {
+		if g.Key == "" {
+			continue
+		}
+		same := func(e Entry) bool { return e.Key == g.Key || (g.AppID > 0 && e.SteamAppID == g.AppID) }
+		if slices.ContainsFunc(s.f.Entries, same) || slices.ContainsFunc(fresh, same) {
+			existing++
+			continue
+		}
+		if len(s.f.Entries)+len(fresh) >= MaxEntries {
+			continue
+		}
+		e := Entry{Key: g.Key, Title: g.Title, SteamAppID: g.AppID, AddedAt: now, Baseline: []string{}, Activity: []Activity{}, Origin: OriginSteam}
+		for _, o := range g.Known {
+			e.Baseline = append(e.Baseline, o.ReleaseID)
+			e.Version = newest(e.Version, o.Version)
+		}
+		fresh = append(fresh, e)
+	}
+	if len(fresh) == 0 {
+		return 0, existing, nil
+	}
+	for i := len(fresh) - 1; i >= 0; i-- {
+		s.f.Entries = append(s.f.Entries, fresh[i])
+	}
+	return len(fresh), existing, s.save()
+}
+
+// Placeholder is the title of an imported game whose name isn't known
+// yet; Name replaces it once it is.
+func Placeholder(appID int) string { return "Steam app " + strconv.Itoa(appID) }
+
+// Name gives an imported game its name when it still has the placeholder.
+// It reports whether anything changed.
+func (s *Store) Name(key, title string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	i := s.find(key)
+	if i < 0 || title == "" {
+		return false, nil
+	}
+	e := &s.f.Entries[i]
+	if e.SteamAppID == 0 || e.Title != Placeholder(e.SteamAppID) || title == e.Title {
+		return false, nil
+	}
+	e.Title = title
+	return true, s.save()
 }
 
 // Remove forgets a saved game and its activity.
@@ -251,17 +320,23 @@ func View(e Entry) ([]ActivityView, int) {
 	return out, unread
 }
 
-func (s *Store) save() error {
-	b, err := json.MarshalIndent(s.f, "", "  ")
+// Path is where the wishlist is kept.
+func (s *Store) Path() string { return s.path }
+
+func (s *Store) save() error { return writeJSON(s.path, s.f) }
+
+// writeJSON replaces path with v as JSON through a temporary file.
+func writeJSON(path string, v any) error {
+	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp := s.path + ".tmp"
+	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.path)
+	return os.Rename(tmp, path)
 }

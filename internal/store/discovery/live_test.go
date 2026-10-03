@@ -28,9 +28,9 @@ func TestLiveDiscovery(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		src, _ := sources.PrivateSource(id, true)
+		src, _ := sources.Lookup(id)
 		start := time.Now()
-		res := Pass(ctx, ix, src, client, true, time.Now, nil)
+		res := Pass(ctx, ix, src, client, true, time.Now, PassHooks{})
 		c := ix.Crawl(id)
 		t.Logf("%s: pass %v, %d pages, %d new, err %v; next page %d, records %d", id, time.Since(start).Round(time.Second), res.Pages, res.Merged.Added, res.Err, c.NextPage, ix.Counts()[id])
 		if res.Err != nil || res.Merged.Added == 0 {
@@ -49,7 +49,7 @@ func TestLiveDiscovery(t *testing.T) {
 			unresolved++
 		}
 	}
-	h := v.Home(nil, StateUnavailable, Status{})
+	h := v.Home(nil, StateUnavailable, Status{}, nil)
 	t.Logf("games %d (installable %d, unresolved %d); newest: %v", len(v.Games), installable, unresolved, titles(h.New, 5))
 	if err := ix.Save(); err != nil {
 		t.Fatal(err)

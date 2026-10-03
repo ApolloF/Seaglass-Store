@@ -32,15 +32,18 @@ export type {
     FeedInfo,
     InstallOptions,
     InstallerLanguage,
+    LibraryCompletion,
     MetaState,
     PadAction,
     Profile,
     Saves,
     ScanState,
     SessionAchievements,
+    SteamAccount,
     StoreAccount,
     StoreArt,
     SyncerStatus,
     UpdateState,
+    WishlistImport,
     WishlistItem
 } from "./models.js";

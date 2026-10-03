@@ -22,16 +22,11 @@ func PrivateSource(id string, enabled bool) (Source, error) {
 	if !enabled {
 		return Source{}, ErrDisabled
 	}
-	switch id {
-	case "fitgirl":
-		return Source{id, "FitGirl", "fitgirl-repacks.site", "https://fitgirl-repacks.site/feed/"}, nil
-	case "dodi":
-		return Source{id, "DODI", "dodi-repacks.site", "https://dodi-repacks.site/"}, nil
-	case "1337x":
-		return Source{id, "1337x", "1337x.to", "https://1337x.to/cat/Games/1/"}, nil
-	default:
+	p, ok := Lookup(id)
+	if !ok {
 		return Source{}, fmt.Errorf("unknown source %q", id)
 	}
+	return p.Source, nil
 }
 
 func (s Source) ValidateURL(raw string) (*url.URL, error) {

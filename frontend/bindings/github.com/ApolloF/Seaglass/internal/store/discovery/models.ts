@@ -147,6 +147,12 @@ export interface GameSummary {
     "updatedAt": number;
 
     /**
+     * ReleaseDate is the game's own release date as Steam's metadata
+     * gives it ("12 Mar, 2024"); "" unknown. Never a source date.
+     */
+    "releaseDate"?: string;
+
+    /**
      * the newest release's download claim; 0 unknown
      */
     "sizeBytes": number;
@@ -161,6 +167,13 @@ export interface GameSummary {
      */
     "genres": string[] | null;
     "installable": boolean;
+
+    /**
+     * BrowserOnly: every source release opens in a browser (the source
+     * offers no torrents). Announced: the sources only announce the game.
+     */
+    "browserOnly": boolean;
+    "announced": boolean;
 
     /**
      * PopularRank is the place on Steam's most-played chart (1 = first); 0
@@ -180,6 +193,12 @@ export interface GameSummary {
      */
     "reviewTotal": number;
     "reviewLabel"?: string;
+
+    /**
+     * CompletionMain is HowLongToBeat's Main Story time in minutes from
+     * the cache; 0 unknown. Cards never fetch it.
+     */
+    "completionMain": number;
     "installed"?: Installed | null;
     "wishlisted": boolean;
 
@@ -219,6 +238,24 @@ export interface Home {
      * wishlisted games with unread activity
      */
     "wishlist": GameSummary[] | null;
+
+    /**
+     * Featured are a few source-backed games for the top of the page:
+     * new and popular first, never installed ones.
+     */
+    "featured": GameSummary[] | null;
+
+    /**
+     * Recommended are source-backed games that share genres with games
+     * played recently or wishlisted, never installed ones; with no useful
+     * history they are popular games. RecommendedBasis says which.
+     */
+    "recommended": Recommendation[] | null;
+
+    /**
+     * Basis* constants
+     */
+    "recommendedBasis": string;
     "status": Status;
 }
 
@@ -297,7 +334,8 @@ export interface PreparedRelease {
 
     /**
      * State: "ready", "unresolved" (resolution failed or needs a browser),
-     * "update-only", "unavailable".
+     * "update-only", "unavailable", "preview" (announced, nothing to
+     * download yet), "browser" (a source without torrents).
      */
     "state": string;
     "reason"?: string;
@@ -335,6 +373,24 @@ export interface ProviderProgress {
      * Cached: answered from the one-hour search cache.
      */
     "cached": boolean;
+}
+
+/**
+ * Recommendation is one recommended game and why.
+ */
+export interface Recommendation {
+    "game": GameSummary;
+
+    /**
+     * Because names the played or wishlisted games it shares genres with,
+     * most relevant first, at most three; empty for BasisPopular.
+     */
+    "because": string[] | null;
+
+    /**
+     * the shared genres
+     */
+    "genres": string[] | null;
 }
 
 /**
@@ -379,7 +435,7 @@ export interface Release {
     "languageClaim"?: string;
 
     /**
-     * release or update
+     * release, update or preview
      */
     "kind": string;
 
@@ -392,6 +448,12 @@ export interface Release {
      * Transports is the number of validated torrent identities.
      */
     "transports": number;
+
+    /**
+     * BrowserOnly: the source offers no torrents; its files open in a
+     * browser and can't be downloaded or installed by Seaglass.
+     */
+    "browserOnly": boolean;
 
     /**
      * Unresolved explains why mirrors are not usable yet (captcha-required,
@@ -463,6 +525,37 @@ export interface SourceStatus {
     "backfillDone": boolean;
     "retryAt": number;
     "error"?: string;
+
+    /**
+     * What the provider supports (sources.Provider), so setup, filters and
+     * status read it instead of naming sources.
+     */
+    "host": string;
+
+    /**
+     * its own site search fills search results
+     */
+    "search": boolean;
+
+    /**
+     * older listing pages exist; false: one finite catalog page
+     */
+    "paged": boolean;
+
+    /**
+     * releases may be installable; false: they open in the browser
+     */
+    "torrents": boolean;
+
+    /**
+     * chosen for a new Store user
+     */
+    "defaultOn": boolean;
+
+    /**
+     * verified limitations, plain sentences
+     */
+    "notes": string[] | null;
 }
 
 /**
@@ -492,6 +585,17 @@ export interface Status {
      */
     "releases": number;
     "refreshing": boolean;
+
+    /**
+     * Paused: the person paused indexing on this PC
+     * (StoreSettings.IndexingPaused); nothing is requested until resumed.
+     */
+    "paused": boolean;
+
+    /**
+     * Playing: a game is running, so indexing waits for it to end.
+     */
+    "playing": boolean;
 
     /**
      * Stale: the newest listings are older than six hours or their last

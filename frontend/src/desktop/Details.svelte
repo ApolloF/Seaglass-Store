@@ -12,6 +12,7 @@
   import MatchDialog from "./MatchDialog.svelte";
   import AchievementsDialog from "./AchievementsDialog.svelte";
   import AchievementIcon from "../components/AchievementIcon.svelte";
+  import CompletionTimes from "../components/CompletionTimes.svelte";
   import { achievementsSummary, recentUnlocks } from "../lib/achievements";
   import type { Achievements } from "../lib/types";
 
@@ -291,6 +292,8 @@
         {#if m?.description}<p class="desc">{m.description}</p>{/if}
       </div>
     {/if}
+
+    <CompletionTimes {game} />
 
     {#if game.needsReview}
       <div class="card review">

@@ -36,7 +36,17 @@ type Entry struct {
 	// Version is the newest comparable version seen so far ("" none).
 	Version  string     `json:"version,omitempty"`
 	Activity []Activity `json:"activity"`
+	// Origin: OriginManual (saved in Seaglass) or OriginSteam (imported
+	// from the person's Steam wishlist). Importing again never removes an
+	// entry, whatever its origin.
+	Origin string `json:"origin,omitempty"`
 }
+
+// Entry origins.
+const (
+	OriginManual = ""
+	OriginSteam  = "steam"
+)
 
 // Activity is something that happened to a saved game.
 type Activity struct {

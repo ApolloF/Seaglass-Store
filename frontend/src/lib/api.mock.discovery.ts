@@ -4,7 +4,11 @@
 // to the URL to see other states (comma-separated): setup (the one-time
 // source choice), empty (nothing indexed yet), offline (remote searches
 // and providers fail; cached answers come back stale), nochart (Steam's
-// chart is unavailable), slow (remote answers take longer).
+// chart is unavailable), slow (remote answers take longer), playing (a game
+// runs, so indexing waits), nosteam (no Steam account on this PC), private (the Steam
+// wishlist isn't public). Recommendations follow the played library games
+// and the wishlist; `playedonly` and `wishlistonly` keep one of the two,
+// `nohistory` neither (the popular fallback).
 import type { Api } from "./api";
 import type {
   BrowsePage,
@@ -19,6 +23,8 @@ import type {
   Meta,
   PreparedRelease,
   ProviderProgress,
+  Recommendation,
+  RecommendationBasis,
   Release,
   Review,
   ReviewPage,
@@ -35,6 +41,13 @@ const flags = new Set(
     .filter(Boolean),
 );
 /** Turns a scenario on or off (tests use it; the URL sets it in the browser). */
+const STEAM_ID_ERROR = "That isn't a SteamID64. It is the 17-digit number of a Steam profile, for example 76561198000000042.";
+
+/** Mirrors enrich.ValidSteamID64: an individual account, 76561197960265729 to 76561202255233023. */
+export function validSteamID64(s: string): boolean {
+  return /^\d{5,20}$/.test(s) && BigInt(s) >= 76561197960265729n && BigInt(s) <= 76561202255233023n;
+}
+
 export function mockDiscoveryFlag(name: string, on: boolean) {
   if (on) flags.add(name);
   else flags.delete(name);
@@ -46,11 +59,21 @@ const day = 86400;
 const gb = 1 << 30;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, flags.has("slow") ? ms * 3 : ms));
 const squash = (t: string) => t.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]/g, "");
-const SOURCE_NAMES: Record<string, string> = { fitgirl: "FitGirl", dodi: "DODI", feeds: "Feeds", steam: "Steam" };
+const SOURCE_NAMES: Record<string, string> = { fitgirl: "FitGirl", dodi: "DODI", elamigos: "ElAmigos", feeds: "Feeds", steam: "Steam" };
+
+/** The providers the mock registry declares, as sources.Providers does. */
+const PROVIDERS = [
+  { id: "fitgirl", host: "fitgirl-repacks.site", search: true, paged: true, torrents: true, defaultOn: true, notes: [] as string[] },
+  { id: "dodi", host: "dodi-repacks.site", search: true, paged: true, torrents: true, defaultOn: true, notes: [] as string[] },
+  { id: "elamigos", host: "elamigos.site", search: false, paged: false, torrents: false, defaultOn: false,
+    notes: ["One finite catalog; search uses indexed titles.", "File-host containers open in the browser. Automated downloads are unsupported."] },
+];
+const providers = () => PROVIDERS;
+const searchable = (id: string) => providers().find((p) => p.id === id)?.search ?? true;
 
 // A release as the fixtures write it.
 interface R {
-  source: "fitgirl" | "dodi" | "feeds";
+  source: "fitgirl" | "dodi" | "elamigos" | "feeds";
   version?: string;
   ago: number; // days since publication
   changedAgo?: number; // days since the article changed
@@ -59,7 +82,7 @@ interface R {
   claim?: string;
   avail?: Release["availability"];
   unresolved?: string[];
-  kind?: "release" | "update";
+  kind?: Release["kind"];
   // What preparing it does: resolve (works after a moment), captcha (needs the browser).
   prepare?: "resolve" | "captcha";
   backfill?: boolean;
@@ -89,6 +112,7 @@ const fixtures: G[] = [
       { source: "fitgirl", version: "v1.2.0", ago: 2, size: 47.9, languages: MULTI, claim: "MULTi6", avail: "installable" },
       { source: "dodi", version: "v1.1.4", ago: 30, size: 52.3, languages: ["English", "Russian"], claim: "ENG/RUS", avail: "unresolved", unresolved: ["File-Me: not resolved yet"], prepare: "resolve" },
       { source: "fitgirl", version: "v1.0.6", ago: 120, changedAgo: 1, size: 38.1, languages: MULTI, avail: "installable", backfill: true },
+      { source: "elamigos", version: "v1.2.0", ago: 3, size: 44.6, languages: MULTI, claim: "MULTi6", avail: "manual", unresolved: ["DDOWNLOAD: open it in your browser"] },
     ] },
   { title: "Hollow Tide", appId: 2210110, rank: 12, genres: ["Adventure", "Indie"], review: [81, 23_800, "Very Positive"], recent: [74, 310, "Mostly Positive"], hltb: [540, 720, 1100], dev: "Tidewater", year: 2025,
     blurb: "Dive a drowned city at low tide and get back before the sea returns.",
@@ -107,7 +131,10 @@ const fixtures: G[] = [
       { source: "dodi", version: "v1.4.2 + 3 DLCs", ago: 10, size: 13.0, languages: [], claim: "MULTi9", avail: "unresolved", unresolved: ["File-Me: rate-limited, try again in a minute"], prepare: "resolve" },
     ] },
   { title: "Ashen Lanterns 2", genres: ["Action"], hltb: "none", dev: "Low Ember", year: 2026,
-    releases: [{ source: "dodi", version: "v0.3 Early Access", ago: 3, size: 9.0, languages: [], avail: "unresolved", unresolved: ["File-Me: not resolved yet"], prepare: "resolve" }] },
+    releases: [
+      { source: "dodi", version: "v0.3 Early Access", ago: 3, size: 9.0, languages: [], avail: "unresolved", unresolved: ["File-Me: not resolved yet"], prepare: "resolve" },
+      { source: "elamigos", ago: 1, kind: "preview", avail: "preview" },
+    ] },
   { title: "Cinder Drift", genres: ["Racing"], review: [74, 3_300, "Mostly Positive"], dev: "Sidecar", year: 2025,
     releases: [{ source: "feeds", version: "1.0", ago: 280, size: 0.4, languages: EN, avail: "installable" }] },
   { title: "Dune Lark", appId: 1678010, rank: 58, genres: ["Adventure"], review: [95, 18_200, "Overwhelmingly Positive"], critic: 89, hltb: [300, 420, 600], dev: "Sandglass", year: 2024,
@@ -182,7 +209,12 @@ function makeGame(g: G): Game {
         title: g.title,
         rawTitle: `${g.title}${r.version ? ` – ${r.version}` : ""}${r.source === "dodi" ? " [DODI Repack]" : ""}`,
         version: r.version,
-        pageUrl: r.source === "feeds" ? undefined : `https://${r.source === "dodi" ? "dodi-repacks.site" : "fitgirl-repacks.site"}/${squash(g.title)}/`,
+        pageUrl:
+          r.source === "feeds"
+            ? undefined
+            : r.source === "elamigos"
+              ? `https://elamigos.site/data/${g.title.replace(/\W+/g, "_")}_-_ElAmigos.html`
+              : `https://${r.source === "dodi" ? "dodi-repacks.site" : "fitgirl-repacks.site"}/${squash(g.title)}/`,
         publishedAt: now() - r.ago * day,
         updatedAt: now() - (r.changedAgo ?? r.ago) * day,
         sizeBytes: Math.round((r.size ?? 0) * gb),
@@ -192,6 +224,7 @@ function makeGame(g: G): Game {
         kind: r.kind ?? "release",
         availability: avail,
         transports: avail === "installable" ? 1 : 0,
+        browserOnly: r.source === "elamigos",
         unresolved: r.unresolved ?? [],
         warnings:
           r.source === "feeds"
@@ -208,7 +241,7 @@ function makeGame(g: G): Game {
 
 let games: Game[] = fixtures.map(makeGame);
 
-type Wish = { key: string; title: string; steamAppId?: number; addedAt: number; activity: WishlistItem["activity"] };
+type Wish = { key: string; title: string; steamAppId?: number; addedAt: number; activity: WishlistItem["activity"]; origin?: "" | "steam" };
 let wishes: Wish[] = [
   { key: "title:ashenlanterns2", title: "Ashen Lanterns 2", addedAt: now() - 20 * day,
     activity: [{ id: "a1", kind: "available", releaseId: "", source: "dodi", sourceName: "DODI", version: "v0.3 Early Access", at: now() - 3 * day, read: false }] },
@@ -232,20 +265,23 @@ function status(settings: Settings): DiscoveryStatus {
   const setup = settings.experimentalStore && (flags.has("setup") || st.sourceSetup === "ask");
   const on = (id: string) => settings.experimentalStore && st.privateSources && st.sourceSetup === "done" && st.sources.includes(id) && !flags.has("setup");
   const empty = flags.has("empty");
-  const sources = ["fitgirl", "dodi"].map((id) => {
+  const paused = settings.experimentalStore && st.indexingPaused;
+  const playing = flags.has("playing");
+  const sources = providers().map(({ id, ...caps }) => {
     const releases = empty ? 0 : games.reduce((n, g) => n + g.recs.filter((r) => r.release.source === id).length, 0);
     const offline = flags.has("offline");
     return {
       id,
       name: SOURCE_NAMES[id],
       enabled: on(id),
-      state: !on(id) ? "disabled" : refreshing ? "recent" : offline ? "backoff" : id === "dodi" ? "backfill" : "idle",
+      state: !on(id) ? "disabled" : paused || playing ? "paused" : refreshing ? "recent" : offline ? "backoff" : id === "dodi" ? "backfill" : "idle",
       releases,
       recentAt: empty ? 0 : lastRefresh,
-      backfillPage: empty ? 0 : id === "dodi" ? 14 : 112,
-      backfillDone: id === "fitgirl" && !empty,
+      backfillPage: empty || !caps.paged ? 0 : id === "dodi" ? 14 : 112,
+      backfillDone: (id === "fitgirl" || !caps.paged) && !empty,
       retryAt: offline ? now() + 600 : 0,
       error: offline && on(id) ? "couldn't reach the source: no such host" : undefined,
+      ...caps,
     } as DiscoveryStatus["sources"][number];
   });
   return {
@@ -255,6 +291,8 @@ function status(settings: Settings): DiscoveryStatus {
     games: empty ? 0 : games.filter((g) => g.recs.length).length,
     releases: sources.reduce((n, s) => n + s.releases, 0),
     refreshing,
+    paused,
+    playing,
     stale: flags.has("offline") || now() - lastRefresh > 6 * 3600,
   };
 }
@@ -263,6 +301,13 @@ function visible(settings: Settings): Game[] {
   if (flags.has("empty") || flags.has("setup")) return games.filter((g) => g.recs.some((r) => r.release.origin === "feed"));
   const st = settings.store;
   return games.filter((g) => g.recs.some((r) => r.release.origin === "feed" || (st.privateSources && st.sources.includes(r.release.source))));
+}
+
+/** Why no release of a game installs from its card, as the backend words it: every real release opens in a browser, or only announcements exist. */
+function notInstallable(releases: Release[]): Pick<GameSummary, "browserOnly" | "announced"> {
+  const real = releases.filter((r) => r.kind !== "preview");
+  const feed = releases.some((r) => r.origin === "feed");
+  return { browserOnly: !feed && real.length > 0 && real.every((r) => r.browserOnly), announced: !feed && releases.length > 0 && real.length === 0 };
 }
 
 function summary(game: Game, settings: Settings): GameSummary {
@@ -286,22 +331,95 @@ function summary(game: Game, settings: Settings): GameSummary {
     languages: [...new Set(recs.flatMap((r) => r.release.languages))],
     genres: g.genres ?? [],
     installable: recs.some((r) => r.release.availability === "installable"),
+    ...notInstallable(recs.map((r) => r.release)),
     popularRank: flags.has("nochart") ? 0 : (g.rank ?? 0),
     reviewPercent: enriched && g.review ? g.review[0] : 0,
     reviewTotal: enriched && g.review ? g.review[1] : 0,
     reviewLabel: enriched && g.review ? g.review[2] : undefined,
+    completionMain: enriched && Array.isArray(g.hltb) ? g.hltb[0] : 0,
+    releaseDate: RELEASE_DATES[game.title],
     installed: inst ? { ...inst, update: game.key === "steam:1678010" } : undefined,
     wishlisted: !!wish,
     activity: !!wish?.activity.some((a) => !a.read),
   };
 }
 
+// The game's own release date as Steam's metadata gives it; the rest are unknown.
+const RELEASE_DATES: Record<string, string> = {
+  "Ember Crown": "12 Mar, 2026",
+  "Hollow Tide": "4 Sep, 2025",
+  "Glass Meridian": "21 Jan, 2026",
+  "Ashen Lanterns": "30 Jun, 2025",
+  "Dune Lark": "8 Nov, 2024",
+  "Iron Vigil": "17 Mar, 2016",
+  "Rust Psalm": "2 Feb, 2026",
+};
+
+// Recently played games of the mock library (api.mock.ts) that the Store
+// recommends from; "installed" ones are never recommended.
+const PLAYED = [
+  { title: "Ember Crown", genres: ["Action", "RPG"], ago: 0 },
+  { title: "Hollow Tide", genres: ["Adventure", "Indie"], ago: 1 },
+  { title: "Neon Meridian", genres: ["Strategy"], ago: 3 },
+];
+
+type MockSignal = { title: string; genres: string[]; kind: "played" | "wishlist"; weight: number };
+
+function mockSignals(wished: { title: string; genres: string[] }[]): MockSignal[] {
+  const out: MockSignal[] = [];
+  if (!flags.has("nohistory") && !flags.has("wishlistonly")) {
+    out.push(...PLAYED.map((p): MockSignal => ({ ...p, kind: "played", weight: Math.max(0.2, 1 - p.ago / 60) })));
+  }
+  if (!flags.has("nohistory") && !flags.has("playedonly")) {
+    out.push(...wished.map((w, i): MockSignal => ({ ...w, kind: "wishlist", weight: Math.max(0.2, 1 - 0.1 * i) })));
+  }
+  return out.filter((s) => s.genres.length > 0);
+}
+
+/** The mock's recommender: genre overlap, never installed or wishlisted games; the chart without history. */
+function recommend(all: GameSummary[], signals: MockSignal[]): { recommended: Recommendation[]; basis: RecommendationBasis } {
+  const libraryTitles = new Set(PLAYED.map((p) => squash(p.title)));
+  const open = all.filter((g) => !g.installed && !g.wishlisted && !libraryTitles.has(squash(g.title)));
+  const byChart = (a: GameSummary, b: GameSummary) => (a.popularRank || 1e9) - (b.popularRank || 1e9) || b.publishedAt - a.publishedAt || a.title.localeCompare(b.title);
+  const scored = open
+    .map((game) => {
+      const parts = signals
+        .map((s) => ({ s, shared: s.genres.filter((x) => game.genres.includes(x)) }))
+        .filter((p) => p.shared.length > 0)
+        .map((p) => ({ ...p, score: (p.s.weight * p.shared.length) / p.s.genres.length }));
+      return { game, parts, score: parts.reduce((n, p) => n + p.score, 0) };
+    })
+    .filter((x) => x.parts.length > 0)
+    .sort((a, b) => b.score - a.score || byChart(a.game, b.game))
+    .slice(0, 12);
+  if (!scored.length) {
+    const ranked = open.filter((g) => g.popularRank > 0).sort(byChart).slice(0, 12);
+    return { recommended: ranked.map((game) => ({ game, because: [], genres: [] })), basis: ranked.length ? "popular" : "" };
+  }
+  const kinds = new Set(scored.flatMap((x) => x.parts.map((p) => p.s.kind)));
+  return {
+    recommended: scored.map((x) => {
+      const parts = [...x.parts].sort((a, b) => b.score - a.score);
+      return { game: x.game, because: parts.slice(0, 3).map((p) => p.s.title), genres: [...new Set(parts.flatMap((p) => p.shared))] };
+    }),
+    basis: kinds.size > 1 ? "played+wishlist" : kinds.has("wishlist") ? "wishlist" : "played",
+  };
+}
+
+/** Up to five games to open the page with: installable first, then popular and recent. */
+function featuredOf(all: GameSummary[]): GameSummary[] {
+  return all
+    .filter((g) => !g.installed)
+    .sort((a, b) => Number(b.installable) - Number(a.installable) || (a.popularRank || 1e9) - (b.popularRank || 1e9) || b.publishedAt - a.publishedAt || a.title.localeCompare(b.title))
+    .slice(0, 5);
+}
+
 function steamOnlySummary(s: (typeof steamOnly)[number]): GameSummary {
   const wish = wishes.find((w) => w.key === `steam:${s.appId}`);
   return {
     key: `steam:${s.appId}`, title: s.title, steamAppId: s.appId, sourceBacked: false, sources: [], releases: 0, publishedAt: 0, updatedAt: 0, sizeBytes: 0,
-    languages: [], genres: s.genres, installable: false, popularRank: 0, reviewPercent: s.review[0], reviewTotal: s.review[1], reviewLabel: s.review[2],
-    wishlisted: !!wish, activity: false,
+    languages: [], genres: s.genres, installable: false, browserOnly: false, announced: false, popularRank: 0, reviewPercent: s.review[0], reviewTotal: s.review[1], reviewLabel: s.review[2],
+    completionMain: 0, wishlisted: !!wish, activity: false,
   };
 }
 
@@ -464,7 +582,7 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
         const game = games.find((g) => g.key === w.key);
         const s = steamOnly.find((x) => `steam:${x.appId}` === w.key);
         const summaryOf = game ? summary(game, settings) : s ? steamOnlySummary(s) : steamOnlySummary({ appId: w.steamAppId ?? 0, title: w.title, genres: [], review: [0, 0, ""] });
-        return { key: w.key, title: w.title, steamAppId: w.steamAppId, addedAt: w.addedAt, game: summaryOf, activity: copy(w.activity), unread: w.activity.filter((a) => !a.read).length };
+        return { key: w.key, title: w.title, steamAppId: w.steamAppId, addedAt: w.addedAt, game: summaryOf, activity: copy(w.activity), unread: w.activity.filter((a) => !a.read).length, origin: w.origin ?? "" };
       });
   };
   const emitWish = () => wishListeners.forEach((cb) => cb(wishItems()));
@@ -493,7 +611,13 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
       offers: ready
         ? [{ transport: 0, title: r.title, version: r.version, sizeBytes: r.sizeBytes, installedSizeBytes: r.sizeBytes * 2, languages: r.languages, torrentName: r.rawTitle, infoHash: "a".repeat(40), sourceName: r.sourceName }]
         : [],
-      state: ready ? "ready" : r.availability === "update-only" ? "update-only" : r.availability === "unavailable" ? "unavailable" : "unresolved",
+      state: ready
+        ? "ready"
+        : r.availability === "update-only" || r.availability === "unavailable" || r.availability === "preview"
+          ? r.availability
+          : r.browserOnly
+            ? "browser"
+            : "unresolved",
       reason: ready ? undefined : (reason ?? r.unresolved[0]),
       warnings: copy(r.warnings),
       installed: installed[key] ? { version: installed[key].version, dir: `C:\\Users\\you\\Games\\${r.title}` } : undefined,
@@ -514,8 +638,16 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
         emitGames({ keys: [], all: true });
         return copy(getSettings());
       },
+      async pauseIndexing(paused) {
+        const s = getSettings();
+        if (!s.experimentalStore) throw new Error("the store is turned off (Settings, Experimental)");
+        setSettings({ ...s, store: { ...s.store, indexingPaused: paused } });
+        emitStatus();
+        return status(getSettings());
+      },
       async refresh() {
         needOn();
+        if (getSettings().store.indexingPaused) throw new Error("Indexing is paused. Resume it to check for new releases.");
         refreshing = true;
         emitStatus();
         await wait(1500);
@@ -534,12 +666,17 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
         await wait(150);
         const all = visible(settings).map((g) => summary(g, settings)).filter((s) => s.sourceBacked);
         const chart = flags.has("nochart") || flags.has("empty");
+        const wished = wishItems().map((w) => ({ title: w.title, genres: w.game.genres }));
+        const { recommended, basis } = recommend(all, mockSignals(wished));
         return {
           new: [...all].sort((a, b) => b.publishedAt - a.publishedAt).slice(0, 12),
           popular: chart ? [] : all.filter((s) => s.popularRank > 0).sort((a, b) => a.popularRank - b.popularRank).slice(0, 12),
           popularState: chart ? "unavailable" : flags.has("offline") ? "stale" : "ok",
           updated: all.filter((s) => s.updatedAt - s.publishedAt > day).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 12),
           wishlist: wishItems().filter((w) => w.unread > 0).map((w) => w.game),
+          featured: featuredOf(all),
+          recommended,
+          recommendedBasis: basis,
           status: status(settings),
         };
       },
@@ -553,12 +690,14 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
         const mine = ++searchSeq;
         const settings = getSettings();
         const text = squash(q.text);
-        const ids = ["fitgirl", "dodi", "steam"].filter((id) => id === "steam" || (settings.store.privateSources && settings.store.sources.includes(id)));
-        const remote: ProviderProgress[] = ids.map((id) => ({ id, name: SOURCE_NAMES[id], state: text.length < 2 ? "skipped" : "loading", found: 0, cached: false }));
+        const ids = [...providers().map((p) => p.id), "steam"].filter((id) => id === "steam" || (settings.store.privateSources && settings.store.sources.includes(id)));
+        // Providers without a site search are only searched in the index.
+        const remote: ProviderProgress[] = ids.map((id) => ({ id, name: SOURCE_NAMES[id], state: text.length < 2 || !searchable(id) ? "skipped" : "loading", found: 0, cached: false }));
         const result = (): SearchResult => ({ query: copy(q), page: query(getSettings(), q), other: others(q), remote: copy(remote), complete: remote.every((r) => r.state !== "loading") });
         if (text.length < 2) return result();
         searchListeners.forEach((cb) => cb({ text: q.text, remote: copy(remote) }));
         for (const p of remote) {
+          if (p.state === "skipped") continue;
           await wait(p.id === "steam" ? 500 : 900);
           if (mine !== searchSeq) return result(); // superseded: the partial answer
           if (flags.has("offline") && p.id !== "steam") {
@@ -634,6 +773,7 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
       async attachTorrent(key, id) {
         needOn();
         const rec = findRec(key, id);
+        if (rec.release.kind === "preview" || rec.release.browserOnly) throw new Error("this release can't take a .torrent file");
         Object.assign(rec.release, { availability: "installable", transports: 1, unresolved: [], warnings: [...rec.release.warnings, "Manual torrent attached: confirm that its name matches the selected game."] });
         emitGames({ keys: [key], all: false });
         return prepared(key, rec);
@@ -721,6 +861,42 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
         emitWish();
         emitGames({ keys: key ? [key] : wishes.map((w) => w.key), all: false });
         return wishItems();
+      },
+      async steamAccount() {
+        if (flags.has("nosteam")) return { steamId: "", detected: false, error: "Steam isn't installed." };
+        return { steamId: "76561198000000042", detected: true };
+      },
+      async importSteam(steamId) {
+        const s = getSettings();
+        if (!s.experimentalStore) throw new Error("the store is turned off (Settings, Experimental)");
+        if (!validSteamID64(steamId.trim())) throw new Error(STEAM_ID_ERROR);
+        await wait(900);
+        if (flags.has("private")) throw new Error("Steam didn't share a wishlist for that account. In Steam, set the profile and its game details to Public, then try again.");
+        if (flags.has("offline")) throw new Error("Couldn't reach Steam: no such host");
+        // In Steam's order; a game whose name isn't known yet keeps a placeholder.
+        const steamWish = [
+          { appId: 1245620, title: "Ember Crown" },
+          { appId: 2210110, title: "Hollow Tide" },
+          { appId: 9990001, title: "Northwind Saga" },
+          { appId: 9990002, title: "Steam app 9990002" },
+        ];
+        let added = 0;
+        let existing = 0;
+        for (const w of steamWish) {
+          if (wishes.some((x) => x.steamAppId === w.appId || x.key === `steam:${w.appId}`)) {
+            existing++;
+            continue;
+          }
+          // Saved at the same instant: Steam's first game lists first.
+          wishes = [...wishes, { key: `steam:${w.appId}`, title: w.title, steamAppId: w.appId, addedAt: now() - added, activity: [], origin: "steam" }];
+          added++;
+        }
+        emitWish();
+        emitGames({ keys: steamWish.map((w) => `steam:${w.appId}`), all: false });
+        const items = wishItems();
+        const available = items.filter((i) => steamWish.some((w) => i.steamAppId === w.appId) && i.game.sourceBacked).length;
+        const canSearch = s.store.privateSources && s.store.sources.some(searchable);
+        return { steamId: steamId.trim(), fetched: steamWish.length, added, existing, skipped: 0, available, searching: canSearch ? steamWish.length - available : 0, items };
       },
       onChange: (cb) => on(wishListeners, cb),
     },

@@ -8,6 +8,7 @@ import type {
   DiscoveryStatus,
   Enrichment,
   GameSummary,
+  PreparedRelease,
   ProviderProgress,
   ProviderState,
   Release,
@@ -186,21 +187,6 @@ export function storeMode({ loaded, status, shown }: ModeInput): StoreMode {
   return "finding";
 }
 
-const isBusy = (s: DiscoverySourceStatus) => s.enabled && (s.state === "recent" || s.state === "backfill");
-
-/** One line for a source: what it holds and what it is doing. */
-export function sourceLine(s: DiscoverySourceStatus, now = Date.now() / 1000): string {
-  if (!s.enabled) return "Off";
-  const parts = [`${s.releases.toLocaleString("en")} ${s.releases === 1 ? "release" : "releases"}`];
-  if (s.state === "recent") parts.push("Checking new releases");
-  else if (s.state === "backfill") parts.push(s.backfillPage ? `Indexing older releases (page ${s.backfillPage})` : "Indexing older releases");
-  else if (s.state === "paused") parts.push("Paused while you play");
-  else if (s.state === "backoff") parts.push(s.retryAt > now ? `Trying again ${inText(s.retryAt, now)}` : "Trying again soon");
-  else if (s.backfillDone) parts.push("Older releases indexed");
-  if (s.recentAt && !isBusy(s)) parts.push(`checked ${ago(s.recentAt, now).toLowerCase()}`);
-  return parts.join(" · ");
-}
-
 /** "in 10 min" for a time ahead. */
 export function inText(unix: number, now = Date.now() / 1000): string {
   const s = Math.max(0, Math.round(unix - now));
@@ -249,7 +235,24 @@ export const dateText = (unix: number) => (unix > 0 ? dateFmt(unix) : "");
 /** "Published 12 Sep 2026": the source's date, never the game's release date. */
 export const publishedText = (unix: number) => (unix > 0 ? `Published ${dateFmt(unix)}` : "");
 
-export const sourceLabel = (id: string): string => ({ fitgirl: "FitGirl", dodi: "DODI", feeds: "Feeds", steam: "Steam" })[id] ?? id;
+const builtinNames: Record<string, string> = { fitgirl: "FitGirl", dodi: "DODI", feeds: "Feeds", steam: "Steam" };
+const providerNames = new Map<string, string>();
+
+/** Remembers the names the source registry gave, so a new provider needs no change here. */
+export function learnSources(list: Pick<DiscoverySourceStatus, "id" | "name">[]) {
+  for (const s of list) if (s.name) providerNames.set(s.id, s.name);
+}
+
+/** Why a game with source releases can't be installed from its card, when the sources say so; null otherwise. */
+export const notInstallableText = (g: Pick<GameSummary, "browserOnly" | "announced">): string | null => (g.announced ? "Announced" : g.browserOnly ? "Opens in your browser" : null);
+
+export const sourceLabel = (id: string): string => providerNames.get(id) ?? builtinNames[id] ?? id;
+
+/** The source filters: the registry's enabled providers, then the games from feeds. */
+export function sourceFilters(status: Pick<DiscoveryStatus, "sources"> | null): { id: string; label: string }[] {
+  const on = (status?.sources ?? []).filter((s) => s.enabled).map((s) => ({ id: s.id, label: s.name || sourceLabel(s.id) }));
+  return [...on, { id: "feeds", label: "Feeds" }];
+}
 
 /** "Steam: Very Positive (92%)", or "" without reviews. */
 export function reviewText(g: Pick<GameSummary, "reviewLabel" | "reviewPercent" | "reviewTotal">): string {
@@ -285,13 +288,32 @@ const availabilityLabels: Record<ReleaseAvailability, string> = {
   unresolved: "Needs resolving",
   manual: "Browser only",
   "update-only": "Update only",
+  preview: "Announced",
   summary: "Details loading",
   unavailable: "No longer listed",
 };
 export const availabilityLabel = (a: ReleaseAvailability) => availabilityLabels[a] ?? a;
 
-/** A release is a game someone can install: not an update patch, not gone. */
-export const canPrepare = (r: Release) => r.kind === "release" && r.availability !== "update-only" && r.availability !== "unavailable" && r.availability !== "summary";
+/** A release is a game someone can install: not an update patch or an announcement, not gone, from a source with torrents. */
+export const canPrepare = (r: Release) =>
+  r.kind === "release" && !r.browserOnly && r.availability !== "update-only" && r.availability !== "preview" && r.availability !== "unavailable" && r.availability !== "summary";
+
+/** Why a prepared release can't be installed, when the Go side gave no reason. */
+export function notReadyText(p: Pick<PreparedRelease, "state" | "reason">): string {
+  if (p.reason) return p.reason;
+  switch (p.state) {
+    case "update-only":
+      return "This is a patch for a game you need to have already. It can't be installed on its own.";
+    case "preview":
+      return "The source only announces this release. There is nothing to download yet.";
+    case "browser":
+      return "This source offers its files through file hosts in your browser only. Seaglass can't download or install them.";
+    case "unresolved":
+      return "Seaglass couldn't get this release's torrent file yet.";
+    default:
+      return "This release isn't listed by its source anymore.";
+  }
+}
 
 /** The languages a release states, or what the source claims, or that it doesn't say. */
 export function languagesLine(r: Pick<Release, "languages" | "languageClaim">): string {

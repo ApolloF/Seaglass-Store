@@ -309,6 +309,15 @@ export function HoldDownloads(on: boolean): $CancellablePromise<void> {
 }
 
 /**
+ * ImportSteamWishlist reads a public Steam wishlist and saves its games,
+ * merging by Steam AppID; it never removes a saved game. Only the person
+ * starts it.
+ */
+export function ImportSteamWishlist(steamID: string): $CancellablePromise<$models.WishlistImport> {
+    return $Call.ByID(3464238651, steamID);
+}
+
+/**
  * InstallFolder suggests a folder for a game.
  */
 export function InstallFolder(title: string): $CancellablePromise<string> {
@@ -350,6 +359,15 @@ export function OpenSourceRelease(key: string, releaseID: string): $CancellableP
  */
 export function OpenStoreLink(raw: string): $CancellablePromise<void> {
     return $Call.ByID(4055145474, raw);
+}
+
+/**
+ * PauseIndexing pauses or resumes background indexing on this PC. Paused,
+ * no listing page or idle wishlist search is requested until resumed;
+ * opening a game and searching still ask the sources. The index stays.
+ */
+export function PauseIndexing(paused: boolean): $CancellablePromise<discovery$0.Status> {
+    return $Call.ByID(680953517, paused);
 }
 
 /**
@@ -482,6 +500,14 @@ export function ShowDownload(id: string): $CancellablePromise<void> {
  */
 export function StartEngine(): $CancellablePromise<$models.EngineStatus> {
     return $Call.ByID(2094697353);
+}
+
+/**
+ * SteamWishlistAccount is the Steam account detected on this PC, to
+ * prefill the import.
+ */
+export function SteamWishlistAccount(): $CancellablePromise<$models.SteamAccount> {
+    return $Call.ByID(1675365499);
 }
 
 /**

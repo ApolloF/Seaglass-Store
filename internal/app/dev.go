@@ -22,8 +22,9 @@ import (
 //
 //	--virtual-pad[=ps|xbox]  plug in a virtual controller (SDL's own)
 //	--remote-debugging=PORT  WebView2's DevTools protocol on 127.0.0.1:PORT
-//	--dev-data=DIR           library, settings and log in DIR; no scans,
-//	                         metadata, store accounts or update checks
+//	--dev-data=DIR           library, settings and log in DIR, local caches
+//	                         in DIR\local; no scans, metadata, store
+//	                         accounts or update checks
 //
 // Any of them opens the control pipe DevPipe, one command per line:
 //

@@ -14,6 +14,7 @@ export type {
     PreparedOffer,
     PreparedRelease,
     ProviderProgress,
+    Recommendation,
     Release,
     SearchProgress,
     SearchResult,

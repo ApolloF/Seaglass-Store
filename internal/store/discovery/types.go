@@ -16,8 +16,9 @@ import (
 	"github.com/ApolloF/Seaglass/internal/store/sources"
 )
 
-// Sources discovery can index, in the order the interface lists them.
-var Sources = []string{"fitgirl", "dodi"}
+// Sources discovery can index, in the order the interface lists them:
+// the providers sources.Providers declares.
+var Sources = sources.DiscoveryIDs()
 
 // Provider and request states the interface shows. A failure never hides
 // what is already known: cached results come back with StateStale.
@@ -46,6 +47,7 @@ const (
 	AvailUnresolved  = "unresolved"  // torrent mirrors are listed but not resolved yet
 	AvailManual      = "manual"      // only a browser can get the torrent (CAPTCHA, unsupported host)
 	AvailUpdateOnly  = "update-only" // a patch, not a standalone install
+	AvailPreview     = "preview"     // announced by the source; nothing to download yet
 	AvailSummary     = "summary"     // only the listing summary is known; details load on demand
 	AvailGone        = "unavailable" // the article disappeared from its source
 )
@@ -82,9 +84,15 @@ type Record struct {
 	LastSeen  time.Time `json:"lastSeen"` // last listing, search or detail fetch that returned it
 	// Changed is when the parsed claims (title, version, size, transports)
 	// last changed after the first fetch; zero when they never did.
-	Changed  time.Time `json:"changed,omitzero"`
-	Detailed time.Time `json:"detailed,omitzero"` // the full article was parsed (not a summary)
-	Origin   string    `json:"origin"`            // rss, listing, search, detail
+	Changed time.Time `json:"changed,omitzero"`
+	// Detailed is when the full article was parsed; zero for a summary, and
+	// again once its summary row changed (see NeedsDetail).
+	Detailed time.Time `json:"detailed,omitzero"`
+	Origin   string    `json:"origin"` // rss, listing, search, detail
+	// Listed and ListedAt are the summary row (raw title, dated batch) the
+	// record was last listed or found with, to notice when it changes.
+	Listed   string    `json:"listed,omitempty"`
+	ListedAt time.Time `json:"listedAt,omitzero"`
 	// Gone: the article returned 404/410 or vanished from its listing.
 	// The record stays so wishlists and installed games keep their history.
 	Gone       bool   `json:"gone,omitempty"`
@@ -131,6 +139,11 @@ type Status struct {
 	Games       int            `json:"games"`    // source-backed games in the index
 	Releases    int            `json:"releases"` // source articles in the index
 	Refreshing  bool           `json:"refreshing"`
+	// Paused: the person paused indexing on this PC
+	// (StoreSettings.IndexingPaused); nothing is requested until resumed.
+	Paused bool `json:"paused"`
+	// Playing: a game is running, so indexing waits for it to end.
+	Playing bool `json:"playing"`
 	// Stale: the newest listings are older than six hours or their last
 	// refresh failed; what is shown is the cached index.
 	Stale bool `json:"stale"`
@@ -148,6 +161,14 @@ type SourceStatus struct {
 	BackfillDone bool   `json:"backfillDone"`
 	RetryAt      int64  `json:"retryAt"`
 	Error        string `json:"error,omitempty"`
+	// What the provider supports (sources.Provider), so setup, filters and
+	// status read it instead of naming sources.
+	Host      string   `json:"host"`
+	Search    bool     `json:"search"`    // its own site search fills search results
+	Paged     bool     `json:"paged"`     // older listing pages exist; false: one finite catalog page
+	Torrents  bool     `json:"torrents"`  // releases may be installable; false: they open in the browser
+	DefaultOn bool     `json:"defaultOn"` // chosen for a new Store user
+	Notes     []string `json:"notes"`     // verified limitations, plain sentences
 }
 
 // GameSummary is one game on a shelf, in Browse or in search results.
@@ -163,22 +184,32 @@ type GameSummary struct {
 	Version      string   `json:"version,omitempty"` // the newest release's claim, as published
 	// PublishedAt is the newest source publication; UpdatedAt the newest
 	// change to a source release. Neither is a game release or build date.
-	PublishedAt int64    `json:"publishedAt"`
-	UpdatedAt   int64    `json:"updatedAt"`
+	PublishedAt int64 `json:"publishedAt"`
+	UpdatedAt   int64 `json:"updatedAt"`
+	// ReleaseDate is the game's own release date as Steam's metadata
+	// gives it ("12 Mar, 2024"); "" unknown. Never a source date.
+	ReleaseDate string   `json:"releaseDate,omitempty"`
 	SizeBytes   int64    `json:"sizeBytes"` // the newest release's download claim; 0 unknown
 	Languages   []string `json:"languages"` // claimed by any release; empty: unknown
 	Genres      []string `json:"genres"`    // from Steam once its metadata is known; empty: unknown
 	Installable bool     `json:"installable"`
+	// BrowserOnly: every source release opens in a browser (the source
+	// offers no torrents). Announced: the sources only announce the game.
+	BrowserOnly bool `json:"browserOnly"`
+	Announced   bool `json:"announced"`
 	// PopularRank is the place on Steam's most-played chart (1 = first); 0
 	// when it isn't on the chart or the chart is unavailable. Never derived
 	// from anything else.
 	PopularRank int `json:"popularRank"`
 	// Steam's overall review summary, once fetched for this game.
-	ReviewPercent int        `json:"reviewPercent"` // positive share 0..100
-	ReviewTotal   int        `json:"reviewTotal"`   // 0: unknown or no reviews
-	ReviewLabel   string     `json:"reviewLabel,omitempty"`
-	Installed     *Installed `json:"installed,omitempty"`
-	Wishlisted    bool       `json:"wishlisted"`
+	ReviewPercent int    `json:"reviewPercent"` // positive share 0..100
+	ReviewTotal   int    `json:"reviewTotal"`   // 0: unknown or no reviews
+	ReviewLabel   string `json:"reviewLabel,omitempty"`
+	// CompletionMain is HowLongToBeat's Main Story time in minutes from
+	// the cache; 0 unknown. Cards never fetch it.
+	CompletionMain int        `json:"completionMain"`
+	Installed      *Installed `json:"installed,omitempty"`
+	Wishlisted     bool       `json:"wishlisted"`
 	// Activity: unread wishlist activity (a first release or a confirmed
 	// newer version).
 	Activity bool `json:"activity"`
@@ -260,7 +291,42 @@ type Home struct {
 	PopularState string        `json:"popularState"`
 	Updated      []GameSummary `json:"updated"`  // source releases that changed, newest change first
 	Wishlist     []GameSummary `json:"wishlist"` // wishlisted games with unread activity
-	Status       Status        `json:"status"`
+	// Featured are a few source-backed games for the top of the page:
+	// new and popular first, never installed ones.
+	Featured []GameSummary `json:"featured"`
+	// Recommended are source-backed games that share genres with games
+	// played recently or wishlisted, never installed ones; with no useful
+	// history they are popular games. RecommendedBasis says which.
+	Recommended      []Recommendation `json:"recommended"`
+	RecommendedBasis string           `json:"recommendedBasis"` // Basis* constants
+	Status           Status           `json:"status"`
+}
+
+// Recommendation bases (Home.RecommendedBasis).
+const (
+	BasisNone     = ""         // nothing to recommend
+	BasisPlayed   = "played"   // genres of recently played library games
+	BasisWishlist = "wishlist" // genres of wishlisted games
+	BasisBoth     = "played+wishlist"
+	BasisPopular  = "popular" // no useful history: Steam's chart among source-backed games
+)
+
+// Recommendation is one recommended game and why.
+type Recommendation struct {
+	Game GameSummary `json:"game"`
+	// Because names the played or wishlisted games it shares genres with,
+	// most relevant first, at most three; empty for BasisPopular.
+	Because []string `json:"because"`
+	Genres  []string `json:"genres"` // the shared genres
+}
+
+// Signal is a game whose genres steer recommendations.
+type Signal struct {
+	Title  string
+	Genres []string
+	Kind   string // BasisPlayed or BasisWishlist
+	// Weight: more recent play or a newer wishlist entry weighs more.
+	Weight float64
 }
 
 // Release is one release choice on a game's page.
@@ -283,10 +349,13 @@ type Release struct {
 	InstalledSizeBytes int64    `json:"installedSizeBytes,omitempty"`
 	Languages          []string `json:"languages"` // recognized names; empty: unknown
 	LanguageClaim      string   `json:"languageClaim,omitempty"`
-	Kind               string   `json:"kind"`         // release or update
+	Kind               string   `json:"kind"`         // release, update or preview
 	Availability       string   `json:"availability"` // Avail* constants
 	// Transports is the number of validated torrent identities.
 	Transports int `json:"transports"`
+	// BrowserOnly: the source offers no torrents; its files open in a
+	// browser and can't be downloaded or installed by Seaglass.
+	BrowserOnly bool `json:"browserOnly"`
 	// Unresolved explains why mirrors are not usable yet (captcha-required,
 	// rate-limited, unsupported host …), one line each.
 	Unresolved []string `json:"unresolved"`
@@ -332,7 +401,8 @@ type PreparedRelease struct {
 	// validated transport.
 	Offers []PreparedOffer `json:"offers"`
 	// State: "ready", "unresolved" (resolution failed or needs a browser),
-	// "update-only", "unavailable".
+	// "update-only", "unavailable", "preview" (announced, nothing to
+	// download yet), "browser" (a source without torrents).
 	State    string   `json:"state"`
 	Reason   string   `json:"reason,omitempty"`
 	Warnings []string `json:"warnings"`

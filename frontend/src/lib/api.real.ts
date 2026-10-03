@@ -1,7 +1,8 @@
 import { Events, Window } from "@wailsio/runtime";
 import { AccountsService, AchievementsService, LaunchService, LibraryService, PadService, ProfileService, SavesService, SettingsService, StoreService, UpdateService } from "../../bindings/github.com/ApolloF/Seaglass/internal/app";
 import type { Api } from "./api";
-import type { CompletionCandidate, DiscoveryChange, DiscoveryStatus, Enrichment, GameDetails, PreparedRelease, ReviewPage, SearchProgress, SearchResult, StoreHome, WishlistItem, SourceSnapshot, SourceRelease, DownloadLanguageOptions, Accounts, Achievements, AppInfo, ArtChoice, CatalogEntry, CatalogPage, Download, StoreArt, EngineStatus, FeedInfo, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
+import { normalizeHome } from "./storefront-home";
+import type { CompletionCandidate, LibraryCompletion, SteamAccount, WishlistImport, DiscoveryChange, DiscoveryStatus, Enrichment, GameDetails, PreparedRelease, ReviewPage, SearchProgress, SearchResult, StoreHome, WishlistItem, SourceSnapshot, SourceRelease, DownloadLanguageOptions, Accounts, Achievements, AppInfo, ArtChoice, CatalogEntry, CatalogPage, Download, StoreArt, EngineStatus, FeedInfo, Game, MetaState, PadRaw, PadState, Profile, Saves, ScanState, Session, SessionAchievements, Settings, Startup, StoreHit, SyncerStatus, TorrentInterface, UpdateState } from "./types";
 
 // The generated bindings return the Go structs; their JSON matches ./types.
 const g = (p: Promise<unknown>) => p as Promise<Game>;
@@ -26,6 +27,12 @@ export const realApi: Api = {
   setArt: (id, kind, art) => g(LibraryService.SetArt(id, kind, art)),
   setCollections: (id, names) => g(LibraryService.SetCollections(id, names)),
   renameCollection: (old, name) => LibraryService.RenameCollection(old, name),
+  completion: {
+    get: (id, fetch) => LibraryService.Completion(id, fetch) as Promise<unknown> as Promise<LibraryCompletion>,
+    candidates: (id, query) => LibraryService.CompletionCandidates(id, query).then((l) => (l ?? []) as unknown as CompletionCandidate[]),
+    setMatch: (id, hltbId) => LibraryService.SetCompletionMatch(id, hltbId) as Promise<unknown> as Promise<LibraryCompletion>,
+    openLink: (url) => LibraryService.OpenCompletionLink(url),
+  },
 
   settings: () => SettingsService.Get() as Promise<unknown> as Promise<Settings>,
   saveSettings: (s) => SettingsService.Save(s as never) as Promise<unknown> as Promise<Settings>,
@@ -98,7 +105,8 @@ export const realApi: Api = {
       status: () => StoreService.DiscoveryStatus() as Promise<unknown> as Promise<DiscoveryStatus>,
       setupSources: (sources) => StoreService.SetupSources(sources) as Promise<unknown> as Promise<Settings>,
       refresh: () => StoreService.RefreshDiscovery() as Promise<unknown> as Promise<DiscoveryStatus>,
-      home: () => StoreService.StoreHome() as Promise<unknown> as Promise<StoreHome>,
+      pauseIndexing: (paused) => StoreService.PauseIndexing(paused) as Promise<unknown> as Promise<DiscoveryStatus>,
+      home: () => (StoreService.StoreHome() as Promise<unknown> as Promise<StoreHome>).then(normalizeHome),
       browse: (q) => StoreService.BrowseGames(q as never) as Promise<unknown> as Promise<SearchResult>,
       search: (q) => StoreService.SearchGames(q as never) as Promise<unknown> as Promise<SearchResult>,
       game: (key) => StoreService.GameDetails(key) as Promise<unknown> as Promise<GameDetails>,
@@ -125,6 +133,8 @@ export const realApi: Api = {
       add: (key, title, appId) => StoreService.AddToWishlist(key, title, appId).then((l) => (l ?? []) as unknown as WishlistItem[]),
       remove: (key) => StoreService.RemoveFromWishlist(key).then((l) => (l ?? []) as unknown as WishlistItem[]),
       acknowledge: (key) => StoreService.AcknowledgeWishlist(key).then((l) => (l ?? []) as unknown as WishlistItem[]),
+      steamAccount: () => StoreService.SteamWishlistAccount() as Promise<unknown> as Promise<SteamAccount>,
+      importSteam: (steamId) => StoreService.ImportSteamWishlist(steamId) as Promise<unknown> as Promise<WishlistImport>,
       onChange: (cb) => Events.On("store:wishlist", (e) => cb((e.data ?? []) as unknown as WishlistItem[])),
     },
   },

@@ -138,6 +138,8 @@ export interface StoreSettings {
   sources: string[];
   /** "": decided when the Store is turned on; "ask": choose once; "done". */
   sourceSetup: "" | "ask" | "done";
+  /** The person paused background indexing on this PC. */
+  indexingPaused: boolean;
   blockDetections: boolean;
   /** The language versions are recommended in; "" for any. */
   language: string;
@@ -649,7 +651,7 @@ export const lastPlayed = (g: Game) => Math.max(g.lastPlayed ?? 0, g.storeLastPl
 /** Provider and request states. A failure never hides what is cached: it comes back "stale". */
 export type ProviderState = "ok" | "loading" | "stale" | "unavailable" | "error" | "skipped";
 export type CrawlState = "idle" | "recent" | "backfill" | "paused" | "backoff" | "disabled";
-export type ReleaseAvailability = "installable" | "unresolved" | "manual" | "update-only" | "summary" | "unavailable";
+export type ReleaseAvailability = "installable" | "unresolved" | "manual" | "update-only" | "preview" | "summary" | "unavailable";
 
 /** One source's indexing state. Mirrors discovery.SourceStatus. */
 export interface DiscoverySourceStatus {
@@ -664,6 +666,18 @@ export interface DiscoverySourceStatus {
   backfillDone: boolean;
   retryAt: number;
   error?: string;
+  /** What the provider supports (sources.Provider). */
+  host: string;
+  /** Its own site search fills search results. */
+  search: boolean;
+  /** Older listing pages exist; false: one finite catalog page. */
+  paged: boolean;
+  /** Releases may be installable; false: they open in the browser. */
+  torrents: boolean;
+  /** Chosen for a new Store user. */
+  defaultOn: boolean;
+  /** Verified limitations, plain sentences. */
+  notes: string[];
 }
 
 /** What discovery is doing. Mirrors discovery.Status. */
@@ -676,6 +690,10 @@ export interface DiscoveryStatus {
   games: number;
   releases: number;
   refreshing: boolean;
+  /** The person paused indexing; nothing is requested until resumed. */
+  paused: boolean;
+  /** A game is running, so indexing waits for it to end. */
+  playing: boolean;
   /** Newest listings older than six hours, or their last refresh failed. */
   stale: boolean;
 }
@@ -696,18 +714,26 @@ export interface GameSummary {
   publishedAt: number;
   /** Newest change to a source release. */
   updatedAt: number;
+  /** The game's own release date from Steam ("12 Mar, 2024"); never a source date. */
+  releaseDate?: string;
   sizeBytes: number;
   /** Empty: unknown. */
   languages: string[];
   /** Empty: unknown. */
   genres: string[];
   installable: boolean;
+  /** Every source release opens in a browser (the source offers no torrents). */
+  browserOnly: boolean;
+  /** The sources only announce the game. */
+  announced: boolean;
   /** Place on Steam's most-played chart; 0 off the chart or unknown. */
   popularRank: number;
   reviewPercent: number;
   /** 0: unknown or no reviews. */
   reviewTotal: number;
   reviewLabel?: string;
+  /** HowLongToBeat Main Story minutes from the cache; 0 unknown. */
+  completionMain: number;
   installed?: { download: string; version: string; update: boolean };
   wishlisted: boolean;
   /** Unread wishlist activity. */
@@ -776,7 +802,24 @@ export interface StoreHome {
   popularState: ProviderState;
   updated: GameSummary[];
   wishlist: GameSummary[];
+  /** A few source-backed games for the top of the page, never installed ones. */
+  featured: GameSummary[];
+  /** Games sharing genres with recently played or wishlisted ones; popular games without history. */
+  recommended: Recommendation[];
+  recommendedBasis: RecommendationBasis;
   status: DiscoveryStatus;
+}
+
+/** Mirrors the discovery.Basis* constants. */
+export type RecommendationBasis = "" | "played" | "wishlist" | "played+wishlist" | "popular";
+
+/** One recommended game and why. Mirrors discovery.Recommendation. */
+export interface Recommendation {
+  game: GameSummary;
+  /** Played or wishlisted games it shares genres with, at most three; empty for "popular". */
+  because: string[];
+  /** The shared genres. */
+  genres: string[];
 }
 
 /** One release choice on a game's page. Mirrors discovery.Release. */
@@ -800,10 +843,12 @@ export interface Release {
   /** Empty: unknown. */
   languages: string[];
   languageClaim?: string;
-  kind: "release" | "update";
+  kind: "release" | "update" | "preview";
   availability: ReleaseAvailability;
   /** Validated torrent identities. */
   transports: number;
+  /** The source offers no torrents; its files open in a browser only. */
+  browserOnly: boolean;
   /** Why mirrors aren't usable yet, one line each. */
   unresolved: string[];
   warnings: string[];
@@ -853,7 +898,7 @@ export interface PreparedRelease {
   release: Release;
   ready: boolean;
   offers: PreparedOffer[];
-  state: "ready" | "unresolved" | "update-only" | "unavailable";
+  state: "ready" | "unresolved" | "update-only" | "unavailable" | "preview" | "browser";
   reason?: string;
   warnings: string[];
   /** The copy the Store installed, which an update replaces in its folder. */
@@ -995,4 +1040,40 @@ export interface WishlistItem {
   /** Newest first. */
   activity: WishlistActivity[];
   unread: number;
+  /** "": saved in Seaglass; "steam": imported from a Steam wishlist. */
+  origin: "" | "steam";
+}
+
+/** The Steam account a wishlist import starts from. Mirrors app.SteamAccount. */
+export interface SteamAccount {
+  /** SteamID64; "" when none was found. */
+  steamId: string;
+  /** The account Steam signs in with on this PC. */
+  detected: boolean;
+  error?: string;
+}
+
+/** What importing a Steam wishlist did. Mirrors app.WishlistImport. */
+export interface WishlistImport {
+  steamId: string;
+  /** Games on the Steam wishlist. */
+  fetched: number;
+  added: number;
+  /** Already saved, matched by Steam AppID. */
+  existing: number;
+  /** Left out because the wishlist is full. */
+  skipped: number;
+  /** With a known source release now. */
+  available: number;
+  /** Queued for a source search while idle. */
+  searching: number;
+  items: WishlistItem[];
+}
+
+/** A library game's HowLongToBeat times. Mirrors app.LibraryCompletion. */
+export interface LibraryCompletion {
+  gameId: number;
+  /** "steam:<appid>" or "title:<normalized title>": shared with the Store, never the folder key. */
+  key: string;
+  completion: Completion;
 }

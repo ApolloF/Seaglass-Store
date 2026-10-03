@@ -49,3 +49,16 @@ func TestCrashed(t *testing.T) {
 		}
 	}
 }
+
+// A test harness's caches stay in its own folder, even when an old
+// WaterLauncher folder is in use.
+func TestUseCacheDirKeepsCachesApart(t *testing.T) {
+	old := localDirOverride
+	t.Cleanup(func() { cacheDirOverride, localDirOverride = "", old })
+	dir := t.TempDir()
+	localDirOverride = t.TempDir()
+	UseCacheDir(dir)
+	if got := CacheDir("store", "discovery"); !Within(dir, got) {
+		t.Fatalf("cache %s is outside %s", got, dir)
+	}
+}
