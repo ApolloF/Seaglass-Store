@@ -5,11 +5,11 @@
   // keep focus on the same game.
   import { api } from "../lib/api";
   import { focusKey, homeNotes, homeShelves, restoreFocus, shelfCol, shelfMove, startFocus, type Shelf } from "../lib/bpstore";
-  import { findingText } from "../lib/indexing";
+  import { findingText, indexingSummary } from "../lib/indexing";
   import { feedback, useInput } from "../lib/input.svelte";
   import { shop } from "../lib/shop.svelte";
   import { lib } from "../lib/store.svelte";
-  import { statusSummary, storeMode } from "../lib/storefront";
+  import { storeMode } from "../lib/storefront";
   import { storefront } from "../lib/storefront.svelte";
   import type { GameSummary } from "../lib/types";
   import Hints from "./Hints.svelte";
@@ -49,7 +49,7 @@
   });
 
   const mode = $derived(storeMode({ loaded, status: storefront.status, shown: shelves.reduce((n, s) => n + s.games.length, 0) }));
-  const summary = $derived(statusSummary(storefront.status));
+  const summary = $derived(indexingSummary(storefront.status));
   const finding = $derived(findingText(storefront.status));
 
   // Card sizes in design pixels (1920 wide); featured games are bigger.
