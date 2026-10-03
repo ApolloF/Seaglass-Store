@@ -35,14 +35,23 @@ type discoveryState struct {
 	search   discovery.SearchCache
 
 	kick chan struct{}
+	// breather is the pause between two batches of older pages.
+	breather time.Duration
+	// lookup finds a provider in the registry; isPlaying says a game runs.
+	lookup    func(id string) (sources.Provider, bool)
+	isPlaying func() bool
 
 	mu          sync.Mutex
 	fetchers    map[string]discovery.Fetcher // per source; one request in flight each
 	passMu      map[string]*sync.Mutex       // one pass per source at a time
+	running     map[string]bool              // sources whose batches are running
 	active      map[string]string            // source → crawl state while a pass runs
 	force       map[string]bool              // a pass that ignores the age of the newest listings
+	wasPlaying  bool                         // a game ran at the last tick
 	runCtx      context.Context              // cancelled when discovery is turned off
 	runCancel   context.CancelFunc
+	idxCtx      context.Context // background indexing; also cancelled when it's paused
+	idxCancel   context.CancelFunc
 	view        *discovery.View
 	viewKey     string         // index version, catalog version and sources the view was built from
 	steamNames  map[int]string // Steam-only search results, for their pages and art
@@ -56,9 +65,10 @@ type discoveryState struct {
 type detailRequest struct{ src, id, key string }
 
 func newDiscoveryState(c *Core) *discoveryState {
-	d := &discoveryState{c: c, auto: true, kick: make(chan struct{}, 1), detailWake: make(chan struct{}, 1),
-		fetchers: map[string]discovery.Fetcher{}, passMu: map[string]*sync.Mutex{}, active: map[string]string{}, force: map[string]bool{},
+	d := &discoveryState{c: c, auto: true, kick: make(chan struct{}, 1), detailWake: make(chan struct{}, 1), breather: 3 * time.Second, lookup: sources.Lookup,
+		fetchers: map[string]discovery.Fetcher{}, passMu: map[string]*sync.Mutex{}, running: map[string]bool{}, active: map[string]string{}, force: map[string]bool{},
 		steamNames: map[int]string{}, queuedIDs: map[string]bool{}}
+	d.isPlaying = func() bool { return c.Launch != nil && c.Launch.Active() }
 	for _, src := range discovery.Sources {
 		d.passMu[src] = &sync.Mutex{}
 	}
@@ -77,7 +87,7 @@ func (d *discoveryState) index() *discovery.Index {
 }
 
 func (d *discoveryState) fetcher(src string) (discovery.Fetcher, sources.Provider, error) {
-	s, ok := sources.Lookup(src)
+	s, ok := d.lookup(src)
 	if !ok || !s.Discovery {
 		return nil, s, fmt.Errorf("unknown source %q", src)
 	}
@@ -105,6 +115,18 @@ func (d *discoveryState) ctx() context.Context {
 	return d.runCtx
 }
 
+// indexCtx is the context background indexing and idle wishlist searches
+// run in: discovery's, and also cancelled when the person pauses indexing.
+func (d *discoveryState) indexCtx() context.Context {
+	run := d.ctx()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.idxCtx == nil || d.idxCtx.Err() != nil {
+		d.idxCtx, d.idxCancel = context.WithCancel(run)
+	}
+	return d.idxCtx
+}
+
 func (d *discoveryState) wake() {
 	select {
 	case d.kick <- struct{}{}:
@@ -127,18 +149,33 @@ func (d *discoveryState) enabled() []string {
 	return out
 }
 
-func (d *discoveryState) playing() bool { return d.c.Launch != nil && d.c.Launch.Active() }
+func (d *discoveryState) playing() bool { return d.isPlaying() }
 
-// loop runs background passes: the newest listings when six hours old,
-// older pages every 30 minutes until a source's end, never while a game
-// runs.
+// paused: the person paused indexing on this PC.
+func (d *discoveryState) paused() bool { return d.c.Settings.Get().Store.IndexingPaused }
+
+// halted says background requests for a source must stop now: indexing is
+// paused, a game runs, or the source, source browsing or the Store is off.
+func (d *discoveryState) halted(src string) bool {
+	v := d.c.Settings.Get()
+	return v.Store.IndexingPaused || d.playing() || !v.ExperimentalStore || !v.Store.DiscoveryOn(src)
+}
+
+// loop starts indexing whatever is due: the newest listings when six
+// hours old, and older pages batch after batch until a source's end. It
+// looks often enough to notice a game ending soon after.
 func (d *discoveryState) loop(ctx context.Context) {
 	d.index()
 	go d.detailLoop(ctx)
-	if d.c.wishlist != nil && d.c.Settings.Get().ExperimentalStore {
-		d.c.wishlist.observe(d)
+	if d.c.wishlist != nil {
+		if d.c.Settings.Get().ExperimentalStore {
+			d.c.wishlist.observe(d)
+		}
+		if d.auto {
+			go d.c.wishlist.searchLoop(ctx)
+		}
 	}
-	t := time.NewTicker(time.Minute)
+	t := time.NewTicker(15 * time.Second)
 	defer t.Stop()
 	for {
 		d.tick()
@@ -152,34 +189,78 @@ func (d *discoveryState) loop(ctx context.Context) {
 	}
 }
 
+// tick starts a run for every chosen source that isn't running, and tells
+// the interface when a game started or ended.
 func (d *discoveryState) tick() {
-	srcs := d.enabled()
-	if len(srcs) == 0 {
+	playing := d.playing()
+	d.mu.Lock()
+	changed := playing != d.wasPlaying
+	d.wasPlaying = playing
+	d.mu.Unlock()
+	if changed {
+		d.emitStatus()
+		if !playing && d.c.wishlist != nil {
+			d.c.wishlist.wakeSearches()
+		}
+	}
+	if playing || d.paused() {
 		return
 	}
-	var wg sync.WaitGroup
-	for _, src := range srcs {
-		d.mu.Lock()
-		force := d.force[src]
-		d.mu.Unlock()
-		if !d.auto && !force {
+	for _, src := range d.enabled() {
+		if !d.auto && !d.forced(src) {
 			continue
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if _, err := d.pass(src, force, false); err != nil {
-				logx.Printf("store discovery: %s: %v", src, err)
-			}
-		}()
+		go d.run(src)
 	}
-	wg.Wait()
 }
 
-// pass runs one pass for a source unless one is running (wait: a manual
-// refresh waits for it instead of skipping).
+func (d *discoveryState) forced(src string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.force[src]
+}
+
+// run indexes a source batch after batch while older pages remain, with a
+// short breather in between, until it is up to date, fails, or is halted.
+// One run per source at a time.
+func (d *discoveryState) run(src string) {
+	d.mu.Lock()
+	if d.running[src] {
+		d.mu.Unlock()
+		return
+	}
+	d.running[src] = true
+	d.mu.Unlock()
+	defer func() {
+		d.mu.Lock()
+		delete(d.running, src)
+		d.mu.Unlock()
+	}()
+	for {
+		res, err := d.pass(src, d.forced(src), false)
+		if err != nil {
+			logx.Printf("store discovery: %s: %v", src, err)
+		}
+		// In the test harness's frozen mode, indexing does only what was asked.
+		if !res.More || !d.auto {
+			return
+		}
+		select {
+		case <-d.c.ctx.Done():
+			return
+		case <-time.After(d.breather):
+		}
+	}
+}
+
+// pass runs one batch for a source unless one is running (wait: a manual
+// refresh waits for it instead of skipping). The index's journal saves
+// each page as it arrives.
 func (d *discoveryState) pass(src string, force, wait bool) (discovery.PassResult, error) {
 	m := d.passMu[src]
+	if m == nil {
+		return discovery.PassResult{}, fmt.Errorf("unknown source %q", src)
+	}
 	if wait {
 		m.Lock()
 	} else if !m.TryLock() {
@@ -194,7 +275,7 @@ func (d *discoveryState) pass(src string, force, wait bool) (discovery.PassResul
 		d.mu.Unlock()
 		return discovery.PassResult{}, nil
 	}
-	if d.playing() {
+	if d.halted(src) {
 		d.emitStatus()
 		return discovery.PassResult{Stopped: discovery.StopPaused}, nil
 	}
@@ -203,7 +284,17 @@ func (d *discoveryState) pass(src string, force, wait bool) (discovery.PassResul
 		return discovery.PassResult{}, err
 	}
 	d.setActive(src, map[bool]string{true: discovery.CrawlRecent, false: discovery.CrawlBackfill}[recent])
-	res := discovery.Pass(d.ctx(), ix, s, f, force, time.Now, d.playing)
+	res := discovery.Pass(d.indexCtx(), ix, s, f, force, time.Now, discovery.PassHooks{
+		Paused: func() bool { return d.halted(src) },
+		// Releases, the page and errors in the status stay current page by page.
+		Page: func(older bool) {
+			if older {
+				d.setActive(src, discovery.CrawlBackfill)
+			} else {
+				d.emitStatus()
+			}
+		},
+	})
 	d.setActive(src, "")
 	if res.Stopped != discovery.StopPaused {
 		d.mu.Lock()
@@ -214,8 +305,6 @@ func (d *discoveryState) pass(src string, force, wait bool) (discovery.PassResul
 		logx.Printf("store discovery: %s: %d new, %d changed releases (%d pages)", src, res.Merged.Added, res.Merged.Changed, res.Pages)
 		d.indexChanged(res.Merged.IDs, src)
 	}
-	d.save()
-	d.emitStatus()
 	return res, res.Err
 }
 
@@ -248,6 +337,8 @@ func (d *discoveryState) save() {
 	}
 }
 
+var errIndexingPaused = errors.New("Indexing is paused. Resume it to check for new releases.")
+
 // refresh fetches the newest listings of every chosen source now, waiting
 // for a pass already running. Sources in backoff are skipped.
 func (d *discoveryState) refresh() error {
@@ -255,6 +346,10 @@ func (d *discoveryState) refresh() error {
 	if len(srcs) == 0 {
 		return sources.ErrDisabled
 	}
+	if d.paused() {
+		return errIndexingPaused
+	}
+	defer d.wake() // older pages go on from where they were
 	var mu sync.Mutex
 	var errs []string
 	var wg sync.WaitGroup
@@ -295,11 +390,25 @@ func (d *discoveryState) start() {
 	d.wake()
 }
 
-// settingsChanged cancels work for what was turned off and starts
-// indexing what was turned on.
+// settingsChanged cancels work for what was turned off or paused and
+// starts indexing what was turned on or resumed.
 func (d *discoveryState) settingsChanged(old, saved settings.Settings) {
 	if d == nil {
 		return
+	}
+	switch {
+	case saved.Store.IndexingPaused && !old.Store.IndexingPaused:
+		// Stop the requests in flight too; their pages are asked again on resume.
+		d.mu.Lock()
+		if d.idxCancel != nil {
+			d.idxCancel()
+		}
+		d.mu.Unlock()
+	case !saved.Store.IndexingPaused && old.Store.IndexingPaused:
+		d.wake()
+		if d.c.wishlist != nil {
+			d.c.wishlist.wakeSearches()
+		}
 	}
 	wasOn := func(v settings.Settings, src string) bool { return v.ExperimentalStore && v.Store.DiscoveryOn(src) }
 	turnedOff, turnedOn := false, false
@@ -344,6 +453,7 @@ func (d *discoveryState) status() discovery.Status {
 	counts := ix.Counts()
 	now := time.Now()
 	playing := d.playing()
+	st.Paused, st.Playing = v.ExperimentalStore && v.Store.IndexingPaused, playing
 	d.mu.Lock()
 	active := map[string]string{}
 	for k, a := range d.active {
@@ -369,13 +479,15 @@ func (d *discoveryState) status() discovery.Status {
 			continue
 		}
 		switch {
+		case st.Paused || playing:
+			s.State = discovery.CrawlPaused
 		case active[s.ID] != "":
 			s.State = active[s.ID]
-			st.Refreshing = true
+			// Older pages are indexed most of the time; only the newest
+			// listings count as a refresh.
+			st.Refreshing = st.Refreshing || s.State == discovery.CrawlRecent
 		case now.Before(c.RetryAt):
 			s.State = discovery.CrawlBackoff
-		case playing:
-			s.State = discovery.CrawlPaused
 		}
 		if c.RecentAt.IsZero() || now.Sub(c.RecentAt) > discovery.RecentEvery || c.Error != "" {
 			st.Stale = true
@@ -759,7 +871,11 @@ func (d *discoveryState) searchRemote(text string) ([]discovery.ProviderProgress
 	srcs := d.enabled()
 	progress := make([]discovery.ProviderProgress, 0, len(srcs)+1)
 	for _, src := range srcs {
-		progress = append(progress, discovery.ProviderProgress{ID: src, Name: d.sourceName(src), State: discovery.StateLoading})
+		state := discovery.StateLoading
+		if !d.searchable(src) {
+			state = discovery.StateSkipped // only its index is searched
+		}
+		progress = append(progress, discovery.ProviderProgress{ID: src, Name: d.sourceName(src), State: state})
 	}
 	progress = append(progress, discovery.ProviderProgress{ID: "steam", Name: "Steam", State: discovery.StateLoading})
 	if len([]rune(scan.Normalize(text))) < discovery.MinSearch {
@@ -798,6 +914,9 @@ func (d *discoveryState) searchRemote(text string) ([]discovery.ProviderProgress
 	d.c.emit(EventStoreSearch, discovery.SearchProgress{Text: text, Remote: slices.Clone(progress)})
 	var wg sync.WaitGroup
 	for i, src := range srcs {
+		if progress[i].State == discovery.StateSkipped {
+			continue
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -876,6 +995,12 @@ func (d *discoveryState) searchRemote(text string) ([]discovery.ProviderProgress
 		}
 	}
 	return progress, steam, complete
+}
+
+// searchable: the provider has its own site search.
+func (d *discoveryState) searchable(src string) bool {
+	p, ok := d.lookup(src)
+	return ok && p.Search != ""
 }
 
 func searchError(err error) string {

@@ -3,6 +3,7 @@ package app
 import (
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ApolloF/Seaglass/internal/logx"
@@ -16,6 +17,11 @@ import (
 type wishlistState struct {
 	c     *Core
 	store *wishlist.Store
+
+	// The idle searches for imported games without a known source release.
+	searchInit sync.Once
+	searches   *wishlist.Searches
+	searchKick chan struct{}
 }
 
 func newWishlistState(c *Core) *wishlistState {
@@ -43,8 +49,9 @@ func (w *wishlistState) observations(d *discoveryState, key string) []wishlist.O
 // observe compares saved games' releases with their baselines, and asks
 // for the articles of saved games known only from a search summary.
 func (w *wishlistState) observe(d *discoveryState) {
-	changed := false
-	for _, e := range w.store.List() {
+	entries := w.store.List()
+	changed := w.nameImported(entries)
+	for _, e := range entries {
 		obs := w.observations(d, e.Key)
 		if ok, err := w.store.Observe(e.Key, obs, time.Now()); err != nil {
 			logx.Printf("store wishlist: %v", err)
@@ -76,7 +83,7 @@ func (w *wishlistState) items() []WishlistItem {
 	out := []WishlistItem{}
 	for _, e := range w.store.List() {
 		act, unread := wishlist.View(e)
-		it := WishlistItem{Key: e.Key, Title: e.Title, SteamAppID: e.SteamAppID, AddedAt: e.AddedAt.Unix(), Activity: act, Unread: unread}
+		it := WishlistItem{Key: e.Key, Title: e.Title, SteamAppID: e.SteamAppID, AddedAt: e.AddedAt.Unix(), Activity: act, Unread: unread, Origin: e.Origin}
 		if g, ok := view.Game(e.Key); ok {
 			it.Game = g.Summary()
 			ann(&it.Game)

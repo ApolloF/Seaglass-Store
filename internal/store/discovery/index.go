@@ -71,6 +71,9 @@ func OpenIndex(dir, identityPath string) *Index {
 			ix.records[src][r.Entry.ID] = &r
 		}
 	}
+	for _, src := range Sources {
+		ix.replayJournal(src)
+	}
 	if b, err := os.ReadFile(identityPath); err == nil {
 		_ = json.Unmarshal(b, &ix.identity)
 	}
@@ -103,6 +106,7 @@ func (ix *Index) Save() error {
 			return err
 		}
 		files[src] = b
+		ix.dropJournal(src)
 	}
 	ix.dirty = map[string]bool{}
 	ix.mu.Unlock()

@@ -12,11 +12,13 @@ import (
 	"github.com/ApolloF/Seaglass/internal/store/sources"
 )
 
-// Crawl pacing agreed in the plan.
+// Crawl pacing. Older listing pages are indexed in batches of
+// PagesPerPass; while a source has older pages left, the next batch starts
+// right after the last one. The per-source sources.Client keeps the pace:
+// one request in flight, at least two seconds apart.
 const (
-	RecentEvery  = 6 * time.Hour    // the newest listings are fetched again after this
-	PassEvery    = 30 * time.Minute // background passes come at most this often
-	PagesPerPass = 5                // listing pages per source per pass
+	RecentEvery  = 6 * time.Hour // the newest listings are fetched again after this
+	PagesPerPass = 5             // listing pages per source per batch
 	backoffBase  = time.Minute
 	backoffMax   = time.Hour
 	retryMax     = 6 * time.Hour // a longer Retry-After is capped: the next start asks again
@@ -28,16 +30,17 @@ type Fetcher interface {
 	FetchDocument(ctx context.Context, raw string) (sources.Document, error)
 }
 
-// Due says what a source needs now. force is a manual refresh or the first
-// pass after setup: it asks for the newest listings regardless of age, but
-// never before a source's Retry-After or backoff ends.
+// Due says what a source needs now: the newest listings when they are six
+// hours old, and older pages until a confirmed end. force is a manual
+// refresh or the first pass after setup: it asks for the newest listings
+// regardless of age. Nothing is due before a source's Retry-After or
+// backoff ends.
 func Due(c CrawlState, now time.Time, force bool) (recent, backfill bool) {
 	if now.Before(c.RetryAt) {
 		return false, false
 	}
 	recent = force || c.RecentAt.IsZero() || now.Sub(c.RecentAt) >= RecentEvery
-	backfill = !c.BackfillDone && (c.PassAt.IsZero() || now.Sub(c.PassAt) >= PassEvery)
-	return recent, backfill
+	return recent, !c.BackfillDone
 }
 
 // PassResult says what a pass did.
@@ -47,19 +50,32 @@ type PassResult struct {
 	Pages   int  // listing pages fetched
 	Stopped string
 	Err     error
+	// More: the batch ended with older pages left, so the next one can
+	// start at once.
+	More bool
 }
 
 // Pass stops reasons.
 const (
-	StopPaused   = "paused"   // a game started
+	StopPaused   = "paused"   // a game started, or the person paused indexing
 	StopCanceled = "canceled" // the Store or the source was turned off, or Seaglass is closing
 )
 
-// Pass runs one pass for a source: the newest listings when due, then
-// older listing pages, PagesPerPass listing pages at most. paused is asked
-// before every request; a game starting stops the pass where it is. A
+// PassHooks let the caller stop a pass and follow it page by page.
+type PassHooks struct {
+	// Paused is asked before every request; true stops the pass there.
+	Paused func() bool
+	// Page is told after each listing page was merged and saved; backfill
+	// says it was an older page.
+	Page func(backfill bool)
+}
+
+// Pass runs one batch for a source: the newest listings when due, then
+// older listing pages, PagesPerPass listing pages at most. Each page's
+// records and the crawl position are saved before the next request, so a
+// restart resumes at the next page without skipping or losing one. A
 // catalog of one finite page is complete after its first page.
-func Pass(ctx context.Context, ix *Index, p sources.Provider, f Fetcher, force bool, now func() time.Time, paused func() bool) PassResult {
+func Pass(ctx context.Context, ix *Index, p sources.Provider, f Fetcher, force bool, now func() time.Time, h PassHooks) PassResult {
 	var res PassResult
 	src := p.Source
 	c := ix.Crawl(src.ID)
@@ -73,18 +89,27 @@ func Pass(ctx context.Context, ix *Index, p sources.Provider, f Fetcher, force b
 			res.Stopped = StopCanceled
 			return true
 		}
-		if paused != nil && paused() {
+		if h.Paused != nil && h.Paused() {
 			res.Stopped = StopPaused
 			return true
 		}
 		return false
 	}
-	merge := func(entries []sources.Entry, origin string, older bool) MergeResult {
-		m := ix.Merge(src.ID, entries, origin, older, now())
+	// commit saves a page and its crawl change before anything else is
+	// asked; false when even that couldn't be saved.
+	commit := func(entries []sources.Entry, origin string, older bool, crawl func(*CrawlState)) (MergeResult, bool) {
+		m, err := ix.commitPage(src.ID, entries, origin, older, now(), crawl)
 		res.Merged.Added += m.Added
 		res.Merged.Changed += m.Changed
 		res.Merged.IDs = append(res.Merged.IDs, m.IDs...)
-		return m
+		if err != nil {
+			res.Err = fmt.Errorf("saving the index: %w", err)
+			return m, false
+		}
+		if h.Page != nil {
+			h.Page(older)
+		}
+		return m, true
 	}
 	defer func() {
 		ix.SetCrawl(src.ID, func(c *CrawlState) {
@@ -105,7 +130,9 @@ func Pass(ctx context.Context, ix *Index, p sources.Provider, f Fetcher, force b
 			if err != nil && !errors.Is(err, errNoReleases) {
 				return failed(ix, src.ID, &res, err, now())
 			}
-			merge(entries, OriginRSS, false)
+			if _, ok := commit(entries, OriginRSS, false, nil); !ok {
+				return res
+			}
 		}
 		first := c.RecentAt.IsZero()
 		for page := 1; budget > 0; page++ {
@@ -122,7 +149,10 @@ func Pass(ctx context.Context, ix *Index, p sources.Provider, f Fetcher, force b
 			if err != nil && !errors.Is(err, errNoReleases) {
 				return failed(ix, src.ID, &res, err, now())
 			}
-			m := merge(entries, OriginListing, false)
+			m, ok := commit(entries, OriginListing, false, nil)
+			if !ok {
+				return res
+			}
 			// Catch up page by page after a long pause, until a page brings
 			// nothing new; the very first refresh reads one page and leaves
 			// the rest to backfill.
@@ -131,7 +161,7 @@ func Pass(ctx context.Context, ix *Index, p sources.Provider, f Fetcher, force b
 			}
 		}
 		res.Recent = true
-		ix.SetCrawl(src.ID, func(c *CrawlState) {
+		if _, ok := commit(nil, OriginListing, false, func(c *CrawlState) {
 			c.RecentAt, c.Failures, c.RetryAt, c.Error = now(), 0, time.Time{}, ""
 			if c.NextPage < 2 {
 				c.NextPage = 2
@@ -139,12 +169,14 @@ func Pass(ctx context.Context, ix *Index, p sources.Provider, f Fetcher, force b
 			if !p.Paged() {
 				c.BackfillDone = true
 			}
-		})
+		}); !ok {
+			return res
+		}
 	}
 
 	for budget > 0 {
 		c = ix.Crawl(src.ID)
-		if c.BackfillDone || !backfill {
+		if c.BackfillDone {
 			break
 		}
 		if stop() {
@@ -153,7 +185,7 @@ func Pass(ctx context.Context, ix *Index, p sources.Provider, f Fetcher, force b
 		page := max(c.NextPage, 2)
 		raw, ok := p.ListingURL(page)
 		if !ok {
-			ix.SetCrawl(src.ID, func(c *CrawlState) { c.BackfillDone = true })
+			commit(nil, OriginListing, true, func(c *CrawlState) { c.BackfillDone = true })
 			break
 		}
 		entries, next, err := fetchParse(ctx, src, f, raw)
@@ -163,27 +195,29 @@ func Pass(ctx context.Context, ix *Index, p sources.Provider, f Fetcher, force b
 		switch {
 		case errors.As(err, &status) && (status.Status == http.StatusNotFound || status.Status == http.StatusGone):
 			// Past the last page: a confirmed end.
-			ix.SetCrawl(src.ID, func(c *CrawlState) { c.BackfillDone, c.Failures, c.Error = true, 0, "" })
+			commit(nil, OriginListing, true, func(c *CrawlState) { c.BackfillDone, c.Failures, c.Error = true, 0, "" })
 			return res
 		case errors.Is(err, errNoReleases) && next != "":
 			// A page of announcements only; move on rather than stall here.
+			entries = nil
 		case err != nil:
 			return failed(ix, src.ID, &res, err, now())
-		default:
-			merge(entries, OriginListing, true)
 		}
-		ix.SetCrawl(src.ID, func(c *CrawlState) {
+		if _, ok := commit(entries, OriginListing, true, func(c *CrawlState) {
 			c.Failures, c.RetryAt, c.Error = 0, time.Time{}, ""
 			if next == "" {
 				c.BackfillDone = true
 			} else {
 				c.NextPage = page + 1
 			}
-		})
+		}); !ok {
+			return res
+		}
 		if next == "" {
 			break
 		}
 	}
+	res.More = !ix.Crawl(src.ID).BackfillDone
 	return res
 }
 
@@ -218,7 +252,10 @@ func failed(ix *Index, src string, res *PassResult, err error, now time.Time) Pa
 		return *res
 	}
 	res.Err = err
-	ix.SetCrawl(src, func(c *CrawlState) { Backoff(c, err, now) })
+	// The wait is saved at once: a restart honours it too.
+	if _, jerr := ix.commitPage(src, nil, OriginListing, false, now, func(c *CrawlState) { Backoff(c, err, now) }); jerr != nil {
+		res.Err = errors.Join(err, fmt.Errorf("saving the index: %w", jerr))
+	}
 	return *res
 }
 

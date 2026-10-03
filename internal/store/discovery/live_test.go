@@ -30,7 +30,7 @@ func TestLiveDiscovery(t *testing.T) {
 		}
 		src, _ := sources.Lookup(id)
 		start := time.Now()
-		res := Pass(ctx, ix, src, client, true, time.Now, nil)
+		res := Pass(ctx, ix, src, client, true, time.Now, PassHooks{})
 		c := ix.Crawl(id)
 		t.Logf("%s: pass %v, %d pages, %d new, err %v; next page %d, records %d", id, time.Since(start).Round(time.Second), res.Pages, res.Merged.Added, res.Err, c.NextPage, ix.Counts()[id])
 		if res.Err != nil || res.Merged.Added == 0 {

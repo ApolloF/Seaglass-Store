@@ -52,3 +52,51 @@ describe("mock discovery", () => {
     }
   });
 });
+
+describe("mock indexing and Steam import", () => {
+  const make = () => {
+    let s = structuredClone(settings);
+    const api = mockDiscovery(() => s, (v) => (s = v), () => { throw new Error("no downloads here"); });
+    return { api, get: () => s };
+  };
+
+  it("pauses and resumes indexing, refusing a refresh while paused", async () => {
+    const { api } = make();
+    const st = await api.discovery.pauseIndexing(true);
+    expect(st.paused).toBe(true);
+    expect(st.sources.filter((x) => x.enabled).every((x) => x.state === "paused")).toBe(true);
+    await expect(api.discovery.refresh()).rejects.toThrow("Indexing is paused");
+    expect((await api.discovery.pauseIndexing(false)).paused).toBe(false);
+  });
+
+  it("lists a third provider behind the extra flag, off and never searched", async () => {
+    mockDiscoveryFlag("extra", true);
+    try {
+      const { api } = make();
+      const extra = (await api.discovery.status()).sources.find((x) => x.id === "example");
+      expect(extra).toMatchObject({ enabled: false, defaultOn: false, search: false, paged: false, torrents: false });
+      expect(extra?.notes.length).toBeGreaterThan(0);
+    } finally {
+      mockDiscoveryFlag("extra", false);
+    }
+  });
+
+  it("imports by AppID, keeps saved games and reports private profiles", async () => {
+    const { api } = make();
+    await expect(api.wishlist.importSteam("123")).rejects.toThrow("SteamID64");
+    const r = await api.wishlist.importSteam("76561198000000042");
+    expect(r.fetched).toBe(4);
+    expect(r.added + r.existing).toBe(4);
+    expect(r.items.filter((i) => i.origin === "steam").length).toBeGreaterThanOrEqual(r.added);
+    expect(r.items.some((i) => i.key === "steam:3100100")).toBe(true);
+    const again = await api.wishlist.importSteam("76561198000000042");
+    expect(again.added).toBe(0);
+    expect(again.existing).toBe(4);
+    mockDiscoveryFlag("private", true);
+    try {
+      await expect(api.wishlist.importSteam("76561198000000042")).rejects.toThrow("Public");
+    } finally {
+      mockDiscoveryFlag("private", false);
+    }
+  });
+});

@@ -9,6 +9,7 @@
   import { activityText, cardLine, dateText } from "../../lib/storefront";
   import { storefront } from "../../lib/storefront.svelte";
   import type { GameSummary, WishlistItem } from "../../lib/types";
+  import WishlistImport from "./WishlistImport.svelte";
 
   let { onopen, onbrowse }: { onopen: (g: GameSummary) => void; onbrowse: () => void } = $props();
 
@@ -28,11 +29,13 @@
   <div class="sf-empty">
     <Icon name="star" size={40} stroke={1.6} />
     <h2>Your wishlist is empty</h2>
-    <p>Save a game from its page. Seaglass tells you here when a release shows up or a newer version is confirmed.</p>
+    <p>Save a game from its page, or import your Steam wishlist. Seaglass tells you here when a release shows up or a newer version is confirmed.</p>
     <button type="button" class="sf-primary" onclick={onbrowse}>Browse games</button>
   </div>
+  <div class="solo"><WishlistImport /></div>
 {:else}
   <div class="wish">
+    <WishlistImport />
     <div class="top">
       <p class="sf-muted">{storefront.wishlist.length} saved · {storefront.unread ? `${storefront.unread} new` : "nothing new"}</p>
       {#if storefront.unread}<button type="button" class="sf-btn" onclick={() => acknowledge("")}>Mark all read</button>{/if}
@@ -44,7 +47,11 @@
             <span class="thumb"><GameArt game={{ key: w.key, meta: shop.art[w.key] }} /></span>
             <span class="info">
               <span class="name">{w.title}{#if w.unread}<span class="sf-chip accent">{w.unread} new</span>{/if}</span>
-              <span class="sf-muted">{w.game.sourceBacked ? cardLine(storefront.card(w.game)) || "Released by a source" : "No known source release yet"}</span>
+              <span class="labels">
+                {#if w.origin === "steam"}<span class="sf-chip">From Steam</span>{/if}
+                {#if !w.game.sourceBacked}<span class="sf-chip">No known source release</span>{/if}
+              </span>
+              {#if w.game.sourceBacked}<span class="sf-muted">{cardLine(storefront.card(w.game)) || "Released by a source"}</span>{/if}
               <span class="sf-muted">Saved {dateText(w.addedAt)}</span>
             </span>
           </button>
@@ -138,6 +145,18 @@
     gap: 8px;
     font-size: 17px;
     font-weight: 700;
+  }
+  .labels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .labels:empty {
+    display: none;
+  }
+  .solo {
+    width: min(560px, 100%);
+    margin: 0 auto;
   }
   .acts {
     list-style: none;
