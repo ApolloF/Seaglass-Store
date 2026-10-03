@@ -4,7 +4,10 @@
 // to the URL to see other states (comma-separated): setup (the one-time
 // source choice), empty (nothing indexed yet), offline (remote searches
 // and providers fail; cached answers come back stale), nochart (Steam's
-// chart is unavailable), slow (remote answers take longer).
+// chart is unavailable), slow (remote answers take longer), playing (a game
+// runs, so indexing waits), extra (a third provider without site search or
+// torrents), nosteam (no Steam account on this PC), private (the Steam
+// wishlist isn't public).
 import type { Api } from "./api";
 import type {
   BrowsePage,
@@ -46,13 +49,17 @@ const day = 86400;
 const gb = 1 << 30;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, flags.has("slow") ? ms * 3 : ms));
 const squash = (t: string) => t.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]/g, "");
-const SOURCE_NAMES: Record<string, string> = { fitgirl: "FitGirl", dodi: "DODI", feeds: "Feeds", steam: "Steam" };
+const SOURCE_NAMES: Record<string, string> = { fitgirl: "FitGirl", dodi: "DODI", example: "Example Archive", feeds: "Feeds", steam: "Steam" };
 
 /** The providers the mock registry declares, as sources.Providers does. */
 const PROVIDERS = [
   { id: "fitgirl", host: "fitgirl-repacks.site", search: true, paged: true, torrents: true, defaultOn: true, notes: [] as string[] },
   { id: "dodi", host: "dodi-repacks.site", search: true, paged: true, torrents: true, defaultOn: true, notes: [] as string[] },
 ];
+/** A provider added later: off until chosen, one finite page, no search. */
+const EXTRA = { id: "example", host: "archive.example", search: false, paged: false, torrents: false, defaultOn: false, notes: ["Lists one page of releases, so it is complete after one request."] };
+const providers = () => (flags.has("extra") ? [...PROVIDERS, EXTRA] : PROVIDERS);
+const searchable = (id: string) => providers().find((p) => p.id === id)?.search ?? true;
 
 // A release as the fixtures write it.
 interface R {
@@ -238,18 +245,20 @@ function status(settings: Settings): DiscoveryStatus {
   const setup = settings.experimentalStore && (flags.has("setup") || st.sourceSetup === "ask");
   const on = (id: string) => settings.experimentalStore && st.privateSources && st.sourceSetup === "done" && st.sources.includes(id) && !flags.has("setup");
   const empty = flags.has("empty");
-  const sources = PROVIDERS.map(({ id, ...caps }) => {
+  const paused = settings.experimentalStore && st.indexingPaused;
+  const playing = flags.has("playing");
+  const sources = providers().map(({ id, ...caps }) => {
     const releases = empty ? 0 : games.reduce((n, g) => n + g.recs.filter((r) => r.release.source === id).length, 0);
     const offline = flags.has("offline");
     return {
       id,
       name: SOURCE_NAMES[id],
       enabled: on(id),
-      state: !on(id) ? "disabled" : refreshing ? "recent" : offline ? "backoff" : id === "dodi" ? "backfill" : "idle",
+      state: !on(id) ? "disabled" : paused || playing ? "paused" : refreshing ? "recent" : offline ? "backoff" : id === "dodi" ? "backfill" : "idle",
       releases,
       recentAt: empty ? 0 : lastRefresh,
-      backfillPage: empty ? 0 : id === "dodi" ? 14 : 112,
-      backfillDone: id === "fitgirl" && !empty,
+      backfillPage: empty || !caps.paged ? 0 : id === "dodi" ? 14 : 112,
+      backfillDone: (id === "fitgirl" || !caps.paged) && !empty,
       retryAt: offline ? now() + 600 : 0,
       error: offline && on(id) ? "couldn't reach the source: no such host" : undefined,
       ...caps,
@@ -262,8 +271,8 @@ function status(settings: Settings): DiscoveryStatus {
     games: empty ? 0 : games.filter((g) => g.recs.length).length,
     releases: sources.reduce((n, s) => n + s.releases, 0),
     refreshing,
-    paused: settings.store.indexingPaused,
-    playing: false,
+    paused,
+    playing,
     stale: flags.has("offline") || now() - lastRefresh > 6 * 3600,
   };
 }
@@ -526,12 +535,14 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
       },
       async pauseIndexing(paused) {
         const s = getSettings();
+        if (!s.experimentalStore) throw new Error("the store is turned off (Settings, Experimental)");
         setSettings({ ...s, store: { ...s.store, indexingPaused: paused } });
         emitStatus();
         return status(getSettings());
       },
       async refresh() {
         needOn();
+        if (getSettings().store.indexingPaused) throw new Error("Indexing is paused. Resume it to check for new releases.");
         refreshing = true;
         emitStatus();
         await wait(1500);
@@ -572,12 +583,14 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
         const mine = ++searchSeq;
         const settings = getSettings();
         const text = squash(q.text);
-        const ids = ["fitgirl", "dodi", "steam"].filter((id) => id === "steam" || (settings.store.privateSources && settings.store.sources.includes(id)));
-        const remote: ProviderProgress[] = ids.map((id) => ({ id, name: SOURCE_NAMES[id], state: text.length < 2 ? "skipped" : "loading", found: 0, cached: false }));
+        const ids = [...providers().map((p) => p.id), "steam"].filter((id) => id === "steam" || (settings.store.privateSources && settings.store.sources.includes(id)));
+        // Providers without a site search are only searched in the index.
+        const remote: ProviderProgress[] = ids.map((id) => ({ id, name: SOURCE_NAMES[id], state: text.length < 2 || !searchable(id) ? "skipped" : "loading", found: 0, cached: false }));
         const result = (): SearchResult => ({ query: copy(q), page: query(getSettings(), q), other: others(q), remote: copy(remote), complete: remote.every((r) => r.state !== "loading") });
         if (text.length < 2) return result();
         searchListeners.forEach((cb) => cb({ text: q.text, remote: copy(remote) }));
         for (const p of remote) {
+          if (p.state === "skipped") continue;
           await wait(p.id === "steam" ? 500 : 900);
           if (mine !== searchSeq) return result(); // superseded: the partial answer
           if (flags.has("offline") && p.id !== "steam") {
@@ -742,17 +755,22 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
         return wishItems();
       },
       async steamAccount() {
-        if (flags.has("nosteam")) return { steamId: "", detected: false, error: "Steam isn't installed" };
+        if (flags.has("nosteam")) return { steamId: "", detected: false, error: "Steam isn't installed." };
         return { steamId: "76561198000000042", detected: true };
       },
       async importSteam(steamId) {
-        if (!/^7656119\d{10}$/.test(steamId.trim())) throw new Error("That isn't a SteamID64 (17 digits starting with 7656119).");
+        const s = getSettings();
+        if (!s.experimentalStore) throw new Error("the store is turned off (Settings, Experimental)");
+        if (!/^7656119\d{10}$/.test(steamId.trim())) throw new Error("That isn't a SteamID64. It has 17 digits and starts with 7656119.");
         await wait(900);
-        if (flags.has("private")) throw new Error("Steam didn't share that wishlist. In Steam, set the profile and its game details to Public.");
+        if (flags.has("private")) throw new Error("Steam didn't share a wishlist for that account. In Steam, set the profile and its game details to Public, then try again.");
+        if (flags.has("offline")) throw new Error("Couldn't reach Steam: no such host");
+        // In Steam's order; a game whose name isn't known yet keeps a placeholder.
         const steamWish = [
           { appId: 1245620, title: "Ember Crown" },
           { appId: 2210110, title: "Hollow Tide" },
           { appId: 9990001, title: "Northwind Saga" },
+          { appId: 9990002, title: "Steam app 9990002" },
         ];
         let added = 0;
         let existing = 0;
@@ -761,14 +779,16 @@ export function mockDiscovery(getSettings: () => Settings, setSettings: (s: Sett
             existing++;
             continue;
           }
-          wishes = [...wishes, { key: `steam:${w.appId}`, title: w.title, steamAppId: w.appId, addedAt: now(), activity: [], origin: "steam" }];
+          // Saved at the same instant: Steam's first game lists first.
+          wishes = [...wishes, { key: `steam:${w.appId}`, title: w.title, steamAppId: w.appId, addedAt: now() - added, activity: [], origin: "steam" }];
           added++;
         }
         emitWish();
         emitGames({ keys: steamWish.map((w) => `steam:${w.appId}`), all: false });
         const items = wishItems();
         const available = items.filter((i) => steamWish.some((w) => i.steamAppId === w.appId) && i.game.sourceBacked).length;
-        return { steamId: steamId.trim(), fetched: steamWish.length, added, existing, available, searching: steamWish.length - available, items };
+        const canSearch = s.store.privateSources && s.store.sources.some(searchable);
+        return { steamId: steamId.trim(), fetched: steamWish.length, added, existing, available, searching: canSearch ? steamWish.length - available : 0, items };
       },
       onChange: (cb) => on(wishListeners, cb),
     },

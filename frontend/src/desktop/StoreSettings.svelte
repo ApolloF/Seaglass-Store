@@ -7,8 +7,9 @@
   import { feedLine } from "../lib/catalog";
   import { shop } from "../lib/shop.svelte";
   import { lib } from "../lib/store.svelte";
-  import { sourceLabel, sourceLine } from "../lib/storefront";
+  import { providerLine, providerTraits } from "../lib/indexing";
   import { storefront } from "../lib/storefront.svelte";
+  import IndexingPause from "./store/IndexingPause.svelte";
   import type { FeedInfo, Settings, StoreSettings, TorrentInterface, TorrentNetwork } from "../lib/types";
 
   const s = $derived(lib.settings);
@@ -98,7 +99,6 @@
     if (status) storefront.status = status;
     checking = false;
   }
-  const sourceStatus = (id: string) => storefront.status?.sources.find((x) => x.id === id);
 
   // Interfaces come from qBittorrent, so listing them starts it.
   let interfaces = $state<TorrentInterface[] | null>(null);
@@ -207,18 +207,21 @@
 
   <div class="group">
     <span class="glabel">Source discovery</span>
-    <Toggle checked={st.privateSources} title="Browse repack sources" detail="Show FitGirl and DODI releases in the Store. Seaglass reads public release details only, such as titles, versions and sizes. It never downloads games by itself." onchange={(v) => setStore({ privateSources: v })} />
+    <Toggle checked={st.privateSources} title="Browse repack sources" detail="Show releases from the sources you choose in the Store. Seaglass reads public release details only, such as titles, versions and sizes. It never downloads games by itself." onchange={(v) => setStore({ privateSources: v })} />
     {#if st.privateSources}
-      {#each ["fitgirl", "dodi"] as id (id)}
-        {@const src = sourceStatus(id)}
-        <Toggle checked={st.sources.includes(id)} disabled={sourcesBusy} title={sourceLabel(id)} detail={src ? sourceLine(src) : "Not indexed yet"} onchange={(v) => toggleSource(id, v)} />
-        {#if src?.enabled && src.error}<p class="hint err">{src.error}</p>{/if}
+      {#each storefront.status?.sources ?? [] as src (src.id)}
+        {@const traits = providerTraits(src)}
+        <Toggle checked={st.sources.includes(src.id)} disabled={sourcesBusy} title={src.name} detail={src.enabled ? providerLine(src, storefront.status!) : "Off"} onchange={(v) => toggleSource(src.id, v)} />
+        {#if traits.length}<p class="hint">{traits.join(" · ")}</p>{/if}
+        {#if src.enabled && src.error}<p class="hint err">{src.error}</p>{/if}
       {/each}
       {#if !st.sources.length}<p class="hint">Choose at least one source to see its releases in the Store.</p>{/if}
       {#if storefront.status?.enabled}
         <div class="row">
-          <button type="button" class="btn" disabled={checking || storefront.status.refreshing} onclick={checkNow}><Icon name="refresh" size={16} />{checking || storefront.status.refreshing ? "Checking…" : "Check for new releases"}</button>
+          <IndexingPause />
+          <button type="button" class="btn" disabled={checking || storefront.status.refreshing || storefront.status.paused} onclick={checkNow}><Icon name="refresh" size={16} />{checking || storefront.status.refreshing ? "Checking…" : "Check for new releases"}</button>
         </div>
+        {#if storefront.status.paused}<p class="hint">Indexing is paused on this PC. Game pages and searches still work.</p>{/if}
       {/if}
     {/if}
   </div>

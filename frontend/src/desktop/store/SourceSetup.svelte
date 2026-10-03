@@ -3,11 +3,17 @@
   // before sources were found automatically.
   import Icon from "../../components/Icon.svelte";
   import { api } from "../../lib/api";
+  import { providerTraits } from "../../lib/indexing";
   import { lib } from "../../lib/store.svelte";
   import { storefront } from "../../lib/storefront.svelte";
 
-  let fitgirl = $state(true);
-  let dodi = $state(true);
+  const providers = $derived(storefront.status?.sources ?? []);
+  // Only the providers meant for new Store users start checked.
+  let picked = $state<Record<string, boolean>>({});
+  const checked = (id: string) => picked[id] ?? !!providers.find((p) => p.id === id)?.defaultOn;
+  const chosen = $derived(providers.filter((p) => checked(p.id)).map((p) => p.id));
+  const names = $derived(providers.map((p) => p.name));
+  const listed = $derived(names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "release sources"));
   let busy = $state(false);
 
   async function start(chosen: string[]) {
@@ -24,13 +30,21 @@
 <div class="sf-empty setup">
   <Icon name="cloudDown" size={40} stroke={1.6} />
   <h2>Find games automatically</h2>
-  <p>Seaglass can read the public release lists of FitGirl and DODI to show new games here. It only reads release details such as titles, versions, sizes and languages. It never downloads games by itself.</p>
+  <p>Seaglass can read the public release lists of {listed} to show new games here. It only reads release details such as titles, versions, sizes and languages. It never downloads games by itself.</p>
   <div class="choices" role="group" aria-label="Sources to index">
-    <label class="choice"><input type="checkbox" bind:checked={fitgirl} /><span>FitGirl</span></label>
-    <label class="choice"><input type="checkbox" bind:checked={dodi} /><span>DODI</span></label>
+    {#each providers as p (p.id)}
+      {@const traits = providerTraits(p)}
+      <label class="choice">
+        <input type="checkbox" checked={checked(p.id)} onchange={(e) => (picked[p.id] = e.currentTarget.checked)} />
+        <span class="what">
+          <span class="name">{p.name}</span>
+          {#if traits.length}<span class="traits">{traits.join(" · ")}</span>{/if}
+        </span>
+      </label>
+    {/each}
   </div>
   <div class="actions">
-    <button type="button" class="sf-primary" disabled={busy || (!fitgirl && !dodi)} onclick={() => start([fitgirl && "fitgirl", dodi && "dodi"].filter((s): s is string => !!s))}>
+    <button type="button" class="sf-primary" disabled={busy || !chosen.length} onclick={() => start(chosen)}>
       {busy ? "Starting…" : "Start"}
     </button>
     <button type="button" class="sf-btn" disabled={busy} onclick={() => start([])}>Don't use sources</button>
@@ -54,7 +68,8 @@
     align-items: center;
     gap: 10px;
     min-height: 44px;
-    padding: 0 18px;
+    max-width: 100%;
+    padding: 8px 18px;
     border-radius: var(--radius);
     background: var(--surface-2);
     color: var(--text);
@@ -65,6 +80,17 @@
     width: 18px;
     height: 18px;
     accent-color: var(--accent);
+  }
+  .what {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    text-align: left;
+  }
+  .traits {
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 500;
   }
   .choice:focus-within {
     outline: 2px solid var(--accent);
