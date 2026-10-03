@@ -1,14 +1,12 @@
 <script lang="ts" module>
-  export type Section = "home" | "library" | "search";
-  export const SECTIONS: { id: Section; label: string }[] = [
-    { id: "home", label: "Home" },
-    { id: "library", label: "Library" },
-    { id: "search", label: "Search" },
-  ];
+  export type { Section } from "../lib/bpstore";
 </script>
 
 <script lang="ts">
   // Big picture's sections, switched with L1 / R1 from anywhere (or clicked).
+  // The Store is one only while the experimental Store is on.
+  import { sectionsFor, type Section } from "../lib/bpstore";
+  import { lib } from "../lib/store.svelte";
   import Glyph from "./Glyph.svelte";
 
   let { current, onpick }: { current: Section | null; onpick: (s: Section) => void } = $props();
@@ -16,7 +14,7 @@
 
 <nav class="sections" aria-label="Sections">
   <Glyph button="lb" size={30} />
-  {#each SECTIONS as s (s.id)}
+  {#each sectionsFor(!!lib.settings?.experimentalStore) as s (s.id)}
     <button type="button" class="tab" class:on={s.id === current} aria-current={s.id === current ? "page" : undefined} tabindex="-1" onclick={() => onpick(s.id)}>{s.label}</button>
   {/each}
   <Glyph button="rb" size={30} />
