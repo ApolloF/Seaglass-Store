@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -392,4 +393,113 @@ func benchPage(n int) []sources.Entry {
 			Warnings: []string{"Based on the GOG release. Some DLCs are optional and can be skipped while installing."}}
 	}
 	return out
+}
+
+// A source file that is there but can't be used held pages its journal
+// doesn't: the journal's records are kept, but its crawl position would
+// skip those pages, so the source is indexed again from the newest page.
+func TestAnUnusableSourceFileRestartsTheCrawlInsteadOfSkippingItsPages(t *testing.T) {
+	for name, spoil := range map[string]func(path string) error{
+		"cut short":  func(path string) error { return os.WriteFile(path, []byte(`{"schema":`), 0o600) },
+		"unreadable": func(path string) error { return os.Mkdir(path, 0o755) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			ix, dir := testIndex(t)
+			f := newFakeSource(t, "dodi", 95)
+			clk := &clock{time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
+			// Pages 1-5 are in the file, pages 6-10 and a Retry-After in
+			// the journal.
+			Pass(context.Background(), ix, f.src, f, true, clk.now, PassHooks{})
+			if err := ix.Save(); err != nil {
+				t.Fatal(err)
+			}
+			Pass(context.Background(), ix, f.src, f, false, clk.now, PassHooks{})
+			wait := clk.now().Add(time.Hour)
+			if _, err := ix.commitPage("dodi", nil, OriginListing, false, clk.now(), func(c *CrawlState) { c.RetryAt = wait }); err != nil {
+				t.Fatal(err)
+			}
+			if c := ix.Crawl("dodi"); !c.BackfillDone || ix.Counts()["dodi"] != 95 {
+				t.Fatalf("before: %+v", c)
+			}
+			path := filepath.Join(dir, "discovery", "dodi.json")
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+			if err := spoil(path); err != nil {
+				t.Fatal(err)
+			}
+			disk := reopen(dir)
+			c := disk.Crawl("dodi")
+			if c.NextPage != 0 || c.BackfillDone || !c.RecentAt.IsZero() || disk.Counts()["dodi"] != 45 {
+				t.Errorf("after reopening: %+v, %d records", c, disk.Counts()["dodi"])
+			}
+			if !c.RetryAt.Equal(wait) {
+				t.Errorf("the wait was forgotten: %+v", c)
+			}
+			clk.add(time.Hour)
+			Pass(context.Background(), disk, f.src, f, false, clk.now, PassHooks{})
+			if n := f.count("https://dodi-repacks.site/page/2/"); n != 2 {
+				t.Errorf("page 2 fetched %d times, want again after the restart", n)
+			}
+		})
+	}
+}
+
+func TestAMissingSourceFileKeepsTheJournalsCrawlPosition(t *testing.T) {
+	ix, dir := testIndex(t)
+	f := newFakeSource(t, "dodi", 95)
+	clk := &clock{time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
+	Pass(context.Background(), ix, f.src, f, true, clk.now, PassHooks{})
+	if c := reopen(dir).Crawl("dodi"); c.NextPage != 6 || c.RecentAt.IsZero() {
+		t.Errorf("the first indexing, before any save: %+v", c)
+	}
+}
+
+func TestPagesAfterACutShortJournalLineSurviveTheNextRestart(t *testing.T) {
+	ix, dir := testIndex(t)
+	f := newFakeSource(t, "dodi", 95)
+	clk := &clock{time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
+	Pass(context.Background(), ix, f.src, f, true, clk.now, PassHooks{})
+	path := filepath.Join(dir, "discovery", "dodi.journal")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, b[:len(b)-20], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The restart replays up to the cut-short line (page 4), and the next
+	// pages are journaled after it; then Seaglass stops again.
+	ix = reopen(dir)
+	Pass(context.Background(), ix, f.src, f, false, clk.now, PassHooks{})
+	disk := reopen(dir)
+	if c := disk.Crawl("dodi"); c.NextPage != 10 || disk.Counts()["dodi"] != 90 {
+		t.Errorf("after the second restart: %+v, %d records", c, disk.Counts()["dodi"])
+	}
+}
+
+func TestTemporaryFilesOfInterruptedSavesAreRemoved(t *testing.T) {
+	dir := t.TempDir()
+	disc := filepath.Join(dir, "discovery")
+	if err := os.MkdirAll(disc, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	left := []string{filepath.Join(disc, "fitgirl.json.123.tmp"), filepath.Join(dir, "store-identity.json.456.tmp")}
+	kept := []string{filepath.Join(disc, "notes.tmp"), filepath.Join(dir, "settings.json.789.tmp")}
+	for _, p := range append(slices.Clone(left), kept...) {
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reopen(dir)
+	for _, p := range left {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s is still there", filepath.Base(p))
+		}
+	}
+	for _, p := range kept {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("%s was removed: %v", filepath.Base(p), err)
+		}
+	}
 }

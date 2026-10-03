@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ApolloF/Seaglass/internal/store/sources"
@@ -29,6 +32,49 @@ const (
 type Fetcher interface {
 	FetchDocument(ctx context.Context, raw string) (sources.Document, error)
 }
+
+// Paced makes a source's requests (passes, release pages, searches) take
+// turns and look at the source's wait when their turn comes, not only
+// before they queue: a request queued behind one the source answered with
+// "wait" isn't sent. That answer's caller saves the wait only after it
+// returns, so the wait it asks for is held here meanwhile.
+func Paced(ix *Index, src sources.Source, f Fetcher) Fetcher {
+	return &paced{ix: ix, src: src, next: f}
+}
+
+type paced struct {
+	ix   *Index
+	src  sources.Source
+	next Fetcher
+
+	mu   sync.Mutex
+	hold time.Time // the wait the last answer asked for
+}
+
+func (p *paced) FetchDocument(ctx context.Context, raw string) (sources.Document, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	until := p.ix.Crawl(p.src.ID).RetryAt
+	if p.hold.After(until) {
+		until = p.hold
+	}
+	if time.Now().Before(until) {
+		return sources.Document{}, waiting{waitError(p.src, until)}
+	}
+	doc, err := p.next.FetchDocument(ctx, raw)
+	if slowDown(err) {
+		// The same wait its caller is about to save.
+		c := p.ix.Crawl(p.src.ID)
+		Backoff(&c, err, time.Now())
+		p.hold = c.RetryAt
+	}
+	return doc, err
+}
+
+// waiting is a request not sent because its source asked to wait.
+type waiting struct{ error }
+
+func (e waiting) Unwrap() error { return e.error }
 
 // Due says what a source needs now: the newest listings when they are six
 // hours old, and older pages until a confirmed end. force is a manual
@@ -290,6 +336,11 @@ func failed(ix *Index, src string, res *PassResult, err error, now time.Time) Pa
 		res.Stopped = StopCanceled
 		return *res
 	}
+	if errors.As(err, new(waiting)) {
+		// Not sent: the wait another request was answered with holds.
+		res.Stopped = StopWaiting
+		return *res
+	}
 	res.Err = err
 	// The wait is saved at once: a restart honours it too.
 	if _, jerr := ix.commitPage(src, nil, OriginListing, false, now, func(c *CrawlState) { Backoff(c, err, now) }); jerr != nil {
@@ -315,6 +366,18 @@ func slowDown(err error) bool {
 		return false
 	}
 	return status.Status == http.StatusTooManyRequests || status.Status == http.StatusServiceUnavailable || status.RetryAfter != ""
+}
+
+// transient says asking again later can fix a failed request: the source
+// asked to wait or had a server error, the request timed out, was stopped
+// or wasn't sent, or it didn't get through.
+func transient(err error) bool {
+	var status *sources.HTTPError
+	if errors.As(err, &status) {
+		return status.Status >= 500 || status.Status == http.StatusRequestTimeout || slowDown(err)
+	}
+	var netErr net.Error
+	return errors.As(err, new(waiting)) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &netErr)
 }
 
 // backOff puts a source into backoff after a search or a release page
@@ -386,7 +449,9 @@ func FetchDetail(ctx context.Context, ix *Index, src sources.Source, f Fetcher, 
 				err = errors.Join(err, fmt.Errorf("saving the index: %w", jerr))
 			}
 		}
-		if !errors.Is(err, context.Canceled) {
+		// A failure asking again can fix leaves the record waiting to be
+		// read; only a lasting one stops that.
+		if !transient(err) {
 			ix.Update(src.ID, id, func(r *Record) { r.FetchError = err.Error() })
 		}
 		return err

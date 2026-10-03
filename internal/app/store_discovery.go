@@ -63,14 +63,25 @@ type discoveryState struct {
 	detailQueue []detailRequest
 	detailWake  chan struct{}
 	queuedIDs   map[string]bool
+	detailRetry map[string]time.Time // release → when it may be read again after a failure
 }
 
-type detailRequest struct{ src, id, key string }
+// detailRequest asks for a release page. A background one, from the
+// wishlist, is indexing work: it waits while indexing can't run.
+type detailRequest struct {
+	src, id, key string
+	background   bool
+}
+
+// detailRetry is how long a release whose page couldn't be read waits
+// before it is asked for again: an open game page asks on every update,
+// and the wishlist after every release page.
+const detailRetry = 5 * time.Minute
 
 func newDiscoveryState(c *Core) *discoveryState {
 	d := &discoveryState{c: c, auto: true, kick: make(chan struct{}, 1), detailWake: make(chan struct{}, 1), breather: 3 * time.Second, lookup: sources.Lookup,
 		fetchers: map[string]discovery.Fetcher{}, passMu: map[string]*sync.Mutex{}, running: map[string]bool{}, active: map[string]string{}, force: map[string]bool{},
-		steamNames: map[int]string{}, queuedIDs: map[string]bool{},
+		steamNames: map[int]string{}, queuedIDs: map[string]bool{}, detailRetry: map[string]time.Time{},
 		srcCtx: map[string]context.Context{}, srcCancel: map[string]context.CancelFunc{}, idxCtx: map[string]context.Context{}, idxCancel: map[string]context.CancelFunc{}}
 	d.isPlaying = func() bool { return c.Launch != nil && c.Launch.Active() }
 	for _, src := range discovery.Sources {
@@ -95,6 +106,7 @@ func (d *discoveryState) fetcher(src string) (discovery.Fetcher, sources.Provide
 	if !ok || !s.Discovery {
 		return nil, s, fmt.Errorf("unknown source %q", src)
 	}
+	ix := d.index()
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if f := d.fetchers[src]; f != nil {
@@ -104,8 +116,9 @@ func (d *discoveryState) fetcher(src string) (discovery.Fetcher, sources.Provide
 	if err != nil {
 		return nil, s, err
 	}
-	d.fetchers[src] = client
-	return client, s, nil
+	f := discovery.Paced(ix, s.Source, client)
+	d.fetchers[src] = f
+	return f, s, nil
 }
 
 // ctx is the context passes and searches run in. It's cancelled when the
@@ -222,8 +235,8 @@ func (d *discoveryState) tick() {
 	d.mu.Unlock()
 	if changed {
 		d.emitStatus()
-		if !playing && d.c.wishlist != nil {
-			d.c.wishlist.wakeSearches()
+		if !playing {
+			d.resumeWaiting()
 		}
 	}
 	if playing || d.paused() {
@@ -319,7 +332,10 @@ func (d *discoveryState) pass(src string, force, wait bool) (discovery.PassResul
 		},
 	})
 	d.setActive(src, "")
-	if res.Stopped != discovery.StopPaused {
+	// A pass stopped by a pause, or by turning its source off, keeps its
+	// forced refresh: turning the source on again while this pass ends sets
+	// it anew, and this pass mustn't take it away.
+	if res.Stopped != discovery.StopPaused && res.Stopped != discovery.StopCanceled {
 		d.mu.Lock()
 		delete(d.force, src)
 		d.mu.Unlock()
@@ -447,9 +463,7 @@ func (d *discoveryState) settingsChanged(old, saved settings.Settings) {
 		d.mu.Unlock()
 	case !saved.Store.IndexingPaused && old.Store.IndexingPaused:
 		d.wake()
-		if d.c.wishlist != nil {
-			d.c.wishlist.wakeSearches()
-		}
+		d.resumeWaiting()
 	}
 	wasOn := func(v settings.Settings, src string) bool { return v.ExperimentalStore && v.Store.DiscoveryOn(src) }
 	var off []string
@@ -472,6 +486,16 @@ func (d *discoveryState) settingsChanged(old, saved settings.Settings) {
 		d.c.emit(EventStoreGames, discovery.Change{Keys: []string{}, All: true})
 	}
 	d.emitStatus()
+}
+
+// resumeWaiting starts the wishlist's work that waited while indexing
+// couldn't run: the idle searches, and the release pages of saved games.
+func (d *discoveryState) resumeWaiting() {
+	if d.c.wishlist == nil || len(d.enabled()) == 0 {
+		return
+	}
+	d.c.wishlist.wakeSearches()
+	d.c.wishlist.observe(d)
 }
 
 // stopSources cancels the work of the sources turned off: their passes,
@@ -705,9 +729,8 @@ func (d *discoveryState) details(key string) (discovery.GameDetails, error) {
 		out.Identity.Name = g.Title
 	}
 	for _, r := range g.Records {
-		if discovery.NeedsDetail(r) {
+		if discovery.NeedsDetail(r) && d.queueDetail(r.Entry.SourceID, r.Entry.ID, key, true) {
 			out.Loading = true
-			d.queueDetail(r.Entry.SourceID, r.Entry.ID, key, true)
 		}
 	}
 	if s.Installed != nil {
@@ -751,16 +774,27 @@ func offerItem(r discovery.Release) feed.Item {
 	return feed.Item{Title: r.Title, Version: r.Version, SizeBytes: r.SizeBytes, Languages: r.Languages}
 }
 
-// queueDetail asks for a release's article in the background; opened
-// games go first.
-func (d *discoveryState) queueDetail(src, id, key string, first bool) {
+// queueDetail asks for a release's article; opened games (first) go
+// first, the wishlist's requests are background work. false when it isn't
+// queued: its last reading failed less than detailRetry ago.
+func (d *discoveryState) queueDetail(src, id, key string, first bool) bool {
 	d.mu.Lock()
+	if at, ok := d.detailRetry[id]; ok {
+		if time.Now().Before(at) {
+			d.mu.Unlock()
+			return false
+		}
+		delete(d.detailRetry, id)
+	}
 	if d.queuedIDs[id] {
+		if first {
+			d.openedFirst(id)
+		}
 		d.mu.Unlock()
-		return
+		return true
 	}
 	d.queuedIDs[id] = true
-	req := detailRequest{src, id, key}
+	req := detailRequest{src: src, id: id, key: key, background: !first}
 	if first {
 		d.detailQueue = append([]detailRequest{req}, d.detailQueue...)
 	} else {
@@ -771,6 +805,19 @@ func (d *discoveryState) queueDetail(src, id, key string, first bool) {
 	case d.detailWake <- struct{}{}:
 	default:
 	}
+	return true
+}
+
+// openedFirst moves a queued request for a game the person opened to the
+// front, as their own. d.mu is held.
+func (d *discoveryState) openedFirst(id string) {
+	i := slices.IndexFunc(d.detailQueue, func(r detailRequest) bool { return r.id == id })
+	if i < 0 {
+		return // being read now
+	}
+	req := d.detailQueue[i]
+	req.background = false
+	d.detailQueue = append([]detailRequest{req}, slices.Delete(d.detailQueue, i, i+1)...)
 }
 
 func (d *discoveryState) detailLoop(ctx context.Context) {
@@ -791,22 +838,48 @@ func (d *discoveryState) detailLoop(ctx context.Context) {
 			}
 			continue
 		}
-		if slices.Contains(d.enabled(), req.src) {
-			if f, s, err := d.fetcher(req.src); err == nil {
-				err := discovery.FetchDetail(d.sourceCtx(req.src), d.index(), s.Source, f, req.id, time.Now())
-				if err != nil && !errors.Is(err, context.Canceled) {
-					logx.Printf("store discovery: release details: %v", err)
-				}
-				d.save()
-				d.c.emit(EventStoreGames, discovery.Change{Keys: []string{req.key}})
-				if d.c.wishlist != nil {
-					d.c.wishlist.observe(d)
-				}
-			}
-		}
+		d.readDetail(*req)
 		d.mu.Lock()
 		delete(d.queuedIDs, req.id)
 		d.mu.Unlock()
+	}
+}
+
+// readDetail reads one queued release page. A background request is
+// dropped while indexing is paused or a game runs (resumeWaiting asks for
+// it again) and is cancelled by a pause. After a failure, the release
+// waits detailRetry, or until the source's Retry-After, before it is
+// asked for again.
+func (d *discoveryState) readDetail(req detailRequest) {
+	if !slices.Contains(d.enabled(), req.src) {
+		return
+	}
+	ctx := d.sourceCtx(req.src)
+	if req.background {
+		if d.halted(req.src) {
+			return
+		}
+		ctx = d.indexCtx(req.src)
+	}
+	f, s, err := d.fetcher(req.src)
+	if err != nil {
+		return
+	}
+	now := time.Now()
+	if err := discovery.FetchDetail(ctx, d.index(), s.Source, f, req.id, now); err != nil && !errors.Is(err, context.Canceled) {
+		logx.Printf("store discovery: release details: %v", err)
+		retry := now.Add(detailRetry)
+		if at := d.index().Crawl(req.src).RetryAt; at.After(retry) {
+			retry = at
+		}
+		d.mu.Lock()
+		d.detailRetry[req.id] = retry
+		d.mu.Unlock()
+	}
+	d.save()
+	d.c.emit(EventStoreGames, discovery.Change{Keys: []string{req.key}})
+	if d.c.wishlist != nil {
+		d.c.wishlist.observe(d)
 	}
 }
 

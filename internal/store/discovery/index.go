@@ -3,6 +3,7 @@ package discovery
 import (
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -57,30 +58,55 @@ type Index struct {
 
 // OpenIndex loads the index from dir and the corrections from
 // identityPath. Missing, unreadable or older-schema files start empty: the
-// index is a cache and indexing again rebuilds it.
+// index is a cache and indexing again rebuilds it. A source file that is
+// there but can't be used keeps the records its journal holds, but not
+// the journal's crawl position: the pages before it were in the lost file,
+// so the source is indexed again from its newest page.
 func OpenIndex(dir, identityPath string) *Index {
 	ix := &Index{dir: dir, identityPath: identityPath, records: map[string]map[string]*Record{}, crawl: map[string]*CrawlState{}, dirty: map[string]bool{}, seq: map[string]int64{}}
+	removeTemps(dir, "*.json.*.tmp")
+	removeTemps(filepath.Dir(identityPath), filepath.Base(identityPath)+".*.tmp")
+	cutShort := false
 	for _, src := range Sources {
 		ix.records[src] = map[string]*Record{}
 		ix.crawl[src] = &CrawlState{Source: src}
-		ix.replayJournal(src, ix.loadSource(src))
+		folded, err := ix.loadSource(src)
+		if !ix.replayJournal(src, folded) {
+			cutShort = true
+		}
+		if err != nil {
+			ix.restartCrawl(src)
+		}
 	}
 	if b, err := os.ReadFile(identityPath); err == nil {
 		_ = json.Unmarshal(b, &ix.identity)
+	}
+	if cutShort {
+		// Pages appended after a cut-short line would be skipped on the
+		// next start too: fold what was replayed into the source files now,
+		// which removes the journal. A failed save keeps the lines held,
+		// and the next save tries again.
+		_ = ix.Save()
 	}
 	return ix
 }
 
 // loadSource reads a source's file and returns the last journal line it
-// holds.
-func (ix *Index) loadSource(src string) int64 {
+// holds. A missing file is no error: the source wasn't indexed yet.
+func (ix *Index) loadSource(src string) (int64, error) {
 	b, err := os.ReadFile(ix.sourcePath(src))
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
 	if err != nil {
-		return 0
+		return 0, err
 	}
 	var f sourceFile
-	if json.Unmarshal(b, &f) != nil || f.Schema != IndexSchema {
-		return 0
+	if err := json.Unmarshal(b, &f); err != nil {
+		return 0, err
+	}
+	if f.Schema != IndexSchema {
+		return 0, errors.New("the index file has another schema")
 	}
 	f.Crawl.Source = src
 	ix.crawl[src] = &f.Crawl
@@ -92,7 +118,28 @@ func (ix *Index) loadSource(src string) int64 {
 		ix.records[src][r.Entry.ID] = &r
 	}
 	ix.seq[src] = f.Folded
-	return f.Folded
+	return f.Folded, nil
+}
+
+// restartCrawl forgets how far a source was indexed and keeps only its
+// wait: a Retry-After or a backoff still holds.
+func (ix *Index) restartCrawl(src string) {
+	c := ix.crawl[src]
+	*c = CrawlState{Source: src, Failures: c.Failures, RetryAt: c.RetryAt, Error: c.Error}
+}
+
+// removeTemps deletes temporary files an interrupted save left behind;
+// each save writes a file of its own, so nothing else replaces them.
+func removeTemps(dir, pattern string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if ok, _ := filepath.Match(pattern, e.Name()); ok && !e.IsDir() {
+			_ = os.Remove(filepath.Join(dir, e.Name()))
+		}
+	}
 }
 
 func (ix *Index) sourcePath(src string) string { return filepath.Join(ix.dir, src+".json") }
@@ -163,6 +210,11 @@ func writeAtomic(path string, b []byte) error {
 		return err
 	}
 	_, err = f.Write(b)
+	if err == nil {
+		// The data must be on disk before the rename is: after a power
+		// loss, the rename alone can survive and leave an empty file.
+		err = f.Sync()
+	}
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
@@ -336,12 +388,13 @@ const previewRecheck = 24 * time.Hour
 // relisted says a read article's summary row now claims something else: a
 // new title (another update, a build, a preview label gone) or a newer
 // dated batch. A row that only lost its date, as when a news batch leaves
-// a catalog's front page, is no change.
+// a catalog's front page, is no change. An article whose last reading
+// failed for good (FetchError) is read again once its row changes too.
 func relisted(r *Record, e sources.Entry, now time.Time) bool {
-	if r.Detailed.IsZero() {
+	if r.Detailed.IsZero() && r.FetchError == "" {
 		return false // already waiting to be read
 	}
-	if r.Entry.ReleaseKind == "preview" && now.Sub(r.Detailed) >= previewRecheck {
+	if r.Entry.ReleaseKind == "preview" && !r.Detailed.IsZero() && now.Sub(r.Detailed) >= previewRecheck {
 		return true
 	}
 	if r.Listed == "" {

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/ApolloF/Seaglass/internal/logx"
@@ -54,13 +55,17 @@ func (w *wishlistState) searchLoop(ctx context.Context) {
 
 // canSearch: a chosen source has its own site search, so queued games
 // will be searched once indexing may run.
-func (w *wishlistState) canSearch() bool {
+func (w *wishlistState) canSearch() bool { return len(w.searchChosen()) > 0 }
+
+// searchChosen are the chosen sources with a site search.
+func (w *wishlistState) searchChosen() []string {
+	var out []string
 	for _, src := range w.c.discovery.enabled() {
 		if w.c.discovery.searchable(src) {
-			return true
+			out = append(out, src)
 		}
 	}
-	return false
+	return out
 }
 
 // searchSources are the chosen sources with a site search that may be
@@ -68,8 +73,8 @@ func (w *wishlistState) canSearch() bool {
 // soonest wait of the others (zero when none waits).
 func (w *wishlistState) searchSources(now time.Time) (srcs []string, until time.Time) {
 	d := w.c.discovery
-	for _, src := range d.enabled() {
-		if !d.searchable(src) || d.halted(src) {
+	for _, src := range w.searchChosen() {
+		if d.halted(src) {
 			continue
 		}
 		if at := d.index().Crawl(src).RetryAt; now.Before(at) {
@@ -84,11 +89,14 @@ func (w *wishlistState) searchSources(now time.Time) (srcs []string, until time.
 }
 
 // searchNext searches for the next queued game, if one may be searched
-// now, and says how long to wait before looking again. A game is done
-// once every chosen source answered its search; otherwise it goes to the
-// back of the queue and is searched again on its turn.
+// now, and says how long to wait before looking again. Each search asks
+// only the chosen sources that haven't answered that game yet. A game is
+// done once every chosen source answered; otherwise it goes to the back
+// of the queue, and waits for its turn and for a missing source that may
+// be asked, until the queue gives up on it (wishlist.SearchMisses).
 func (w *wishlistState) searchNext(now time.Time) time.Duration {
 	d := w.c.discovery
+	chosen := w.searchChosen()
 	srcs, until := w.searchSources(now)
 	if len(srcs) == 0 {
 		if !until.IsZero() {
@@ -96,12 +104,24 @@ func (w *wishlistState) searchNext(now time.Time) time.Duration {
 		}
 		return searchIdle
 	}
+	missing := func(answered []string) []string {
+		return slices.DeleteFunc(slices.Clone(chosen), func(src string) bool { return slices.Contains(answered, src) })
+	}
+	// A game is ready when a missing source may be asked now, or when none
+	// is missing anymore (a source was turned off) and it is done.
+	ready := func(answered []string) bool {
+		m := missing(answered)
+		return len(m) == 0 || slices.ContainsFunc(m, func(src string) bool { return slices.Contains(srcs, src) })
+	}
 	q := w.queue()
 	for {
-		key, wait := q.Next(now)
+		key, wait := q.Next(now, ready)
 		if key == "" {
-			if wait > 0 {
+			switch {
+			case wait > 0:
 				return wait
+			case !until.IsZero():
+				return min(until.Sub(now), searchIdle)
 			}
 			return searchIdle
 		}
@@ -128,18 +148,25 @@ func (w *wishlistState) searchNext(now time.Time) time.Duration {
 			w.logErr(q.Done(key, now))
 			continue
 		}
-		complete, added := until.IsZero(), false
-		for _, src := range srcs {
+		var answered []string
+		complete, added := true, false
+		for _, src := range missing(q.Answered(key)) {
+			if !slices.Contains(srcs, src) {
+				complete = false // it asked to wait; asked on a later turn
+				continue
+			}
 			ctx := d.indexCtx(src)
 			if d.halted(src) || ctx.Err() != nil {
 				return searchIdle // stays queued for when indexing may run again
 			}
 			if _, ok := d.search.Source(src, title, now); ok {
-				continue // answered within the hour
+				answered = append(answered, src) // answered within the hour
+				continue
 			}
 			f, s, err := d.fetcher(src)
 			if err != nil {
 				logx.Printf("store wishlist: %s: %v", src, err)
+				answered = append(answered, src) // it can't be asked at all
 				continue
 			}
 			before := d.index().Counts()[src]
@@ -149,22 +176,27 @@ func (w *wishlistState) searchNext(now time.Time) time.Duration {
 					return searchIdle
 				}
 				logx.Printf("store wishlist: searching %s for %q: %v", src, title, err)
-				complete = complete && !discovery.Unanswered(err)
+				if discovery.Unanswered(err) {
+					complete = false
+				} else {
+					answered = append(answered, src)
+				}
 				continue
 			}
+			answered = append(answered, src)
 			d.search.Put(src, title, n, nil, now)
 			added = added || d.index().Counts()[src] > before
 		}
 		if complete {
 			w.logErr(q.Done(key, now))
 		} else {
-			w.logErr(q.Later(key, now))
+			w.logErr(q.Later(key, answered, now))
 		}
 		if added {
 			d.save()
 			d.indexChanged(nil, "")
 		}
-		_, wait = q.Next(now)
+		_, wait = q.Next(now, nil)
 		return wait
 	}
 }
