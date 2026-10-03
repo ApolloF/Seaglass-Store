@@ -109,6 +109,9 @@ type Job struct {
 	Uninstaller string         `json:"uninstaller,omitempty"` // command line that removes the game
 	InstalledAt int64          `json:"installedAt,omitempty"`
 	InstallDone int64          `json:"installDone,omitempty"` // bytes in the game's folder while installing
+	// The installer ran into InstallDir at least once, so files in it are
+	// its own and a retry may go over them.
+	InstallStarted bool `json:"installStarted,omitempty"`
 	Stalled     bool           `json:"stalled,omitempty"`     // the installer has done nothing visible for a while
 	Hash        string         `json:"hash,omitempty"`        // once the engine has it
 	Name        string         `json:"name,omitempty"`        // the torrent's own name: its folder (or file) in SavePath
@@ -198,10 +201,25 @@ func Open(path string) *Store {
 		if p == path {
 			_ = writeAtomic(path+".bak", b)
 		}
+		for i := range jobs {
+			interrupted(&jobs[i])
+		}
 		s.jobs = jobs
 		break
 	}
 	return s
+}
+
+// interrupted puts a download that Seaglass was checking or installing
+// when it closed (or crashed) where it can go on: nothing picks those
+// states up again, and they can't be removed or retried.
+func interrupted(j *Job) {
+	switch j.State {
+	case Scanning:
+		j.State, j.Safety = Downloaded, nil // checked again
+	case Installing:
+		j.State, j.Error, j.Stalled = Failed, "Seaglass closed while the game was installing. Retry to install it again.", false
+	}
 }
 
 // All returns the downloads, oldest first.

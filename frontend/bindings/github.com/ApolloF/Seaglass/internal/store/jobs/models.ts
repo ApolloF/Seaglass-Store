@@ -126,6 +126,12 @@ export interface Job {
     "installDone"?: number;
 
     /**
+     * The installer ran into InstallDir at least once, so files in it are
+     * its own and a retry may go over them.
+     */
+    "installStarted"?: boolean;
+
+    /**
      * the installer has done nothing visible for a while
      */
     "stalled"?: boolean;

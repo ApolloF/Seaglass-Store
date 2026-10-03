@@ -151,7 +151,9 @@ func (p *pipeline) install(id string) {
 	if j.InstallDir == "" {
 		j.InstallDir = filepath.Join(gamesDir(p.st.c.Settings.Get().Store), folderName(j.Title))
 	}
-	if j.Replaces == "" { // an update goes over the version before it
+	// An update goes over the version before it, and a retry over what
+	// its own first try left.
+	if j.Replaces == "" && !j.InstallStarted {
 		if err := checkInstallDir(j.InstallDir); err != nil {
 			p.fail(id, err)
 			return
@@ -183,7 +185,10 @@ func (p *pipeline) install(id string) {
 	}
 	p.update(id, func(j *jobs.Job) {
 		j.State, j.Error, j.Installer, j.InstallDone, j.Stalled = jobs.Installing, "", string(kind), 0, false
-		j.InstallDir = req.Dir
+		j.InstallDir, j.InstallStarted = req.Dir, true
+		// Installing on its own happens once: a game uninstalled later
+		// mustn't come back by itself after a restart.
+		j.AutoInstall = false
 	})
 	logx.Printf("store: installing %s (%s) into %s", j.Title, kind, req.Dir)
 	err := installer.Install(p.st.c.ctx, req, func(n int64, idle time.Duration) {
@@ -267,9 +272,18 @@ func (p *pipeline) uninstall(id string) error {
 	if j.InstallDir == "" && j.Uninstaller == "" {
 		return errors.New("the installer put the game somewhere Seaglass doesn't know; uninstall it from Windows' Settings, Apps")
 	}
+	dir := j.InstallDir
+	if p.holdsOthers(j) {
+		// Its folder is where other games are too (chosen as the game's
+		// folder while empty): deleting it would take them along.
+		if j.Uninstaller == "" {
+			return fmt.Errorf("%s holds other games too: delete this game's files from it by hand", dir)
+		}
+		dir = "" // the uninstaller runs; the folder stays
+	}
 	ctx, cancel := context.WithTimeout(p.st.c.ctx, time.Hour)
 	defer cancel()
-	if err := installer.Uninstall(ctx, j.Uninstaller, j.InstallDir); err != nil {
+	if err := installer.Uninstall(ctx, j.Uninstaller, dir); err != nil {
 		if errors.Is(err, platform.ErrCancelled) {
 			err = errors.New("the uninstaller needs administrator rights, and Windows' prompt was declined")
 		}
@@ -277,13 +291,32 @@ func (p *pipeline) uninstall(id string) error {
 	}
 	logx.Printf("store: %s uninstalled", j.Title)
 	if j.Hash != "" && (platform.IsDir(root(j)) || platform.IsFile(root(j))) {
-		p.update(id, func(j *jobs.Job) { j.State, j.Uninstaller, j.InstalledAt = jobs.Downloaded, "", 0 })
+		p.update(id, func(j *jobs.Job) {
+			j.State, j.Uninstaller, j.InstalledAt, j.AutoInstall, j.InstallStarted = jobs.Downloaded, "", 0, false, false
+		})
 	} else if err := p.st.jobs.Delete(id); err != nil {
 		return err
 	}
 	p.st.c.emit(EventStoreJobs, p.st.jobs.All())
 	p.st.c.RequestScan()
 	return nil
+}
+
+// holdsOthers reports whether a game's folder is also the store's games
+// folder, a library folder, or the folder of another download's game.
+func (p *pipeline) holdsOthers(j jobs.Job) bool {
+	if j.InstallDir == "" {
+		return false
+	}
+	key := platform.Key(j.InstallDir)
+	cfg := p.st.c.Settings.Get()
+	if key == platform.Key(gamesDir(cfg.Store)) || slices.ContainsFunc(cfg.Folders, func(f string) bool { return platform.Key(f) == key }) {
+		return true
+	}
+	return slices.ContainsFunc(p.st.jobs.All(), func(o jobs.Job) bool {
+		// An update waiting to go over this game shares its folder: that one doesn't count.
+		return o.ID != j.ID && o.State == jobs.Installed && platform.Key(o.InstallDir) != key && platform.Within(j.InstallDir, o.InstallDir)
+	})
 }
 
 // sandboxExe is Windows Sandbox, when the feature is turned on.

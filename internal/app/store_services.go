@@ -255,7 +255,11 @@ func (s *StoreService) AllowDownload(id, confirm string) error {
 		return errors.New("type the download's name exactly to install it anyway")
 	}
 	_, err := s.c.store.jobs.Update(id, func(j *jobs.Job) bool {
-		j.Safety.Overridden, j.State = true, jobs.Downloaded
+		// A new report, not a change to the one other copies of the job
+		// still point to (and events send while this runs).
+		r := *j.Safety
+		r.Overridden = true
+		j.Safety, j.State = &r, jobs.Downloaded
 		return true
 	})
 	if err == nil {

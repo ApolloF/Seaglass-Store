@@ -126,3 +126,25 @@ func TestStore(t *testing.T) {
 		t.Errorf("after damage: %+v", got)
 	}
 }
+
+// Seaglass closing (or crashing) while a download was being checked or
+// installed leaves it where it can go on: checked again, or retried.
+func TestOpenPicksUpInterruptedWork(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "downloads.json")
+	s := Open(path)
+	now := time.Unix(1000, 0)
+	scan, _ := s.Add(Job{Title: "Scanned", Source: "magnet:?xt=urn:btih:aa", SavePath: `D:\Games`}, now)
+	inst, _ := s.Add(Job{Title: "Installing", Source: "magnet:?xt=urn:btih:bb", SavePath: `D:\Games`}, now)
+	report := &safety.Report{Verdict: safety.Clean}
+	_, _ = s.Update(scan.ID, func(j *Job) bool { j.State, j.Safety = Scanning, report; return true })
+	_, _ = s.Update(inst.ID, func(j *Job) bool { j.State, j.Safety, j.InstallStarted = Installing, report, true; return true })
+
+	again := Open(path)
+	if j, _ := again.Get(scan.ID); j.State != Downloaded || j.Safety != nil {
+		t.Errorf("interrupted check: %s, safety %v; want downloaded, to be checked again", j.State, j.Safety)
+	}
+	j, _ := again.Get(inst.ID)
+	if j.State != Failed || j.Error == "" || !j.Can(Resume) || !j.Can(Remove) {
+		t.Errorf("interrupted install: %+v; want failed, retryable and removable", j)
+	}
+}

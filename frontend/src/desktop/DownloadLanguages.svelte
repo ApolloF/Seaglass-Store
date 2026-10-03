@@ -37,7 +37,7 @@
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onclose()}>
-  <div class="dialog" role="dialog" aria-modal="true" aria-label={`Languages for ${download.title}`} tabindex="-1" bind:this={box} onkeydown={(e) => e.key === "Escape" && onclose()}>
+  <div class="dialog" role="dialog" aria-modal="true" aria-label={`Languages for ${download.title}`} tabindex="-1" bind:this={box} onkeydown={(e) => e.key === "Escape" && (e.preventDefault(), onclose())}>
     <h2>Languages for {download.title}</h2>
     {#if error}<p role="alert">{error}</p>
     {:else if !options}<p>Reading available languages…</p>

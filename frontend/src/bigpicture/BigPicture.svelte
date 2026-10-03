@@ -1,9 +1,10 @@
 <script lang="ts">
   import { accentOf, newFinds } from "../lib/bp";
   import { sectionsFor } from "../lib/bpstore";
-  import { dispatchFrom, feedback, input, keyIntent, setBase, setLight, toHex } from "../lib/input.svelte";
+  import { dispatch, dispatchFrom, feedback, input, keyIntent, setBase, setLight, toHex } from "../lib/input.svelte";
   import { lib } from "../lib/store.svelte";
   import type { Game } from "../lib/types";
+  import { wheelStepper } from "../lib/wheel";
   import BPDownloads from "./BPDownloads.svelte";
   import BPSettings from "./BPSettings.svelte";
   import Console from "./Console.svelte";
@@ -72,6 +73,7 @@
     if (s === screen && !qa) return;
     screen = s;
     qa = false;
+    sheetId = null; // the screen asked for shows, not the game page over it
     feedback.move();
   };
   const play = (g: Game) => {
@@ -153,6 +155,18 @@
     dispatchFrom("keyboard", i, e.repeat);
   }
 
+  // The screens move a selection rather than scroll, so the wheel moves it
+  // too; a list that really scrolls keeps the wheel.
+  const wheel = wheelStepper();
+  function onwheel(e: WheelEvent) {
+    if (e.ctrlKey) return;
+    for (let el = e.target as HTMLElement | null; el && el !== document.body; el = el.parentElement) {
+      const oy = getComputedStyle(el).overflowY;
+      if ((oy === "auto" || oy === "scroll") && el.scrollHeight > el.clientHeight) return;
+    }
+    for (const step of wheel(e)) dispatch(step);
+  }
+
   const layoutProps = $derived({
     onplay: play,
     oninfo: info,
@@ -169,7 +183,7 @@
   });
 </script>
 
-<svelte:window {onkeydown} {onpointermove} />
+<svelte:window {onkeydown} {onpointermove} {onwheel} />
 
 <Stage>
   {#snippet children({ width, height })}
