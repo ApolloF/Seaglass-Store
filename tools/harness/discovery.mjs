@@ -58,11 +58,13 @@ try {
   const t0 = Date.now();
   await refresh.click();
   // The frozen test data indexes only when asked: one pass per source.
-  const card = page.locator("#sf-panel-home .card").first();
-  await card.waitFor({ timeout: 120000 });
+  // Home's featured area, shelves and rows all mark a game with data-key.
+  const game = page.locator("#sf-panel-home [data-key]").first();
+  await game.waitFor({ timeout: 120000 });
   await page.getByRole("button", { name: "Check for new releases" }).and(page.locator(":not([disabled])")).waitFor({ timeout: 120000 }).catch(() => {});
-  const cards = await page.locator("#sf-panel-home .card").count();
-  check("Home fills from the sources without a feed", cards > 0, `${cards} cards after ${Math.round((Date.now() - t0) / 1000)} s`);
+  const games = await page.locator("#sf-panel-home [data-key]").count();
+  check("Home fills from the sources without a feed", games > 0, `${games} games after ${Math.round((Date.now() - t0) / 1000)} s`);
+  check("Home has a featured game", await page.locator("#sf-panel-home").getByText("Featured").first().isVisible());
   await sleep(4000); // the chart and art arrive
   await shots("1-home");
 

@@ -51,6 +51,13 @@ export function restoreAppData({ keep = false } = {}) {
     console.error(`the backup of ${DATA} in ${BACKUP} is gone or incomplete: left ${DATA} as it is`);
     return;
   }
+  // Runs with --dev-data leave the folder as it was; then there is nothing
+  // to put back, and a sync tool watching the folder can't block the rename.
+  if (m.existed && sameFiles(BACKUP, DATA)) {
+    fs.rmSync(MARK);
+    console.log("unchanged", DATA);
+    return;
+  }
   const aside = `${DATA}.harness-${Date.now()}`;
   if (fs.existsSync(DATA)) fs.renameSync(DATA, aside);
   try {
@@ -64,6 +71,13 @@ export function restoreAppData({ keep = false } = {}) {
   else fs.rmSync(aside, { recursive: true, force: true });
   fs.rmSync(MARK);
   console.log("restored", DATA);
+}
+
+function sameFiles(a, b) {
+  if (!fs.existsSync(b)) return false;
+  const list = (dir) => fs.readdirSync(dir, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).map((e) => path.relative(dir, path.join(e.parentPath, e.name))).sort();
+  const [la, lb] = [list(a), list(b)];
+  return la.length === lb.length && la.every((f, i) => f === lb[i] && fs.readFileSync(path.join(a, f)).equals(fs.readFileSync(path.join(b, f))));
 }
 
 function countFiles(dir) {
