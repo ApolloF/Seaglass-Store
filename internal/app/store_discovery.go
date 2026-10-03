@@ -916,8 +916,12 @@ func (d *discoveryState) prepared(key, id string) (discovery.PreparedRelease, er
 	return p, nil
 }
 
-// validTransports mirrors discovery's rule: magnets with a v1 info hash.
+// validTransports mirrors discovery's rule: magnets with a v1 info hash,
+// and none from a source without torrents.
 func validTransports(e sources.Entry) []int {
+	if p, ok := sources.Lookup(e.SourceID); ok && !p.Torrents {
+		return nil
+	}
 	var out []int
 	for i, t := range e.Transports {
 		if t.Kind != "magnet" || t.InfoHash == "" {

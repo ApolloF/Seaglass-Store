@@ -169,10 +169,11 @@ func (w *wishlistState) searchNext(now time.Time) time.Duration {
 	}
 }
 
-// available: the game has a known source release.
+// available: the game has a known source release; an announcement alone
+// keeps it searched for.
 func (w *wishlistState) available(key string) bool {
 	g, ok := w.c.discovery.currentView().Game(key)
-	return ok && len(g.Records) > 0
+	return ok && hasRelease(g)
 }
 
 // searchTitle is the name to search the sites with. An imported game

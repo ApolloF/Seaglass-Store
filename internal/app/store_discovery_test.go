@@ -431,3 +431,13 @@ func TestRemoteSearchFillsGapsAndLeavesTheStoreResponsive(t *testing.T) {
 		t.Error("a one-letter query went to the sources")
 	}
 }
+
+func TestASourceWithoutTorrentsHasNoDownloadableTransport(t *testing.T) {
+	magnet, _ := sources.Magnet("magnet:?xt=urn:btih:" + discoveryMagnet)
+	if got := validTransports(sources.Entry{SourceID: "elamigos", Transports: []sources.Transport{magnet}}); len(got) != 0 {
+		t.Errorf("ElAmigos offers %v", got)
+	}
+	if got := validTransports(sources.Entry{SourceID: "dodi", Transports: []sources.Transport{magnet}}); len(got) != 1 {
+		t.Errorf("DODI offers %v", got)
+	}
+}
