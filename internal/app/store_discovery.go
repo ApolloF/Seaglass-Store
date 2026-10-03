@@ -76,10 +76,10 @@ func (d *discoveryState) index() *discovery.Index {
 	return d.ix
 }
 
-func (d *discoveryState) fetcher(src string) (discovery.Fetcher, sources.Source, error) {
-	s, err := sources.PrivateSource(src, true)
-	if err != nil {
-		return nil, s, err
+func (d *discoveryState) fetcher(src string) (discovery.Fetcher, sources.Provider, error) {
+	s, ok := sources.Lookup(src)
+	if !ok || !s.Discovery {
+		return nil, s, fmt.Errorf("unknown source %q", src)
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -595,7 +595,7 @@ func (d *discoveryState) detailLoop(ctx context.Context) {
 		}
 		if slices.Contains(d.enabled(), req.src) {
 			if f, s, err := d.fetcher(req.src); err == nil {
-				err := discovery.FetchDetail(d.ctx(), d.index(), s, f, req.id, time.Now())
+				err := discovery.FetchDetail(d.ctx(), d.index(), s.Source, f, req.id, time.Now())
 				if err != nil && !errors.Is(err, context.Canceled) {
 					logx.Printf("store discovery: release details: %v", err)
 				}
@@ -646,7 +646,7 @@ func (d *discoveryState) prepare(key, id string) (discovery.PreparedRelease, err
 		if err != nil {
 			return discovery.PreparedRelease{}, err
 		}
-		if err := discovery.FetchDetail(ctx, ix, s, f, id, time.Now()); err != nil && ctx.Err() != nil {
+		if err := discovery.FetchDetail(ctx, ix, s.Source, f, id, time.Now()); err != nil && ctx.Err() != nil {
 			return discovery.PreparedRelease{}, err
 		}
 	}

@@ -48,6 +48,12 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, flags.has("slow") 
 const squash = (t: string) => t.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]/g, "");
 const SOURCE_NAMES: Record<string, string> = { fitgirl: "FitGirl", dodi: "DODI", feeds: "Feeds", steam: "Steam" };
 
+/** The providers the mock registry declares, as sources.Providers does. */
+const PROVIDERS = [
+  { id: "fitgirl", host: "fitgirl-repacks.site", search: true, paged: true, torrents: true, defaultOn: true, notes: [] as string[] },
+  { id: "dodi", host: "dodi-repacks.site", search: true, paged: true, torrents: true, defaultOn: true, notes: [] as string[] },
+];
+
 // A release as the fixtures write it.
 interface R {
   source: "fitgirl" | "dodi" | "feeds";
@@ -232,7 +238,7 @@ function status(settings: Settings): DiscoveryStatus {
   const setup = settings.experimentalStore && (flags.has("setup") || st.sourceSetup === "ask");
   const on = (id: string) => settings.experimentalStore && st.privateSources && st.sourceSetup === "done" && st.sources.includes(id) && !flags.has("setup");
   const empty = flags.has("empty");
-  const sources = ["fitgirl", "dodi"].map((id) => {
+  const sources = PROVIDERS.map(({ id, ...caps }) => {
     const releases = empty ? 0 : games.reduce((n, g) => n + g.recs.filter((r) => r.release.source === id).length, 0);
     const offline = flags.has("offline");
     return {
@@ -246,6 +252,7 @@ function status(settings: Settings): DiscoveryStatus {
       backfillDone: id === "fitgirl" && !empty,
       retryAt: offline ? now() + 600 : 0,
       error: offline && on(id) ? "couldn't reach the source: no such host" : undefined,
+      ...caps,
     } as DiscoveryStatus["sources"][number];
   });
   return {

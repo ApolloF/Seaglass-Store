@@ -11,6 +11,7 @@ import (
 
 	"github.com/ApolloF/Seaglass/internal/platform"
 	"github.com/ApolloF/Seaglass/internal/store/feed"
+	"github.com/ApolloF/Seaglass/internal/store/sources"
 	"github.com/ApolloF/Seaglass/internal/torrent"
 )
 
@@ -86,8 +87,9 @@ type StoreSettings struct {
 	Feeds                  []FeedSource    `json:"feeds"` // catalogs, in the order they were added
 }
 
-// The repack sources Store discovery can index, in display order.
-var DiscoverySources = []string{"fitgirl", "dodi"}
+// The repack sources Store discovery can index, in display order: the
+// providers the source registry declares.
+var DiscoverySources = sources.DiscoveryIDs()
 
 // Source setup states (StoreSettings.SourceSetup).
 const (
@@ -287,12 +289,13 @@ func legacySourceSetup(v *Settings, keys map[string]json.RawMessage) {
 	}
 }
 
-// StoreTurnedOn chooses every discovery source when a new Store user turns
-// the Store on, so it works without adding a feed or choosing anything.
+// StoreTurnedOn chooses the default discovery sources when a new Store
+// user turns the Store on, so it works without adding a feed or choosing
+// anything. Providers added later stay off until chosen.
 func StoreTurnedOn(old, v Settings) Settings {
 	if !old.ExperimentalStore && v.ExperimentalStore && v.Store.SourceSetup == SetupPending {
 		v.Store.PrivateSources = true
-		v.Store.Sources = slices.Clone(DiscoverySources)
+		v.Store.Sources = sources.DefaultIDs()
 		v.Store.SourceSetup = SetupDone
 	}
 	return v

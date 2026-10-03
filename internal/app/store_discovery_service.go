@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 	"os"
@@ -72,15 +73,15 @@ func (s *StoreService) DiscoveryStatus() discovery.Status {
 // baseDiscoveryStatus is the status the settings alone decide.
 func baseDiscoveryStatus(v settings.Settings) discovery.Status {
 	st := discovery.Status{SetupNeeded: v.ExperimentalStore && v.Store.SourceSetup == settings.SetupAsk, Sources: []discovery.SourceStatus{}}
-	for _, id := range discovery.Sources {
-		src, _ := sources.PrivateSource(id, true)
-		on := v.ExperimentalStore && v.Store.DiscoveryOn(id)
+	for _, p := range sources.Providers() {
+		on := v.ExperimentalStore && v.Store.DiscoveryOn(p.ID)
 		state := discovery.CrawlDisabled
 		if on {
 			state = discovery.CrawlIdle
 			st.Enabled = true
 		}
-		st.Sources = append(st.Sources, discovery.SourceStatus{ID: id, Name: src.Name, Enabled: on, State: state})
+		st.Sources = append(st.Sources, discovery.SourceStatus{ID: p.ID, Name: p.Name, Enabled: on, State: state,
+			Host: p.Host, Search: p.Search != "", Paged: p.Paged(), Torrents: p.Torrents, DefaultOn: p.DefaultOn, Notes: append([]string{}, p.Notes...)})
 	}
 	return st
 }
@@ -93,7 +94,7 @@ func (s *StoreService) SetupSources(chosen []string) (settings.Settings, error) 
 	}
 	for _, id := range chosen {
 		if !slices.Contains(discovery.Sources, id) {
-			return s.c.Settings.Get(), errors.New("choose FitGirl or DODI")
+			return s.c.Settings.Get(), fmt.Errorf("unknown source %q", id)
 		}
 	}
 	saved, err := s.c.updateSettings(func(v *settings.Settings) {

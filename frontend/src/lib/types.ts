@@ -664,6 +664,18 @@ export interface DiscoverySourceStatus {
   backfillDone: boolean;
   retryAt: number;
   error?: string;
+  /** What the provider supports (sources.Provider). */
+  host: string;
+  /** Its own site search fills search results. */
+  search: boolean;
+  /** Older listing pages exist; false: one finite catalog page. */
+  paged: boolean;
+  /** Releases may be installable; false: they open in the browser. */
+  torrents: boolean;
+  /** Chosen for a new Store user. */
+  defaultOn: boolean;
+  /** Verified limitations, plain sentences. */
+  notes: string[];
 }
 
 /** What discovery is doing. Mirrors discovery.Status. */

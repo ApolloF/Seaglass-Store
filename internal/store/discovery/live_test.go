@@ -28,7 +28,7 @@ func TestLiveDiscovery(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		src, _ := sources.PrivateSource(id, true)
+		src, _ := sources.Lookup(id)
 		start := time.Now()
 		res := Pass(ctx, ix, src, client, true, time.Now, nil)
 		c := ix.Crawl(id)

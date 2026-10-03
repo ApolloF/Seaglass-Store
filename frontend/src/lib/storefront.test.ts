@@ -233,7 +233,8 @@ describe("adoptPage", () => {
 });
 
 const source = (over: Partial<DiscoverySourceStatus> = {}): DiscoverySourceStatus => ({
-  id: "fitgirl", name: "FitGirl", enabled: true, state: "idle", releases: 0, recentAt: 0, backfillPage: 0, backfillDone: false, retryAt: 0, ...over,
+  id: "fitgirl", name: "FitGirl", enabled: true, state: "idle", releases: 0, recentAt: 0, backfillPage: 0, backfillDone: false, retryAt: 0,
+  host: "fitgirl-repacks.site", search: true, paged: true, torrents: true, defaultOn: true, notes: [], ...over,
 });
 const status = (over: Partial<DiscoveryStatus> = {}): DiscoveryStatus => ({ enabled: true, setupNeeded: false, sources: [source()], games: 0, releases: 0, refreshing: false, stale: false, ...over });
 

@@ -20,7 +20,7 @@ const testMagnetHash = "dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c"
 // articles and listing pages of ten articles each, newest first.
 type fakeSource struct {
 	mu       sync.Mutex
-	src      sources.Source
+	src      sources.Provider
 	articles []fakeArticle // newest first
 	fail     map[string]error
 	hits     map[string]int
@@ -34,9 +34,9 @@ type fakeArticle struct {
 }
 
 func newFakeSource(t *testing.T, id string, n int) *fakeSource {
-	src, err := sources.PrivateSource(id, true)
-	if err != nil {
-		t.Fatal(err)
+	src, ok := sources.Lookup(id)
+	if !ok {
+		t.Fatal("unknown source", id)
 	}
 	f := &fakeSource{src: src, fail: map[string]error{}, hits: map[string]int{}}
 	base := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
@@ -354,7 +354,7 @@ func TestMissingArticleIsMarkedUnavailableNotDeleted(t *testing.T) {
 	f.mu.Lock()
 	f.articles = append(f.articles[:5], f.articles[6:]...)
 	f.mu.Unlock()
-	if err := FetchDetail(context.Background(), ix, f.src, f, id, clk.now()); err != nil {
+	if err := FetchDetail(context.Background(), ix, f.src.Source, f, id, clk.now()); err != nil {
 		t.Fatal(err)
 	}
 	r, ok := ix.Record("fitgirl", id)
@@ -373,11 +373,37 @@ func TestDetailFetchCompletesASearchSummary(t *testing.T) {
 	if r, _ := ix.Record("fitgirl", id); availability(r) != AvailSummary {
 		t.Fatalf("a summary: %s", availability(r))
 	}
-	if err := FetchDetail(context.Background(), ix, f.src, f, id, now); err != nil {
+	if err := FetchDetail(context.Background(), ix, f.src.Source, f, id, now); err != nil {
 		t.Fatal(err)
 	}
 	r, _ := ix.Record("fitgirl", id)
 	if r.Entry.SummaryOnly || r.Detailed.IsZero() || availability(r) != AvailInstallable || !r.Backfill {
 		t.Errorf("after the detail fetch: %+v (%s)", r, availability(r))
+	}
+}
+
+func TestFiniteCatalogIsCompleteAfterItsOnlyPage(t *testing.T) {
+	ix, _ := testIndex(t)
+	f := newFakeSource(t, "dodi", 8)
+	f.src.ListingPage, f.src.Search = "", ""
+	clk := &clock{time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
+	res := Pass(context.Background(), ix, f.src, f, true, clk.now, nil)
+	if res.Err != nil || !res.Recent || res.Pages != 1 {
+		t.Fatalf("pass over a one-page catalog: %+v", res)
+	}
+	if c := ix.Crawl("dodi"); !c.BackfillDone {
+		t.Fatalf("a one-page catalog left backfill open: %+v", c)
+	}
+	clk.add(time.Hour)
+	if res := Pass(context.Background(), ix, f.src, f, false, clk.now, nil); res.Pages != 0 {
+		t.Fatalf("a finished one-page catalog was fetched again within six hours: %+v", res)
+	}
+	for _, raw := range f.order {
+		if strings.Contains(raw, "/page/") {
+			t.Fatalf("requested a page that cannot exist: %s", raw)
+		}
+	}
+	if n := ix.Counts()["dodi"]; n != 8 {
+		t.Fatalf("records %d, want 8", n)
 	}
 }

@@ -78,8 +78,9 @@ func (c *SearchCache) Put(provider, text string, found int, steam []SteamHit, no
 // SearchSource asks a source site's own search and indexes what it finds.
 // Releases published more than a week ago count as history (backfill),
 // so finding them never looks like news.
-func SearchSource(ctx context.Context, ix *Index, src sources.Source, f Fetcher, text string, now time.Time) (int, error) {
-	raw, err := src.SearchURL(strings.TrimSpace(text))
+func SearchSource(ctx context.Context, ix *Index, p sources.Provider, f Fetcher, text string, now time.Time) (int, error) {
+	src := p.Source
+	raw, err := p.SearchURL(strings.TrimSpace(text))
 	if err != nil {
 		return 0, err
 	}

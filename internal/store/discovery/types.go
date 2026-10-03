@@ -16,8 +16,9 @@ import (
 	"github.com/ApolloF/Seaglass/internal/store/sources"
 )
 
-// Sources discovery can index, in the order the interface lists them.
-var Sources = []string{"fitgirl", "dodi"}
+// Sources discovery can index, in the order the interface lists them:
+// the providers sources.Providers declares.
+var Sources = sources.DiscoveryIDs()
 
 // Provider and request states the interface shows. A failure never hides
 // what is already known: cached results come back with StateStale.
@@ -148,6 +149,14 @@ type SourceStatus struct {
 	BackfillDone bool   `json:"backfillDone"`
 	RetryAt      int64  `json:"retryAt"`
 	Error        string `json:"error,omitempty"`
+	// What the provider supports (sources.Provider), so setup, filters and
+	// status read it instead of naming sources.
+	Host      string   `json:"host"`
+	Search    bool     `json:"search"`    // its own site search fills search results
+	Paged     bool     `json:"paged"`     // older listing pages exist; false: one finite catalog page
+	Torrents  bool     `json:"torrents"`  // releases may be installable; false: they open in the browser
+	DefaultOn bool     `json:"defaultOn"` // chosen for a new Store user
+	Notes     []string `json:"notes"`     // verified limitations, plain sentences
 }
 
 // GameSummary is one game on a shelf, in Browse or in search results.

@@ -463,6 +463,37 @@ export interface SourceStatus {
     "backfillDone": boolean;
     "retryAt": number;
     "error"?: string;
+
+    /**
+     * What the provider supports (sources.Provider), so setup, filters and
+     * status read it instead of naming sources.
+     */
+    "host": string;
+
+    /**
+     * its own site search fills search results
+     */
+    "search": boolean;
+
+    /**
+     * older listing pages exist; false: one finite catalog page
+     */
+    "paged": boolean;
+
+    /**
+     * releases may be installable; false: they open in the browser
+     */
+    "torrents": boolean;
+
+    /**
+     * chosen for a new Store user
+     */
+    "defaultOn": boolean;
+
+    /**
+     * verified limitations, plain sentences
+     */
+    "notes": string[] | null;
 }
 
 /**

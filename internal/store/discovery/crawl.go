@@ -57,9 +57,11 @@ const (
 
 // Pass runs one pass for a source: the newest listings when due, then
 // older listing pages, PagesPerPass listing pages at most. paused is asked
-// before every request; a game starting stops the pass where it is.
-func Pass(ctx context.Context, ix *Index, src sources.Source, f Fetcher, force bool, now func() time.Time, paused func() bool) PassResult {
+// before every request; a game starting stops the pass where it is. A
+// catalog of one finite page is complete after its first page.
+func Pass(ctx context.Context, ix *Index, p sources.Provider, f Fetcher, force bool, now func() time.Time, paused func() bool) PassResult {
 	var res PassResult
+	src := p.Source
 	c := ix.Crawl(src.ID)
 	recent, backfill := Due(c, now(), force)
 	if !recent && !backfill {
@@ -96,10 +98,10 @@ func Pass(ctx context.Context, ix *Index, src sources.Source, f Fetcher, force b
 		if stop() {
 			return res
 		}
-		// FitGirl's feed carries full articles for the newest releases.
-		if src.ID == "fitgirl" {
+		// A feed carries full articles for the newest releases.
+		if p.Feed != "" {
 			// A feed of announcements only is not a failure.
-			entries, _, err := fetchParse(ctx, src, f, src.StartURL)
+			entries, _, err := fetchParse(ctx, src, f, p.Feed)
 			if err != nil && !errors.Is(err, errNoReleases) {
 				return failed(ix, src.ID, &res, err, now())
 			}
@@ -110,7 +112,11 @@ func Pass(ctx context.Context, ix *Index, src sources.Source, f Fetcher, force b
 			if stop() {
 				return res
 			}
-			entries, next, err := fetchParse(ctx, src, f, pageURL(src, page))
+			raw, ok := p.ListingURL(page)
+			if !ok {
+				break
+			}
+			entries, next, err := fetchParse(ctx, src, f, raw)
 			budget--
 			res.Pages++
 			if err != nil && !errors.Is(err, errNoReleases) {
@@ -130,6 +136,9 @@ func Pass(ctx context.Context, ix *Index, src sources.Source, f Fetcher, force b
 			if c.NextPage < 2 {
 				c.NextPage = 2
 			}
+			if !p.Paged() {
+				c.BackfillDone = true
+			}
 		})
 	}
 
@@ -142,7 +151,12 @@ func Pass(ctx context.Context, ix *Index, src sources.Source, f Fetcher, force b
 			return res
 		}
 		page := max(c.NextPage, 2)
-		entries, next, err := fetchParse(ctx, src, f, pageURL(src, page))
+		raw, ok := p.ListingURL(page)
+		if !ok {
+			ix.SetCrawl(src.ID, func(c *CrawlState) { c.BackfillDone = true })
+			break
+		}
+		entries, next, err := fetchParse(ctx, src, f, raw)
 		budget--
 		res.Pages++
 		var status *sources.HTTPError
@@ -194,13 +208,6 @@ func fetchParse(ctx context.Context, src sources.Source, f Fetcher, raw string) 
 		return nil, next, err
 	}
 	return entries, next, nil
-}
-
-func pageURL(src sources.Source, page int) string {
-	if page <= 1 {
-		return "https://" + src.Host + "/"
-	}
-	return "https://" + src.Host + "/page/" + strconv.Itoa(page) + "/"
 }
 
 // failed records a failed request: Retry-After when the source sent one,
