@@ -207,7 +207,7 @@
 
   <div class="group">
     <span class="glabel">Source discovery</span>
-    <Toggle checked={st.privateSources} title="Browse repack sources" detail="Show releases from the sources you choose in the Store. Seaglass reads public release details only, such as titles, versions and sizes. It never downloads games by itself." onchange={(v) => setStore({ privateSources: v })} />
+    <Toggle checked={st.privateSources} title="Browse release sources" detail="Show releases from the sources you choose in the Store. Seaglass reads public release details only, such as titles, versions and sizes. It never downloads games by itself." onchange={(v) => setStore({ privateSources: v })} />
     {#if st.privateSources}
       {#each storefront.status?.sources ?? [] as src (src.id)}
         {@const traits = providerTraits(src)}
