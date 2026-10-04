@@ -1,6 +1,6 @@
 # Store source providers: the shared contract
 
-The Store indexes release metadata from a small set of vetted providers. This page is the contract between the source layer (`internal/store/sources`) and everything that uses it (discovery scheduling, settings, app services, the interface). It was set up for adding providers beyond FitGirl and DODI.
+The Store indexes release metadata from a small set of vetted providers. This page is the contract between the source layer (`internal/store/sources`) and everything that uses it (discovery scheduling, settings, app services, the interface). It was set up for adding providers beyond the first two.
 
 ## The registry
 
@@ -10,7 +10,7 @@ The Store indexes release metadata from a small set of vetted providers. This pa
 |---|---|
 | `Source` (`ID`, `Name`, `Host`, `StartURL`) | identity, the only host its pages may come from, and where `tools/cataloglab` starts |
 | `Discovery` | the Store indexes it and offers it in source setup |
-| `DefaultOn` | a new Store user starts with it chosen. Only FitGirl and DODI. A provider added later stays off until the person chooses it |
+| `DefaultOn` | a new Store user starts with it chosen. Only the two original providers. A provider added later stays off until the person chooses it |
 | `Listing` | the first page of its newest-first catalog |
 | `ListingPage` | listing page *n* (n ≥ 2) with `{n}`; empty for a catalog of one finite page |
 | `Feed` | an RSS feed with the newest articles in full; empty when there is none |
