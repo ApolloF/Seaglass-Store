@@ -94,7 +94,7 @@
       m?.developers?.length && ["Developer", m.developers.join(", ")],
       (m?.genres?.length || s.genres.length) && ["Genre", (m?.genres?.length ? m.genres : s.genres).join(", ")],
       (m?.releaseDate || m?.releaseYear) && ["Game released", m.releaseDate || String(m.releaseYear)],
-      s.publishedAt > 0 && ["Newest repack", publishedText(s.publishedAt).replace("Published ", "")],
+      s.publishedAt > 0 && ["Newest release", publishedText(s.publishedAt).replace("Published ", "")],
     ].filter((f): f is [string, string] => !!f),
   );
 

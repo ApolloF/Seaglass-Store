@@ -86,7 +86,7 @@ func Check(ctx context.Context, o Options) Report {
 			if repackOnly(threats) {
 				level = Warn
 			}
-			add("defender", level, "Microsoft Defender found: %s. HackTool and PUA labels can occur in repacks; review them before installing.", strings.Join(threats, ", "))
+			add("defender", level, "Microsoft Defender found: %s. HackTool and PUA labels are common in compressed game installers; review them before installing.", strings.Join(threats, ", "))
 		default:
 			add("defender", OK, "Microsoft Defender found nothing.")
 		}
@@ -98,7 +98,7 @@ func Check(ctx context.Context, o Options) Report {
 			case !v.Known:
 				add("virustotal", Info, "VirusTotal hasn't seen %s before.", r.Main)
 			case v.Malicious >= 3 && v.RepackOnly:
-				add("virustotal", Warn, "%d of %d engines flag repack-related tools. This does not establish a false positive; review the report.", v.Malicious, v.Engines)
+				add("virustotal", Warn, "%d of %d engines flag installer-related tools. This does not establish a false positive; review the report.", v.Malicious, v.Engines)
 			case v.Malicious >= 3:
 				add("virustotal", detect, "%d of %d VirusTotal engines call %s malicious.", v.Malicious, v.Engines, r.Main)
 			case v.Malicious > 0 || v.Suspicious > 0:
