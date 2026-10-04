@@ -108,6 +108,26 @@ func (c *countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return nil, errors.New("no network in this test")
 }
 
+// waitForChartRefresh blocks until the background chart fetch that a Store
+// home load starts has finished, so a test can swap the enrichment client
+// without racing that goroutine's read of it.
+func waitForChartRefresh(t *testing.T, e *enrichState) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		e.mu.Lock()
+		running := e.chart
+		e.mu.Unlock()
+		if !running {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the chart refresh never finished")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestAnnotatorReadsCompletionAndReleaseDateWithoutFetching(t *testing.T) {
 	c, s := discoveryCore(t)
 	if err := c.discovery.refresh(); err != nil {
@@ -137,6 +157,7 @@ func TestAnnotatorReadsCompletionAndReleaseDateWithoutFetching(t *testing.T) {
 	if err := seed.Flush(); err != nil {
 		t.Fatal(err)
 	}
+	waitForChartRefresh(t, c.enrich)
 	c.enrich.client = enrich.New(enrich.Options{Dir: dir, Transport: wire})
 	c.art.known["title:embercrown"] = &library.Meta{ReleaseYear: 2024, ReleaseDate: "12 Mar, 2024", Genres: []string{"Adventure"}}
 	home, err = s.StoreHome()
