@@ -37,7 +37,7 @@ func (s *StoreService) DiscoverReleases(source, query string, resolve bool) (sou
 		return sources.Snapshot{}, err
 	}
 	if source != "fitgirl" && source != "dodi" {
-		return sources.Snapshot{}, errors.New("choose FitGirl or DODI")
+		return sources.Snapshot{}, errors.New("choose a source that supports release previews")
 	}
 	src, err := sources.PrivateSource(source, true)
 	if err != nil {

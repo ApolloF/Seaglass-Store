@@ -2,7 +2,7 @@
 
 <h1 align="center">Seaglass Store Edition</h1>
 
-<p align="center"><b>Seaglass with an experimental store:</b> catalogs from feeds you add, background downloads through qBittorrent, safety checks, and installs without the installer's questions. It's <a href="https://github.com/ApolloF/Seaglass">Seaglass</a> plus the store, updated from Seaglass every day. It installs over Seaglass and keeps your library and settings; Seaglass installs back over it. See <a href="docs/experimental-store.md">docs/experimental-store.md</a>.</p>
+<p align="center"><b>Seaglass with an experimental, opt-in store:</b> a catalog from the sources and feeds you choose, safety checks before anything runs, and installs without the installer's questions. It's <a href="https://github.com/ApolloF/Seaglass">Seaglass</a> plus the store, updated from Seaglass every day. It installs over Seaglass and keeps your library and settings; Seaglass installs back over it. See <a href="docs/experimental-store.md">docs/experimental-store.md</a>.</p>
 
 <p align="center">A Windows game launcher that finds the games installed on your PC on its own, from store launchers and other sources alike, and plays great with a DualSense.</p>
 
@@ -23,7 +23,9 @@
 
 Seaglass is a library manager. It indexes, identifies and launches games that are already installed on your PC. It does not unlock or modify games, and it contains no tools to bypass copy protection, license checks or DRM.
 
-The Store Edition adds an opt-in store that downloads and installs what the feeds you add offer. It comes with no feeds and no catalog of its own, and it doesn't host or distribute any games. What you add, download and share through it (downloads are shared with others while qBittorrent runs) is your responsibility: only use feeds for games you're allowed to download and play.
+The Store Edition adds an opt-in store, off until you turn it on in *Settings → Experimental*. It comes with no feeds and no catalog of its own, and it doesn't host, upload or distribute any games or files. When it's on, it reads public release listings from the sources selected in its settings and from feeds you add, and downloads what you choose through a qBittorrent client installed on your PC, which shares downloaded data with others while it runs. Seaglass doesn't check whether you have the right to download any release, or vouch for its authenticity.
+
+What you add, download, install and share through the store is your responsibility. Only use sources and feeds you have the right to use, for games you're allowed to download and play under their license terms and the laws that apply to you.
 
 Recognising a game installed outside a store launcher is a compatibility feature, so that every game on the PC can be found in one place; it is not an endorsement of how a copy was obtained. You are responsible for making sure that the games you install and play, and how you use them, comply with their license terms and the laws that apply to you.
 

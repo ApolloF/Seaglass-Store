@@ -138,7 +138,7 @@
     <div class="sf-empty fill">
       <Icon name="cloudDown" size={40} stroke={1.6} />
       <h2>No games to show</h2>
-      <p>Source discovery is off and no feed has games. Turn on FitGirl or DODI, or add a feed, in Settings → Experimental.</p>
+      <p>Source discovery is off and no feed has games. Turn on a source in Store settings, or add a feed (Settings → Experimental).</p>
       <button type="button" class="sf-primary" onclick={onsettings}>Open settings</button>
     </div>
   {:else if mode === "finding"}

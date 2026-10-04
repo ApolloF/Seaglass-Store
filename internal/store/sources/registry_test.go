@@ -22,10 +22,9 @@ func TestRegistryListsDiscoveryProvidersInDisplayOrder(t *testing.T) {
 	}
 }
 
-func TestNewProvidersStayOffUntilChosen(t *testing.T) {
-	defaults := DefaultIDs()
-	if !slices.Equal(defaults, []string{"fitgirl", "dodi"}) {
-		t.Fatalf("defaults %v: a provider added later must not be chosen for anyone automatically", defaults)
+func TestProvidersStayOffUntilChosen(t *testing.T) {
+	if defaults := DefaultIDs(); len(defaults) != 0 {
+		t.Fatalf("defaults %v: no provider may be chosen for anyone automatically", defaults)
 	}
 }
 
