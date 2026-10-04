@@ -58,7 +58,7 @@ const (
 
 type updater struct {
 	c    *Core
-	feed update.Feed
+	feed update.Source
 	dir  string // downloads and pending.json
 	exe  string // the running exe
 	kind string // update.KindInstaller, update.KindExe or "" (by hand)
@@ -71,7 +71,7 @@ type updater struct {
 }
 
 func newUpdater(c *Core) *updater {
-	u := &updater{c: c, feed: update.GitHub, dir: platform.CacheDir("updates"), kick: make(chan struct{}, 1)}
+	u := &updater{c: c, feed: update.Releases, dir: platform.CacheDir("updates"), kick: make(chan struct{}, 1)}
 	u.st = UpdateState{Current: c.Version, Status: UpdateIdle, Page: update.ReleasesPage}
 	if exe, err := os.Executable(); err == nil {
 		u.exe = exe

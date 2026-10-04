@@ -277,3 +277,14 @@ jobs:
           SEAGLASS_RELEASE_KEY: ${{ secrets.SEAGLASS_RELEASE_KEY }}
           GH_TOKEN: ${{ github.token }}
         run: go run ./tools/release publish $env:GITHUB_REF_NAME
+
+  feed:
+    # The signed release, copied to the public releases-only repository
+    # installed copies update from (feed.yml). Off until the maintainer sets
+    # the PUBLISH_UPDATE_FEED variable and the SEAGLASS_FEED_TOKEN secret.
+    needs: windows
+    if: startsWith(github.ref, 'refs/tags/v') && vars.PUBLISH_UPDATE_FEED == 'true'
+    uses: ./.github/workflows/feed.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit
