@@ -1,6 +1,6 @@
 # Store source providers: the shared contract
 
-The Store indexes release metadata from a small set of vetted providers. This page is the contract between the source layer (`internal/store/sources`) and everything that uses it (discovery scheduling, settings, app services, the interface). It was set up for adding providers beyond FitGirl and DODI.
+The Store indexes release metadata from a small set of vetted providers. This page is the contract between the source layer (`internal/store/sources`) and everything that uses it (discovery scheduling, settings, app services, the interface). It was set up for adding providers beyond the first two.
 
 ## The registry
 

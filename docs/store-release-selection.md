@@ -1,4 +1,4 @@
-# Release selection and repacks
+# Release selection
 
 Based on ApolloF/Seaglass-Store's Store Edition. The Go module path stays github.com/ApolloF/Seaglass for existing imports and bindings.
 

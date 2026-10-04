@@ -112,7 +112,7 @@ above passed afterward. Neither failure is counted as a passing check.
 Captured full homepage replay:
 
 ```powershell
-go run ./tools/cataloglab --private-sources --source elamigos --input "$env:TEMP/seaglass-source-assessment/elamigos.html" --url https://elamigos.site/
+go run ./tools/cataloglab --private-sources --source elamigos --input "$env:TEMP/seaglass-source-assessment/elamigos.html" --url <provider homepage URL>
 ```
 
 PASS: 3439 unique entries, all summaries, zero asserted installer versions;
@@ -126,16 +126,16 @@ Normal unauthenticated `curl.exe` HTTPS GETs initially returned:
 
 | URL | Status / body bytes |
 |---|---|
-| https://elamigos.site/ | 200 / 510556 |
-| https://elamigos.site/data/Control_Resonant_Deluxe_Edition_MULTi15_-_ElAmigos.html | 200 / 3984 |
-| https://elamigos.site/data/The_Blood_of_Dawnwalker_Eclipse_Edition_MULTi15_-_ElAmigos.html | 200 / 3803 |
-| https://elamigos.site/data/Red_Dead_Redemption_2_MULTi13__ElAmigos_-_KnPzu8CD.html | 200 / 4164 |
-| https://elamigos.site/data/Resonance_A_Plague_Tale_Legacy_MULTi17_-_ElAmigos.html | 200 / 3151 |
-| https://elamigos.site/data/Mortal_Shell_II_Devout_Edition_MULTi15_-_ElAmigos.html | 200 / 3841 |
-| https://kaoskrew.org/ | 403 / 5232 |
-| https://kaoskrew.org/viewforum.php?f=12 | 403 / 5322 |
+| `<provider homepage>` | 200 / 510556 |
+| `<provider>/data/<release A>.html` | 200 / 3984 |
+| `<provider>/data/<release B>.html` | 200 / 3803 |
+| `<provider>/data/<release C>.html` | 200 / 4164 |
+| `<provider>/data/<release D>.html` | 200 / 3151 |
+| `<provider>/data/<release E>.html` | 200 / 3841 |
+| `<second candidate homepage>` | 403 / 5232 |
+| `<second candidate forum page>` | 403 / 5322 |
 
-The ElAmigos origin labels itself "ElAmigos official site"; this is the
+The provider origin labels itself as the official site; this is the
 inspected origin, with no mirror substitution. Its claim is not independent
 proof of authorship or safety. Search is inline JavaScript filtering a finite
 catalog, not an HTTP search endpoint. No page-2 endpoint was requested.
@@ -144,8 +144,8 @@ h2 title/year/size, h3 release/metadata and labeled file-host sections.
 The sampled pages contain available source-link claims rather than previews;
 the preview fixture is explicitly synthetic.
 
-Control's base paragraph claims 1.3.3, while separate patch headings claim
-1.3.3 → 1.4.0 → 1.4.1. Red Dead's base paragraph claims 1311.23, while its
+Release A's base paragraph claims 1.3.3, while separate patch headings claim
+1.3.3 → 1.4.0 → 1.4.1. Release C's base paragraph claims 1311.23, while its
 later patch heading claims 1491.50. The parser retains base versions.
 Shared filecrypt/keeplinks containers are only source links; host availability
 and their contents were not inspected.
