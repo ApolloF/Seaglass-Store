@@ -18,9 +18,10 @@ type Provider struct {
 	// setup. Providers without it serve other parts of the store (1337x
 	// mirrors torrent files for other sources' releases).
 	Discovery bool `json:"discovery"`
-	// DefaultOn: a new Store user starts with this provider chosen. A
-	// provider added later stays off until the person chooses it, so an
-	// update never starts requests to a site nobody picked.
+	// DefaultOn: a new Store user starts with this provider chosen. No
+	// built-in provider is: the person turns sources on in Store settings,
+	// so turning the Store on (or an update) never starts requests to a
+	// site nobody picked.
 	DefaultOn bool `json:"defaultOn"`
 	// Listing is the first page of the newest-first release catalog.
 	Listing string `json:"listing"`
@@ -44,7 +45,7 @@ type Provider struct {
 var providers = []Provider{
 	{
 		Source:    Source{ID: "fitgirl", Name: "FitGirl", Host: "fitgirl-repacks.site", StartURL: "https://fitgirl-repacks.site/feed/"},
-		Discovery: true, DefaultOn: true, Torrents: true,
+		Discovery: true, Torrents: true,
 		Listing:     "https://fitgirl-repacks.site/",
 		ListingPage: "https://fitgirl-repacks.site/page/{n}/",
 		Feed:        "https://fitgirl-repacks.site/feed/",
@@ -52,7 +53,7 @@ var providers = []Provider{
 	},
 	{
 		Source:    Source{ID: "dodi", Name: "DODI", Host: "dodi-repacks.site", StartURL: "https://dodi-repacks.site/"},
-		Discovery: true, DefaultOn: true, Torrents: true,
+		Discovery: true, Torrents: true,
 		Listing:     "https://dodi-repacks.site/",
 		ListingPage: "https://dodi-repacks.site/page/{n}/",
 		Search:      "https://dodi-repacks.site/?s={q}",

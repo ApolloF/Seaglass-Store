@@ -1,18 +1,18 @@
 # Private catalog sources
 
-The adapters live in `internal/store/sources` in ApolloF/Seaglass-Store. `tools/cataloglab` is a CLI in the main module. In the desktop app, both Experimental Store and Browse repack sources must be enabled on this PC. Private describes this opt-in testing scope, not secrecy or access control.
+The adapters live in `internal/store/sources` in ApolloF/Seaglass-Store. `tools/cataloglab` is a CLI in the main module. In the desktop app, both the Experimental Store and source browsing must be enabled on this PC. Private describes this opt-in testing scope, not secrecy or access control.
 
 ## Sources and discovery
 
-FitGirl uses its official RSS, article listings and WordPress search. Direct article/RSS magnets are normalized and deduplicated by info hash. DODI uses HTML listings, WordPress search and individual articles; its inspected RSS was malformed. No third-party feed, account or CAPTCHA solver is required for discovery. Availability of historic mirrors is not guaranteed.
+Each provider is read the way its site publishes: an official RSS feed, article listings and WordPress search where it has them, or HTML listings and individual articles where its RSS is unusable. Direct article/RSS magnets are normalized and deduplicated by info hash. Providers and their capabilities are declared in `internal/store/sources/registry.go` ([store-providers.md](store-providers.md)). No third-party feed, account or CAPTCHA solver is required for discovery. Availability of historic mirrors is not guaranteed.
 
-The optional resolver supports ordinary File-Me free-download forms and bounded torrent metadata validation. Up-4ever can require Turnstile and is left for manual browser resolution. The original inspected SwiftUploads route returned 403. The 1337x fixture adapter remains exploratory and CLI-only.
+The optional resolver supports ordinary File-Me free-download forms and bounded torrent metadata validation. Up-4ever can require Turnstile and is left for manual browser resolution. The original inspected SwiftUploads route returned 403. One fixture adapter for a torrent index remains exploratory and CLI-only.
 
 ## Desktop integration
 
-The Store indexes FitGirl and DODI automatically on this PC ([experimental-store.md](experimental-store.md#automatic-discovery)): a persistent, paced crawler of listing pages and FitGirl's RSS feed, the sources' own search, and release details on demand. Indexing reads metadata only and never starts peers or downloads. File-host resolution runs only when the person chooses a release to install, at most one mirror per attempt. Unresolved, CAPTCHA, rate-limited, blocked and manual states stay visible. *Attach .torrent file* opens a local file picker and validates metadata without extracting or executing a payload.
+The Store indexes the selected sources automatically on this PC ([experimental-store.md](experimental-store.md#automatic-discovery)): a persistent, paced crawler of listing pages and RSS feeds where a source has one, the sources' own search, and release details on demand. Indexing reads metadata only and never starts peers or downloads. File-host resolution runs only when the person chooses a release to install, at most one mirror per attempt. Unresolved, CAPTCHA, rate-limited, blocked and manual states stay visible. *Attach .torrent file* opens a local file picker and validates metadata without extracting or executing a payload.
 
-Discovered releases no longer need a separate review step to be offered: a release with a validated torrent opens the install confirmation, which shows the source, version, languages, size and warnings. Summary-only releases are read first; update-only entries cannot become standalone installs. The queued offer passes the feed validator, and its notes retain the source page, document checksum, language claim and warnings. Publication dates are not converted to game build dates. Offers reviewed with the earlier flow stay in the catalog while *Browse repack sources* is on; the earlier preview APIs remain for compatibility.
+Discovered releases no longer need a separate review step to be offered: a release with a validated torrent opens the install confirmation, which shows the source, version, languages, size and warnings. Summary-only releases are read first; update-only entries cannot become standalone installs. The queued offer passes the feed validator, and its notes retain the source page, document checksum, language claim and warnings. Publication dates are not converted to game build dates. Offers reviewed with the earlier flow stay in the catalog while source browsing is on; the earlier preview APIs remain for compatibility.
 
 The CLI and app share parsers, network checks and metadata validation. [store-release-selection.md](store-release-selection.md) describes comparisons, scan controls and language choices.
 
@@ -21,15 +21,15 @@ The CLI and app share parsers, network checks and metadata validation. [store-re
 From the repository root:
 
 ```powershell
-go run ./tools/cataloglab --private-sources --source fitgirl --pages 3
-go run ./tools/cataloglab --private-sources --source fitgirl --search witcher --follow-details 10
-go run ./tools/cataloglab --private-sources --source dodi --pages 3
-go run ./tools/cataloglab --private-sources --source dodi --search witcher --follow-details 10 --resolve-torrents 1
-go run ./tools/cataloglab --private-sources --source dodi --url https://dodi-repacks.site/lies-of-p/ --resolve-torrents 1
+# <source> is a provider ID from internal/store/sources/registry.go; URLs must be on that provider's host.
+go run ./tools/cataloglab --private-sources --source <source> --pages 3
+go run ./tools/cataloglab --private-sources --source <source> --search "<title>" --follow-details 10
+go run ./tools/cataloglab --private-sources --source <source> --search "<title>" --follow-details 10 --resolve-torrents 1
+go run ./tools/cataloglab --private-sources --source <source> --url <release page URL> --resolve-torrents 1
 # Offline HTML parsing makes no requests:
-go run ./tools/cataloglab --private-sources --source dodi --input C:\path\article.html --url https://dodi-repacks.site/example/
+go run ./tools/cataloglab --private-sources --source <source> --input C:\path\article.html --url <release page URL>
 # Attach manually obtained metadata to exactly one selected release:
-go run ./tools/cataloglab --private-sources --source dodi --url https://dodi-repacks.site/example/ --torrent-file C:\path\example.torrent
+go run ./tools/cataloglab --private-sources --source <source> --url <release page URL> --torrent-file C:\path\example.torrent
 ```
 
 JSON goes to stdout, failures to stderr. The CLI writes no files and starts no payload, peer connection, tracker request or installer. Private adapters require the explicit flag on every invocation. Source-site search differs from the optional local --query filter; search terms become the local filter unless a query is supplied.
@@ -48,7 +48,7 @@ A magnet must contain exactly one valid v1 btih in hex or base32. The preview re
 
 ## Network and file-host boundaries
 
-Source requests stay on the selected exact HTTPS origin: fitgirl-repacks.site, dodi-repacks.site, or the CLI-only 1337x.to. Credentials, fragments, custom ports, proxy environment variables and browser sessions are not used. Redirects are bounded and revalidated. New connections resolve the hostname, reject the entire answer if any address is blocked/non-public, and pin a vetted address while TLS checks the original hostname.
+Source requests stay on the selected provider's exact HTTPS origin (its `Host` in the registry). Credentials, fragments, custom ports, proxy environment variables and browser sessions are not used. Redirects are bounded and revalidated. New connections resolve the hostname, reject the entire answer if any address is blocked/non-public, and pin a vetted address while TLS checks the original hostname.
 
 HTTP mirrors remain unresolved. The article paragraph distinguishes torrent mirrors from full-payload host links; only torrent references can reach the resolver. File-Me HTTP links are upgraded to HTTPS without an HTTP request. Reviewed file-ID paths on file-me.top and up-4ever.net/www.up-4ever.net are supported. Only numeric svrN.file-me.top CDN hosts with a .torrent path are accepted for the observed metadata redirect. Other shorteners, hosts and executable endpoints remain unresolved.
 
@@ -72,4 +72,4 @@ $env:WL_CATALOG_HOSTS='1'
 go test ./internal/store/sources -run '^TestLiveDODIHostChallenge$' -count=1 -v
 ```
 
-The original prototype audit covered 33 documents, recent/older listings, searches, empty results and 20 release pages. Original File-Me resolution succeeded for two distinct DODI games; this is historical evidence, not a guarantee of current mirrors. Fixture tests cover URL/DNS/redirect validation, forms, cookies, cancellation, metadata bounds, paths, partial pagination, empty searches and CAPTCHA detection. The Store integration adds opt-in, review/cache, update and language workflow tests. See the current verification report for checks actually run on this integration.
+The original prototype audit covered 33 documents, recent/older listings, searches, empty results and 20 release pages. Original File-Me resolution succeeded for two distinct games from one source; this is historical evidence, not a guarantee of current mirrors. Fixture tests cover URL/DNS/redirect validation, forms, cookies, cancellation, metadata bounds, paths, partial pagination, empty searches and CAPTCHA detection. The Store integration adds opt-in, review/cache, update and language workflow tests. See the current verification report for checks actually run on this integration.
