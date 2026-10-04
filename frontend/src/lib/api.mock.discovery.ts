@@ -63,8 +63,8 @@ const SOURCE_NAMES: Record<string, string> = { fitgirl: "FitGirl", dodi: "DODI",
 
 /** The providers the mock registry declares, as sources.Providers does. */
 const PROVIDERS = [
-  { id: "fitgirl", host: "fitgirl-repacks.site", search: true, paged: true, torrents: true, defaultOn: true, notes: [] as string[] },
-  { id: "dodi", host: "dodi-repacks.site", search: true, paged: true, torrents: true, defaultOn: true, notes: [] as string[] },
+  { id: "fitgirl", host: "fitgirl-repacks.site", search: true, paged: true, torrents: true, defaultOn: false, notes: [] as string[] },
+  { id: "dodi", host: "dodi-repacks.site", search: true, paged: true, torrents: true, defaultOn: false, notes: [] as string[] },
   { id: "elamigos", host: "elamigos.site", search: false, paged: false, torrents: false, defaultOn: false,
     notes: ["One finite catalog; search uses indexed titles.", "File-host containers open in the browser. Automated downloads are unsupported."] },
 ];

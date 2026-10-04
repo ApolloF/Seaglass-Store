@@ -19,7 +19,19 @@ import (
 )
 
 // testStoreCore is a Core with only what the store needs, in a temp folder.
+// testStoreCore is a Store user who turned on FitGirl and DODI.
 func testStoreCore(t *testing.T) *Core {
+	c := testNewStoreUserCore(t)
+	v := c.Settings.Get()
+	v.Store.PrivateSources, v.Store.Sources = true, []string{"fitgirl", "dodi"}
+	if _, err := c.Settings.Set(v); err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// testNewStoreUserCore has just turned the Store on for the first time.
+func testNewStoreUserCore(t *testing.T) *Core {
 	dir := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

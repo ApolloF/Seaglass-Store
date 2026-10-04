@@ -16,19 +16,18 @@ func TestOpenStoreLinkRefusesOtherSites(t *testing.T) {
 	}
 }
 
-// The status follows the settings: an existing Store user is asked first,
-// and chosen sources are enabled.
+// The status follows the settings: a new Store user starts with every
+// source off and isn't asked, and chosen sources are enabled.
 func TestDiscoveryStatusFollowsSourceChoice(t *testing.T) {
-	c := testStoreCore(t)
+	c := testNewStoreUserCore(t)
 	s := NewStoreService(c)
 	st := s.DiscoveryStatus()
-	if !st.Enabled || st.SetupNeeded || len(st.Sources) != len(sources.Providers()) || !st.Sources[0].Enabled {
+	if st.Enabled || st.SetupNeeded || len(st.Sources) != len(sources.Providers()) {
 		t.Fatalf("new Store user: %+v", st)
 	}
-	// Providers that are not on by default stay off for an existing user.
 	for _, src := range st.Sources {
-		if src.Enabled != src.DefaultOn {
-			t.Errorf("%s enabled=%v, want its default %v", src.ID, src.Enabled, src.DefaultOn)
+		if src.Enabled || src.DefaultOn {
+			t.Errorf("%s enabled=%v default=%v, want both off", src.ID, src.Enabled, src.DefaultOn)
 		}
 	}
 	if _, err := s.SetupSources([]string{"dodi"}); err != nil {

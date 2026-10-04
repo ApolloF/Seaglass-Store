@@ -169,9 +169,9 @@ func TestLegacyUnofficial(t *testing.T) {
 	}
 }
 
-// A new Store user gets both sources when they turn the Store on; nothing
-// is chosen for them while it stays off.
-func TestStoreOnChoosesSources(t *testing.T) {
+// A new Store user turns the Store on with no source chosen and source
+// browsing off; they turn sources on themselves in Store settings.
+func TestStoreOnChoosesNoSources(t *testing.T) {
 	s := Open(filepath.Join(t.TempDir(), "settings.json"))
 	v := s.Get()
 	if v.Store.SourceSetup != SetupPending || len(v.Store.Sources) != 0 || v.Store.PrivateSources {
@@ -186,10 +186,14 @@ func TestStoreOnChoosesSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.Store.PrivateSources || got.Store.SourceSetup != SetupDone || len(got.Store.Sources) != 2 {
-		t.Fatalf("turning the Store on: %+v", got.Store)
+	if got.Store.PrivateSources || got.Store.SourceSetup != SetupDone || len(got.Store.Sources) != 0 {
+		t.Fatalf("turning the Store on chose sources: %+v", got.Store)
 	}
-	if !got.Store.DiscoveryOn("fitgirl") || !got.Store.DiscoveryOn("dodi") || got.Store.DiscoveryOn("1337x") {
+	if got.Store.DiscoveryOn("fitgirl") || got.Store.DiscoveryOn("dodi") || got.Store.DiscoveryOn("elamigos") {
+		t.Error("a source is indexed that nobody turned on")
+	}
+	got.Store.PrivateSources, got.Store.Sources = true, []string{"fitgirl", "dodi"}
+	if got, _ = s.Set(got); !got.Store.DiscoveryOn("fitgirl") || !got.Store.DiscoveryOn("dodi") || got.Store.DiscoveryOn("1337x") {
 		t.Error("DiscoveryOn disagrees with the chosen sources")
 	}
 	// Turning it off and on again keeps what the person chose meanwhile.

@@ -105,10 +105,10 @@ func TestMixedReleaseVersionsDoNotOfferAnUnconfirmedUpdate(t *testing.T) {
 }
 
 func TestEnglishAndScanningDefaultsSurviveOldSettings(t *testing.T) {
-	c := testStoreCore(t)
+	c := testNewStoreUserCore(t)
 	v := c.Settings.Get()
-	// A new Store user gets both sources when the Store is turned on.
-	if v.Store.Language != "English" || v.Store.DisablePayloadScanning || !v.Store.PrivateSources || len(v.Store.Sources) != 2 {
+	// A new Store user starts with no source and source browsing off.
+	if v.Store.Language != "English" || v.Store.DisablePayloadScanning || v.Store.PrivateSources || len(v.Store.Sources) != 0 {
 		t.Fatalf("defaults: %+v", v.Store)
 	}
 	if _, err := c.updateSettings(func(v *settings.Settings) { v.Store.DisablePayloadScanning = true }); err != nil {

@@ -298,13 +298,14 @@ func legacySourceSetup(v *Settings, keys map[string]json.RawMessage) {
 	}
 }
 
-// StoreTurnedOn chooses the default discovery sources when a new Store
-// user turns the Store on, so it works without adding a feed or choosing
-// anything. Providers added later stay off until chosen.
+// StoreTurnedOn settles source setup when a new Store user turns the Store
+// on: they start with the default discovery sources, which is none of the
+// built-in ones, and turn sources on themselves in Store settings. Source
+// browsing is on only when something was chosen.
 func StoreTurnedOn(old, v Settings) Settings {
 	if !old.ExperimentalStore && v.ExperimentalStore && v.Store.SourceSetup == SetupPending {
-		v.Store.PrivateSources = true
 		v.Store.Sources = sources.DefaultIDs()
+		v.Store.PrivateSources = len(v.Store.Sources) > 0
 		v.Store.SourceSetup = SetupDone
 	}
 	return v
