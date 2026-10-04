@@ -7,7 +7,8 @@
 //	go run ./tools/release pubkey            print the public key
 //	go run ./tools/release ci-secret         put this PC's key into the repository's Actions secrets
 //	go run ./tools/release publish <tag>     sign the draft release <tag> and publish it
-//	go run ./tools/release verify <tag>      check a published release's signature
+//	go run ./tools/release verify <tag> [repo] check a published release's signature (here, or in repo)
+//	go run ./tools/release mirror <tag> [repo] copy a published release to the releases-only repository (mirror.go)
 //	go run ./tools/release cut <tag> [--pr N] [--dry-run]
 //	                                         the whole release from main, checked step by step (cut.go)
 //
@@ -94,7 +95,17 @@ func main() {
 	case "publish":
 		err = publish(arg(2))
 	case "verify":
-		err = verify(arg(2))
+		r := repo
+		if len(os.Args) > 3 {
+			r = os.Args[3]
+		}
+		err = verifyIn(r, arg(2))
+	case "mirror":
+		to := edition.ReleasesRepo
+		if len(os.Args) > 3 {
+			to = os.Args[3]
+		}
+		err = mirror(arg(2), to)
 	case "cut":
 		tag, pr, dry := arg(2), "", false
 		for i := 3; i < len(os.Args); i++ {
@@ -119,7 +130,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: release keygen | pubkey | backup <file> | restore <file> | ci-secret | publish <tag> | verify <tag> | cut <tag> [--pr N] [--dry-run]")
+	fmt.Fprintln(os.Stderr, "usage: release keygen | pubkey | backup <file> | restore <file> | ci-secret | publish <tag> | verify <tag> [repo] | mirror <tag> [repo] | cut <tag> [--pr N] [--dry-run]")
 	os.Exit(2)
 }
 
@@ -458,13 +469,16 @@ func trusted(k ed25519.PrivateKey, keys []ed25519.PublicKey) error {
 }
 
 // verify checks a published release against the keys the updater knows.
-func verify(tag string) error {
+func verify(tag string) error { return verifyIn(repo, tag) }
+
+// verifyIn checks the release tag published in r.
+func verifyIn(r, tag string) error {
 	dir, err := os.MkdirTemp("", "wl-verify-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(dir)
-	if err := gh("release", "download", tag, "--repo", repo, "--dir", dir, "--pattern", update.SumsAsset, "--pattern", update.SigAsset); err != nil {
+	if err := gh("release", "download", tag, "--repo", r, "--dir", dir, "--pattern", update.SumsAsset, "--pattern", update.SigAsset); err != nil {
 		return err
 	}
 	list, _ := os.ReadFile(filepath.Join(dir, update.SumsAsset))
@@ -497,8 +511,12 @@ func gh(args ...string) error {
 }
 
 func ghJSON(v any, args ...string) error {
+	return jsonOutput(exec.Command("gh", args...), v)
+}
+
+// jsonOutput runs cmd and decodes what it prints into v.
+func jsonOutput(cmd *exec.Cmd, v any) error {
 	var out bytes.Buffer
-	cmd := exec.Command("gh", args...)
 	cmd.Stdout, cmd.Stderr = &out, os.Stderr
 	if err := cmd.Run(); err != nil {
 		return err

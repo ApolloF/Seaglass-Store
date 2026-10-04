@@ -4,7 +4,7 @@
 // the installer (or, for a copy that wasn't installed, the bare exe) together
 // with its published SHA-256, and checks the hash, and the Authenticode
 // publisher when the running exe is signed, before the file is ever run.
-// Downloads come only from the repository's own release assets.
+// Downloads come only from the release assets of the feed that answered.
 package update
 
 import (
@@ -31,6 +31,13 @@ const (
 	ExeAsset       = "Seaglass.exe"
 )
 
+// Source is where the updater finds and fetches releases: one Feed, or
+// Feeds tried in order.
+type Source interface {
+	Latest(ctx context.Context) (Release, error)
+	Download(ctx context.Context, rel Release, name, dir string, progress func(done, total int64)) (string, string, error)
+}
+
 // Feed is where releases come from.
 type Feed struct {
 	LatestURL   string   // GitHub's "latest release" API endpoint
@@ -42,16 +49,32 @@ type Feed struct {
 	Keys []ed25519.PublicKey
 }
 
-// GitHub is this edition's own release feed.
-var GitHub = Feed{
-	LatestURL:   "https://api.github.com/repos/" + edition.Repo + "/releases/latest",
-	AssetPrefix: "https://github.com/" + edition.Repo + "/releases/download/",
-	Hosts:       []string{"github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com"},
-	Keys:        ReleaseKeys,
+// githubFeed reads a GitHub repository's releases, signed with ReleaseKeys.
+func githubFeed(repo string) Feed {
+	return Feed{
+		LatestURL:   "https://api.github.com/repos/" + repo + "/releases/latest",
+		AssetPrefix: "https://github.com/" + repo + "/releases/download/",
+		Hosts:       []string{"github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com"},
+		Keys:        ReleaseKeys,
+	}
 }
 
+// GitHub is this edition's release feed: the public releases-only
+// repository, which stays reachable when the source repository is private.
+var GitHub = githubFeed(edition.ReleasesRepo)
+
+// Legacy is the source repository's own releases, where every release
+// before the releases-only repository was published.
+var Legacy = githubFeed(edition.Repo)
+
+// Releases is what the updater reads. The releases-only repository answers
+// first; the source repository stands in while the new one has nothing
+// published yet or can't be reached, so the move can't strand an install.
+// Both need the same release signature.
+var Releases = Feeds{GitHub, Legacy}
+
 // ReleasesPage is where people download Seaglass by hand.
-const ReleasesPage = "https://github.com/" + edition.Repo + "/releases/latest"
+const ReleasesPage = "https://github.com/" + edition.ReleasesRepo + "/releases/latest"
 
 // Asset is one downloadable file of a release.
 type Asset struct {
@@ -68,6 +91,7 @@ type Release struct {
 	Page      string // release page on github.com
 	Published time.Time
 	assets    map[string]Asset
+	from      string // LatestURL of the feed that answered
 }
 
 // Asset returns the release's file with this name.
@@ -162,7 +186,7 @@ func (f Feed) Latest(ctx context.Context) (Release, error) {
 	if _, ok := parse(r.Tag); !ok {
 		return Release{}, errors.New("unexpected release tag " + strconv.Quote(r.Tag))
 	}
-	rel := Release{Tag: r.Tag, Notes: r.Body, Page: r.HTMLURL, Published: r.Published, assets: map[string]Asset{}}
+	rel := Release{Tag: r.Tag, Notes: r.Body, Page: r.HTMLURL, Published: r.Published, assets: map[string]Asset{}, from: f.LatestURL}
 	if len(rel.Notes) > maxNotes {
 		rel.Notes = strings.ToValidUTF8(rel.Notes[:maxNotes], "") + "…" // drop a rune cut in half
 	}
@@ -179,6 +203,42 @@ func (f Feed) Latest(ctx context.Context) (Release, error) {
 
 // ErrNoRelease means GitHub has no (non-preview) release yet.
 var ErrNoRelease = errors.New("no release published yet")
+
+// Feeds are tried in order, and the first with a release answers. A later
+// feed is asked only when the ones before it have no release or can't be
+// reached, so whoever controls a later feed can't hold back the first.
+type Feeds []Feed
+
+// Latest returns the first feed's newest release. With none anywhere, it
+// reports the first real failure rather than ErrNoRelease: a feed that
+// can't be reached mustn't read as "up to date".
+func (fs Feeds) Latest(ctx context.Context) (Release, error) {
+	var failed error
+	for _, f := range fs {
+		rel, err := f.Latest(ctx)
+		if err == nil {
+			return rel, nil
+		}
+		if failed == nil && !errors.Is(err, ErrNoRelease) {
+			failed = err
+		}
+	}
+	if failed != nil {
+		return Release{}, failed
+	}
+	return Release{}, ErrNoRelease
+}
+
+// Download fetches name from the feed rel came from, with that feed's
+// checks.
+func (fs Feeds) Download(ctx context.Context, rel Release, name, dir string, progress func(done, total int64)) (string, string, error) {
+	for _, f := range fs {
+		if rel.from != "" && f.LatestURL == rel.from {
+			return f.Download(ctx, rel, name, dir, progress)
+		}
+	}
+	return "", "", fmt.Errorf("%s didn't come from a known release feed", rel.Tag)
+}
 
 // Newer reports whether version tag a is newer than b ("v1.2.3", "1.2").
 // Anything that isn't a version (like "dev") is never newer nor older.

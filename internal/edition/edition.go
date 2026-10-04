@@ -12,8 +12,13 @@ const (
 	Name = "Seaglass Store Edition"
 	// Short is what the interface shows next to "Seaglass".
 	Short = "Store Edition"
-	// Repo is the GitHub repository releases, updates and issues come from.
+	// Repo is the source repository. CI builds and signs releases there,
+	// and copies before this one updated from its releases.
 	Repo = "ApolloF/Seaglass-Store"
+	// ReleasesRepo is the public repository that holds only the signed
+	// releases. Updates, the download page and issues come from it, so the
+	// source repository can be private without stopping updates.
+	ReleasesRepo = "ApolloF/Seaglass-Store-Releases"
 	// Suffix marks the edition's own release number in a version:
 	// v1.9.0-store.2 is the second Store Edition release on Seaglass 1.9.0.
 	Suffix = "-store."

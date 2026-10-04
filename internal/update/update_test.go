@@ -12,9 +12,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"unicode/utf8"
 
+	"github.com/ApolloF/Seaglass/internal/edition"
 	"github.com/ApolloF/Seaglass/internal/platform"
 )
 
@@ -53,12 +55,19 @@ type fakeGitHub struct {
 	srv     *httptest.Server
 	release map[string]any
 	files   map[string][]byte
+	status  int          // answers /latest with this status when set
+	asked   atomic.Int32 // how often /latest was asked
 }
 
 func newFake(t *testing.T) (*fakeGitHub, Feed) {
 	f := &fakeGitHub{files: map[string][]byte{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/latest", func(w http.ResponseWriter, r *http.Request) {
+		f.asked.Add(1)
+		if f.status != 0 {
+			w.WriteHeader(f.status)
+			return
+		}
 		if f.release == nil {
 			http.NotFound(w, r)
 			return
@@ -370,5 +379,154 @@ func TestLongNotesStayValidUTF8(t *testing.T) {
 	}
 	if !utf8.ValidString(rel.Notes) || !strings.HasSuffix(rel.Notes, "a…") {
 		t.Errorf("notes end in %q", rel.Notes[len(rel.Notes)-8:])
+	}
+}
+
+// signedFiles is a release of body as the installer, signed for tag.
+func signedFiles(priv ed25519.PrivateKey, tag string, body []byte) map[string][]byte {
+	h := sha256.Sum256(body)
+	sums := FormatSums(map[string]string{InstallerAsset: hex.EncodeToString(h[:])})
+	return map[string][]byte{InstallerAsset: body, SumsAsset: sums, SigAsset: EncodeSig(ed25519.Sign(priv, SignedMessage(tag, sums)))}
+}
+
+func TestFeedsPreferTheFirstFeed(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	nf, primary := newFake(t)
+	of, fallback := newFake(t)
+	primary.Keys, fallback.Keys = []ed25519.PublicKey{pub}, []ed25519.PublicKey{pub}
+	nf.publish("v1.10.0-store.2", signedFiles(priv, "v1.10.0-store.2", []byte("MZ from the releases repo")))
+	of.publish("v1.10.0-store.3", signedFiles(priv, "v1.10.0-store.3", []byte("MZ from the old repo")))
+	feeds := Feeds{primary, fallback}
+	ctx := context.Background()
+	rel, err := feeds.Latest(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Even a newer tag in the old repo doesn't win: it is asked only when
+	// the releases repo has nothing.
+	if rel.Tag != "v1.10.0-store.2" || of.asked.Load() != 0 {
+		t.Fatalf("got %s, old repo asked %d time(s)", rel.Tag, of.asked.Load())
+	}
+	p, _, err := feeds.Download(ctx, rel, InstallerAsset, t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "MZ from the releases repo" {
+		t.Errorf("downloaded %q", b)
+	}
+}
+
+func TestFeedsFallBack(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	for _, tt := range []struct {
+		name   string
+		status int // what the releases repo answers; 0 is "no release yet" (404)
+	}{
+		{"releases repo empty or missing", 0},
+		{"releases repo failing", http.StatusBadGateway},
+		{"rate limited", http.StatusForbidden},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			nf, primary := newFake(t)
+			of, fallback := newFake(t)
+			primary.Keys, fallback.Keys = []ed25519.PublicKey{pub}, []ed25519.PublicKey{pub}
+			nf.status = tt.status
+			of.publish("v1.10.0-store.1", signedFiles(priv, "v1.10.0-store.1", []byte("MZ old repo")))
+			feeds := Feeds{primary, fallback}
+			ctx := context.Background()
+			rel, err := feeds.Latest(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if rel.Tag != "v1.10.0-store.1" {
+				t.Fatalf("tag %s", rel.Tag)
+			}
+			// The download goes to the feed the release came from, with its
+			// signature check.
+			p, _, err := feeds.Download(ctx, rel, InstallerAsset, t.TempDir(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if b, _ := os.ReadFile(p); string(b) != "MZ old repo" {
+				t.Errorf("downloaded %q", b)
+			}
+		})
+	}
+}
+
+func TestFeedsFallbackStillNeedsTheSignature(t *testing.T) {
+	pub, _, _ := ed25519.GenerateKey(nil)
+	_, other, _ := ed25519.GenerateKey(nil)
+	_, primary := newFake(t)
+	of, fallback := newFake(t)
+	primary.Keys, fallback.Keys = []ed25519.PublicKey{pub}, []ed25519.PublicKey{pub}
+	of.publish("v9.0.0-store.1", signedFiles(other, "v9.0.0-store.1", []byte("MZ evil")))
+	feeds := Feeds{primary, fallback}
+	rel, err := feeds.Latest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := feeds.Download(context.Background(), rel, InstallerAsset, t.TempDir(), nil); err == nil {
+		t.Fatal("a fallback release signed with another key was accepted")
+	}
+}
+
+func TestFeedsNothingAnywhere(t *testing.T) {
+	nf, primary := newFake(t)
+	of, fallback := newFake(t)
+	ctx := context.Background()
+	if _, err := (Feeds{primary, fallback}).Latest(ctx); err != ErrNoRelease {
+		t.Fatalf("both empty: err = %v", err)
+	}
+	// The releases repo failing while the old one is private (404) is an
+	// error, not "up to date".
+	nf.status = http.StatusInternalServerError
+	if _, err := (Feeds{primary, fallback}).Latest(ctx); err == nil || err == ErrNoRelease {
+		t.Fatalf("releases repo down, old repo gone: err = %v", err)
+	}
+	nf.status, of.status = 0, http.StatusInternalServerError
+	if _, err := (Feeds{primary, fallback}).Latest(ctx); err == nil || err == ErrNoRelease {
+		t.Fatalf("releases repo empty, old repo down: err = %v", err)
+	}
+}
+
+func TestFeedsRefuseAReleaseFromElsewhere(t *testing.T) {
+	f, feed := newFake(t)
+	_, other := newFake(t)
+	body := []byte("MZ x")
+	f.publish("v1.2.0", map[string][]byte{ExeAsset: body, ExeAsset + ".sha256": sumLine(body, ExeAsset)})
+	rel, err := feed.Latest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := (Feeds{other}).Download(context.Background(), rel, ExeAsset, t.TempDir(), nil); err == nil {
+		t.Fatal("a release from a feed outside the list was downloaded")
+	}
+	if _, _, err := (Feeds{}).Download(context.Background(), Release{Tag: "v1.2.0"}, ExeAsset, t.TempDir(), nil); err == nil {
+		t.Fatal("a release from no feed was downloaded")
+	}
+}
+
+// The updater reads the public releases-only repository first and the
+// source repository second, and both demand the release signature.
+func TestReleasesFeedOrder(t *testing.T) {
+	if len(Releases) != 2 {
+		t.Fatalf("%d feeds", len(Releases))
+	}
+	want := []string{edition.ReleasesRepo, edition.Repo}
+	for i, f := range Releases {
+		if f.LatestURL != "https://api.github.com/repos/"+want[i]+"/releases/latest" ||
+			f.AssetPrefix != "https://github.com/"+want[i]+"/releases/download/" {
+			t.Errorf("feed %d reads %s / %s, want %s", i, f.LatestURL, f.AssetPrefix, want[i])
+		}
+		if len(f.Keys) == 0 {
+			t.Errorf("feed %d doesn't check release signatures", i)
+		}
+	}
+	if edition.ReleasesRepo == edition.Repo {
+		t.Error("the releases repository is the source repository")
+	}
+	if !strings.Contains(ReleasesPage, edition.ReleasesRepo) {
+		t.Errorf("ReleasesPage = %s", ReleasesPage)
 	}
 }

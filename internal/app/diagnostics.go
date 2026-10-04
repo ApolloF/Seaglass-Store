@@ -108,7 +108,7 @@ func WriteDiagnostics(c *Core) (string, error) {
 
 // ReportProblem opens a new GitHub issue for Seaglass.
 func (s *SettingsService) ReportProblem() error {
-	return platform.OpenWebPage("https://github.com/" + edition.Repo + "/issues/new")
+	return platform.OpenWebPage("https://github.com/" + edition.ReleasesRepo + "/issues/new")
 }
 
 func (c *Core) diagnostics() string {

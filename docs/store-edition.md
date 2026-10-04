@@ -2,7 +2,7 @@
 
 `ApolloF/Seaglass-Store` is Seaglass plus the experimental store ([experimental-store.md](experimental-store.md)). It shares Seaglass's history and keeps up with it by merging Seaglass's `main`. What makes it the edition is kept small, so those merges rarely conflict:
 
-- `internal/edition`: its name, its repository (updates, releases, issues) and its version suffix
+- `internal/edition`: its name, its source repository, its public releases-only repository (updates, downloads, issues) and its version suffix
 - `internal/update/keys.go`: its own release key
 - `build/windows/info.json`: its product name
 - the store's code and its few hooks in shared files (settings, core, services, `main.go`, the tray, the sidebar, settings and big picture screens)
@@ -24,10 +24,11 @@ GitHub doesn't let the workflow's token push changes to workflow files. When Sea
 git fetch https://github.com/ApolloF/Seaglass.git main && git merge FETCH_HEAD
 ```
 
-When Seaglass changes `.github/workflows/build.yml`, keep this repository's three additions in it:
+When Seaglass changes `.github/workflows/build.yml`, keep this repository's four additions in it:
 - `HAS_RELEASE_KEY`
 - the `-store.N` rule in *Version*
 - the *Sign and publish* step
+- the `feed` job, which calls `feed.yml`
 
 ## Versions
 
@@ -43,7 +44,15 @@ When Seaglass changes `.github/workflows/build.yml`, keep this repository's thre
    ```
 
 3. CI builds and tests the tag, makes a draft release, then *Sign and publishes* it. It writes `SHA256SUMS` and `SHA256SUMS.sig` with the edition's release key from the `SEAGLASS_RELEASE_KEY` Actions secret, publishes the release as *latest*, and verifies the published signature.
-4. `go run ./tools/release verify vX.Y.Z-store.N` checks it from any PC.
+4. Once the update feed is on (below), the `feed` job copies the published release to `ApolloF/Seaglass-Store-Releases`.
+5. `go run ./tools/release verify vX.Y.Z-store.N` checks it from any PC; add `ApolloF/Seaglass-Store-Releases` to check the copy installed copies read.
+
+## The update feed
+
+Installed copies update from the public releases-only repository `ApolloF/Seaglass-Store-Releases` (`edition.ReleasesRepo`), which holds the signed installers and release notes and no source. This repository can then be private. The updater (`update.Releases`) asks the releases-only repository first and falls back to this repository's releases only while the new one has no release or can't be reached; both need the release signature, so neither host has to be trusted. Copies from before the feed (up to v1.10.0-store.1) read only this repository: they move over by installing the first release that has the feed, which must therefore also be published here.
+
+- **Turning it on:** create the secret `SEAGLASS_FEED_TOKEN` (a fine-grained token with *Contents: read and write* on `ApolloF/Seaglass-Store-Releases` only) and the variable `PUBLISH_UPDATE_FEED` = `true`. Tagged builds then copy each signed release there (`.github/workflows/feed.yml`).
+- **By hand:** *Actions → update feed → Run workflow* with a tag, or from the PC: `go run ./tools/release mirror vX.Y.Z-store.N` (uses your `gh` sign-in, or `SEAGLASS_FEED_TOKEN`). It checks the signature before copying and again on the copy, and copies `docs/releases/<tag>.md` as the notes, not GitHub's generated list of this repository's pull requests.
 
 ## The release key
 

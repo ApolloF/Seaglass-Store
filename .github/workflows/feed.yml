@@ -1,0 +1,50 @@
+name: update feed
+
+# Copies a published, signed Store Edition release to the public
+# releases-only repository that installed copies update from
+# (edition.ReleasesRepo, ApolloF/Seaglass-Store-Releases), so this
+# repository can be private without stopping updates.
+#
+# build.yml calls it for every release tag once the repository variable
+# PUBLISH_UPDATE_FEED is "true". It needs the secret SEAGLASS_FEED_TOKEN: a
+# fine-grained token with Contents read and write on the releases-only
+# repository only. Run it by hand (Actions -> update feed) to copy a release
+# again. See docs/store-edition.md.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to copy, e.g. v1.10.0-store.2
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  copy:
+    # tools/release is Windows-only (DPAPI), like the rest of the build.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          check-latest: true
+
+      - name: Copy the release
+        env:
+          # Reads this repository's release; the feed token writes the copy.
+          GH_TOKEN: ${{ github.token }}
+          SEAGLASS_FEED_TOKEN: ${{ secrets.SEAGLASS_FEED_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          if (-not $env:SEAGLASS_FEED_TOKEN) { throw 'The SEAGLASS_FEED_TOKEN secret is missing: see docs/store-edition.md' }
+          go run ./tools/release mirror $env:TAG
