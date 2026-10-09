@@ -23,6 +23,7 @@ github.com/wailsapp/wails/v3/internal/go-common-file-dialog   v3.0.0-beta.26  MI
 github.com/wailsapp/wails/v3/internal/webview2/webviewloader  v3.0.0-beta.26  ISC                        Seaglass.exe
 Go standard library and runtime                                               BSD-3-Clause               Seaglass.exe
 golang.org/x/image                                            v0.46.0         BSD-3-Clause               Seaglass.exe
+golang.org/x/net                                              v0.56.0         BSD-3-Clause               Seaglass.exe
 golang.org/x/sys                                              v0.48.0         BSD-3-Clause               Seaglass.exe
 Microsoft Edge WebView2 Runtime bootstrapper                                  Microsoft redistributable  Seaglass-setup.exe
 NSIS (Nullsoft Scriptable Install System)                                     Zlib                       Seaglass-setup.exe (installer)
@@ -539,6 +540,16 @@ shall terminate as of the date such litigation is filed.
 
 ========================================================================
 golang.org/x/image v0.46.0
+License: BSD-3-Clause
+Included in: Seaglass.exe
+
+Same license text as Go standard library and runtime above.
+
+Same license text as Go standard library and runtime above.
+
+
+========================================================================
+golang.org/x/net v0.56.0
 License: BSD-3-Clause
 Included in: Seaglass.exe
 
