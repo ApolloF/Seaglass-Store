@@ -29,6 +29,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Pushes go over SSH with a write deploy key for this repository only:
+          # the workflow token may not push commits that change workflow files,
+          # and Seaglass's own commits sometimes do. main stays protected by the
+          # ruleset (no bypass) and v* tags by the tag ruleset.
+          ssh-key: ${{ secrets.SYNC_DEPLOY_KEY }}
 
       - name: Fetch Seaglass
         id: fetch
@@ -79,6 +84,18 @@ jobs:
           if [ -n "$(git status --porcelain frontend/bindings)" ]; then
             git add frontend/bindings
             git commit -m "Regenerate bindings after merging Seaglass main"
+          fi
+
+      - name: Regenerate third-party notices
+        # The Store has more dependencies than Seaglass, so the notices file that
+        # comes with the merge is always out of date (build.yml checks it).
+        if: steps.merge.outputs.clean == 'true'
+        run: |
+          (cd frontend && npm ci)
+          go run ./tools/notices
+          if [ -n "$(git status --porcelain THIRD_PARTY_NOTICES.txt)" ]; then
+            git add THIRD_PARTY_NOTICES.txt
+            git commit -m "Regenerate third-party notices after merging Seaglass main"
           fi
 
       - name: Test
