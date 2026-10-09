@@ -29,6 +29,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Pushes go over SSH with a write deploy key for this repository only:
+          # the workflow token may not push commits that change workflow files,
+          # and Seaglass's own commits sometimes do. main stays protected by the
+          # ruleset (no bypass) and v* tags by the tag ruleset.
+          ssh-key: ${{ secrets.SYNC_DEPLOY_KEY }}
 
       - name: Fetch Seaglass
         id: fetch
