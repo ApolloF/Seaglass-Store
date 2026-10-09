@@ -1,9 +1,12 @@
 name: sync with Seaglass
 
 # Brings Seaglass's own work into the Store Edition every day (and on
-# demand): Seaglass's main is merged into this main, the tests run, and a
-# clean, passing merge is pushed. A merge with conflicts, or one whose
-# tests fail, becomes a pull request to finish by hand.
+# demand): Seaglass's main is merged into this main and the tests run. A
+# clean, passing merge goes up as a sync/<date> pull request; CI is started on
+# it with workflow_dispatch (a pull request made with the workflow token does
+# not start pull_request runs) and auto-merge is requested, so it lands once
+# the required checks pass. A merge with conflicts, or one whose tests fail,
+# becomes a pull request to finish by hand.
 on:
   schedule:
     - cron: '17 4 * * *'
@@ -12,6 +15,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 concurrency: sync
 
@@ -87,9 +91,23 @@ jobs:
           go vet ./...
           go test ./...
 
-      - name: Push
+      - name: Pull request for the clean merge
         if: steps.merge.outputs.clean == 'true' && steps.test.outcome == 'success'
-        run: git push origin HEAD:main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="sync/$(date -u +%F)"
+          # A second run on the same day must not collide with the first branch.
+          if git ls-remote --exit-code --heads origin "$branch" > /dev/null; then
+            branch="$branch-${{ steps.fetch.outputs.sha }}"
+          fi
+          git push origin "HEAD:refs/heads/$branch"
+          url=$(gh pr create --base main --head "$branch" \
+            --title "Merge Seaglass main (${{ steps.fetch.outputs.sha }})" \
+            --body "Seaglass's main merged into the Store Edition; the tests passed. CI is started on this branch by the sync run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          gh workflow run build.yml --ref "$branch"
+          # A merge commit, not a squash: Seaglass's history must stay an ancestor of main, or the next sync would repeat this one.
+          gh pr merge --auto --merge "$url" || echo "auto-merge not enabled yet; PR left open"
 
       - name: Pull request for a hand merge
         if: steps.fetch.outputs.behind == 'true' && (steps.merge.outputs.clean != 'true' || steps.test.outcome != 'success')

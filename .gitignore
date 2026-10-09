@@ -7,3 +7,11 @@ build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 # Local tool settings (absolute paths on one machine)
 .claude/
 tools/harness/node_modules
+
+# Secrets (safety baseline)
+.env
+.env.*
+!.env.example
+!frontend/.env.mock
+*.token
+*.pem
