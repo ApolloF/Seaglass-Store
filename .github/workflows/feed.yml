@@ -32,7 +32,7 @@ jobs:
     # tools/release is Windows-only (DPAPI), like the rest of the build.
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v5
         with:
