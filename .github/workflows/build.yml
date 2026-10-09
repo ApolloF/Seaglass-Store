@@ -5,6 +5,10 @@ on:
     branches: [main]
     tags: ['v*']
   pull_request:
+  # Started by sync.yml on its sync/<date> pull request: PRs made with the
+  # workflow token don't trigger pull_request runs, but a dispatched run's
+  # checks attach to the branch's commit.
+  workflow_dispatch:
 
 permissions:
   contents: write

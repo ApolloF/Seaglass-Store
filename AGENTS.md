@@ -21,6 +21,10 @@ A Windows game launcher that finds installed games on its own (stores, external 
 - Live tests (touch the real PC, gated by env vars): e.g. `WL_REAL_SCAN=1 go test -run RealScan -v ./internal/scan`
 - End-to-end: `tools/harness/*.mjs` drive a dev build through `\\.\pipe\seaglass-dev` (see `tools/harness/README.md`).
 
+## Check command
+`go test ./internal/... && npm --prefix frontend run check && npm --prefix frontend test`
+Run `npm --prefix frontend ci` once first. About 1 minute. It skips the root package (`go test ./...` needs `frontend/dist` from a build, because `main.go` embeds it) and the `-race` run; CI (`.github/workflows/build.yml`, job `windows`) does the full build, `go test ./...`, the race detector and the installer smoke tests. Keep it fast and keep it passing.
+
 ## Layout
 - `main.go` — single instance, Wails app, service registration, tray.
 - `internal/app` — services the interface calls (`services.go`, `launch.go`, …), `Core` (background loops, `emit` events), windows and tray, dev flags (`dev.go`).
@@ -41,3 +45,14 @@ A Windows game launcher that finds installed games on its own (stores, external 
 
 ## Definition of done
 `go test ./...`, `npm run check` and `npm run test` pass; bindings regenerated if services changed; UI checked in mock mode, both themes, and at narrow widths.
+
+## Git workflow
+- Remote: GitHub `ApolloF/Seaglass-Store` (public). A fork-style edition of Seaglass: `sync.yml` brings Seaglass's `main` in every day.
+- Branch, then PR, then CI (`build`, job `windows`), then merge only when the user says "ship it" (merge commit: the daily sync relies on Seaglass's history staying an ancestor of `main`).
+- The daily sync opens a `sync/<date>` PR, starts `build` on it with `workflow_dispatch` (PRs made with `GITHUB_TOKEN` don't trigger `pull_request` runs) and tries to enable auto-merge. `build.yml` therefore keeps a `workflow_dispatch:` trigger.
+- Releases: `docs/RELEASING.md` and `docs/store-edition.md`; only the maintainer tags.
+
+## Secrets
+- No `.env` is needed to build or run. The only tracked env file is `frontend/.env.mock` (no secrets; `.gitignore` allows it on purpose).
+- Signing and release material (`SIGN_PFX_BASE64`, `SIGN_PFX_PASSWORD`, `SIGNPATH_API_TOKEN`, `SEAGLASS_RELEASE_KEY`, `SEAGLASS_FEED_TOKEN`) lives only in GitHub Actions secrets.
+- Never commit real values. gitleaks runs on every commit; `.gitleaksignore` lists two known false positives (GOG Galaxy's public client secret).
