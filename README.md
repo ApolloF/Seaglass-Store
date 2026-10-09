@@ -6,18 +6,32 @@
 
 <p align="center">A Windows game launcher that finds the games installed on your PC on its own, from store launchers and other sources alike, and plays great with a DualSense.</p>
 
+<p align="center">
+  <a href="https://github.com/ApolloF/Seaglass/releases/latest"><img src="https://img.shields.io/github/v/release/ApolloF/Seaglass?label=download" alt="Latest release"></a>
+  <a href="https://github.com/ApolloF/Seaglass/releases"><img src="https://img.shields.io/github/downloads/ApolloF/Seaglass/total" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/ApolloF/Seaglass" alt="License: AGPL-3.0"></a>
+</p>
+
+<p align="center"><img src="docs/images/seaglass-bigpicture-home.png" width="860" alt="Seaglass big picture mode: Continue playing, new games found on this PC and the library, with controller button hints"></p>
+
 <p align="center"><sub>Formerly WaterLauncher. WaterLauncher doesn't update to Seaglass on its own: install Seaglass over it, and it keeps your library and settings.</sub></p>
 
 ---
 
 **[Download Seaglass Store Edition](https://github.com/ApolloF/Seaglass-Store-Releases/releases/latest/download/Seaglass-setup.exe)** for Windows 10 and 11 (64-bit). It installs for your account only, without administrator rights, and keeps itself up to date from the signed releases in [ApolloF/Seaglass-Store-Releases](https://github.com/ApolloF/Seaglass-Store-Releases/releases), where the release notes are too. Plain Seaglass is at [ApolloF/Seaglass](https://github.com/ApolloF/Seaglass).
 
-- Finds Steam, Epic, GOG, EA, Ubisoft, Battle.net and Xbox installs, plus games installed outside a store launcher (*external copies*, such as standalone and DRM-free installers, backups or games set up with a Steam API emulator) and plain game folders, and works out which game each one is.
+- Finds Steam, Epic, GOG, EA, Ubisoft, Battle.net and Xbox installs, plus games installed outside a store launcher (*external copies*, such as standalone and DRM-free installs and backups) and plain game folders, and works out which game each one is.
 - Desktop mode for mouse and keyboard, and a big picture mode for controllers with three layouts to choose from (Deck, Console, Orbit).
 - Starts games and tracks playtime. While you play, the interface closes to free memory, and the PS button opens an overlay over the game.
 - DualSense first: native button glyphs, haptics, lightbar, and the PS button to open the launcher. Games without DualSense support start through Steam Input automatically.
 - Works with [Syncer](https://github.com/ApolloF/syncer) to keep saves in sync before and after you play. *Settings → Saves* installs Syncer with one click.
 - Hide whole libraries you don't want to see (*Settings → Library*), for example Xbox or external copies.
+
+| Desktop mode | Achievements |
+|---|---|
+| <img src="docs/images/seaglass-desktop.png" alt="Desktop mode: game grid, sources in the sidebar and a details panel with Play, playtime, controller mode and save status"> | <img src="docs/images/seaglass-achievements.png" alt="Achievements dialog with unlock dates and rarity"> |
+
+<sub>Screenshots use the demo library (`npm run dev:mock`), so the games and art are made up.</sub>
 
 ## Intended use
 
@@ -40,7 +54,7 @@ Seaglass is an independent project and is not affiliated with, endorsed by or sp
 - **Games started elsewhere:** start a library game from Steam or a shortcut and Seaglass still counts its playtime and lets go of the controller (*Settings → Big picture → While playing*).
 - **Command line:** `--play <id>` starts a game without the interface (for shortcuts), `--tray` starts in the tray, `--quit` closes a running Seaglass, `--diagnostics` writes a report to the desktop.
 - **Something wrong?** *Settings → About → Copy diagnostics*, then *Report a problem*. If the interface won't open: `Seaglass.exe --diagnostics`.
-- **Your data:** `%APPDATA%\Seaglass` (library, settings, encrypted keys, log) and `%LOCALAPPDATA%\Seaglass` (art, the game database, updates).
+- **Your data:** `%APPDATA%\Seaglass` (library, settings, encrypted keys, log) and `%LOCALAPPDATA%\Seaglass` (art, the game database, updates). Seaglass has no telemetry; [PRIVACY.md](PRIVACY.md) lists what it stores and which services it contacts.
 
 Builds aren't code-signed yet, so SmartScreen may warn the first time: *More info → Run anyway*. See [SECURITY.md](SECURITY.md) for how Seaglass keeps you safe.
 
@@ -61,6 +75,12 @@ The backend lives in `internal/`: `scan` (sources, external-copy detection, exec
 
 The DLSS Updater add-on host lives on the [`feature/dlss-addon`](https://github.com/ApolloF/Seaglass/tree/feature/dlss-addon) branch; [docs/dlss-addon.md](https://github.com/ApolloF/Seaglass/blob/feature/dlss-addon/docs/dlss-addon.md) there has ideas for bringing it back.
 
+## Support
+
+Seaglass is free and stays free: no pro tier, no locked features. If it's useful to you, you can [buy me a coffee](https://ko-fi.com/apollof). Starring the repo and filing good bug reports help just as much.
+
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE). Releases up to 1.4 (as WaterLauncher) were MIT licensed.
+
+Seaglass includes third-party code and fonts under their own licenses (MIT, BSD, ISC, zlib and the SIL Open Font License for Barlow); see [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt), which the installer also puts next to `Seaglass.exe`. After changing dependencies, regenerate it with `go run ./tools/notices` (CI checks that it is up to date).
