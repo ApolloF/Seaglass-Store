@@ -1,15 +1,16 @@
 name: sync with Seaglass
 
-# Brings Seaglass's own work into the Store Edition every day (and on
+# Brings Seaglass's own work into the Store Edition every Monday (and on
 # demand): Seaglass's main is merged into this main and the tests run. A
 # clean, passing merge goes up as a sync/<date> pull request; CI is started on
 # it with workflow_dispatch (a pull request made with the workflow token does
-# not start pull_request runs) and auto-merge is requested, so it lands once
-# the required checks pass. A merge with conflicts, or one whose tests fail,
+# not start pull_request runs), and the merge job merges it once that build
+# passes. That works without auto-merge, which a private repository on the
+# free plan doesn't have. A merge with conflicts, or one whose tests fail,
 # becomes a pull request to finish by hand.
 on:
   schedule:
-    - cron: '17 4 * * *'
+    - cron: '17 4 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -22,6 +23,9 @@ concurrency: sync
 jobs:
   sync:
     runs-on: windows-latest
+    outputs:
+      branch: ${{ steps.pr.outputs.branch }}
+      url: ${{ steps.pr.outputs.url }}
     defaults:
       run:
         shell: bash
@@ -109,6 +113,7 @@ jobs:
           go test ./...
 
       - name: Pull request for the clean merge
+        id: pr
         if: steps.merge.outputs.clean == 'true' && steps.test.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -123,8 +128,8 @@ jobs:
             --title "Merge Seaglass main (${{ steps.fetch.outputs.sha }})" \
             --body "Seaglass's main merged into the Store Edition; the tests passed. CI is started on this branch by the sync run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
           gh workflow run build.yml --ref "$branch"
-          # A merge commit, not a squash: Seaglass's history must stay an ancestor of main, or the next sync would repeat this one.
-          gh pr merge --auto --merge "$url" || echo "auto-merge not enabled yet; PR left open"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
 
       - name: Pull request for a hand merge
         if: steps.fetch.outputs.behind == 'true' && (steps.merge.outputs.clean != 'true' || steps.test.outcome != 'success')
@@ -143,4 +148,39 @@ jobs:
             gh pr create --base main --head "$branch" \
               --title "Merge Seaglass main (${{ steps.fetch.outputs.sha }})" \
               --body "Seaglass's main has changes the Store Edition doesn't have yet. $why Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+
+  merge:
+    # Waits for the build on the sync pull request, then merges it. On Linux,
+    # because waiting on a Windows runner costs double minutes once private.
+    needs: sync
+    if: needs.sync.outputs.url != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BRANCH: ${{ needs.sync.outputs.branch }}
+      URL: ${{ needs.sync.outputs.url }}
+    steps:
+      - name: Wait for the build, then merge
+        run: |
+          run=""
+          for i in $(seq 1 30); do
+            run=$(gh run list --workflow build.yml --branch "$BRANCH" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+            [ -n "$run" ] && break
+            sleep 10
+          done
+          if [ -z "$run" ]; then
+            gh pr comment "$URL" --body "No build started on $BRANCH, so this sync wasn't merged. Run *build* on the branch, then merge by hand (merge commit)."
+            exit 1
+          fi
+          if ! gh run watch "$run" --exit-status --interval 30 > /dev/null; then
+            gh pr comment "$URL" --body "The build failed, so this sync wasn't merged: ${{ github.server_url }}/$GH_REPO/actions/runs/$run"
+            exit 1
+          fi
+          # A merge commit, not a squash: Seaglass's history must stay an ancestor of main, or the next sync would repeat this one.
+          if ! gh pr merge "$URL" --merge; then
+            gh pr comment "$URL" --body "The build passed, but the workflow token couldn't merge this. That happens when Seaglass changed a workflow file. Merge it by hand with a merge commit."
+            exit 1
           fi
